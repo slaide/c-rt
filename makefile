@@ -14,7 +14,12 @@ main.o: main.c
 build: main.o
 	$(COMPILE) $(LINKS) -o main main.o
 
-run: build
+shaders/vert.spv: shaders/shader.vert
+	glslangValidator shaders/shader.vert -V -o shaders/vert.spv
+shaders/frag.spv: shaders/shader.frag
+	glslangValidator shaders/shader.frag -V -o shaders/frag.spv
+
+run: build shaders/vert.spv shaders/frag.spv
 	./main
 
 .PHONY: clean fresh
