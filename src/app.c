@@ -1,42 +1,5 @@
-#include <stdint.h>
-#include<stdio.h>
-#include<memory.h>
-#include<string.h>
-#include<stdlib.h>
-#include<time.h>
+#include "app/app.h"
 
-#include <vulkan/vulkan_core.h>
-#include<xcb/xcb.h>
-#include<xcb/xcb_util.h>
-#include <xcb/xproto.h>
-#define VK_USE_PLATFORM_XCB_KHR
-#include<vulkan/vulkan.h>
-
-#define block if(1)
-#define discard (void)
-
-enum AppError{
-    // xcb errors
-    XCB_CONNECT_FAILURE            = -0x001,
-    XCB_WINDOW_CREATE_FAILURE      = -0x002,
-
-    // vulkan errors
-    VULKAN_CREATE_INSTANCE_FAILURE = -0x100,
-    VULKAN_CREATE_XCB_SURFACE_FAILURE = -0x101,
-
-    // other errors
-    FATAL_UNEXPECTED_ERROR = -0x400,
-};
-
-const char* XCB_ERROR_NAMES[]={
-    "0",
-    [XCB_CONN_ERROR]="XCB_CONN_ERROR",
-    "2",
-    [XCB_WINDOW]="XCB_WINDOW",
-    "3",
-    "3",
-    "3",
-};
 /// return string representation of a physical device type
 ///
 /// returns NULL on invalid (or unknown) device type
@@ -51,20 +14,6 @@ const char* device_type_name(int device_type){
 
     return NULL;
 }
-
-typedef struct Application Application;
-
-typedef struct VertexData{
-    float x;
-    float y;
-    float z;
-    float w;
-
-    float r;
-    float g;
-    float b;
-    float a;
-}VertexData;
 
 VertexData mesh[4]={
     {
@@ -85,54 +34,6 @@ VertexData mesh[4]={
     }
 };
 
-typedef struct Mesh{
-    VkBuffer buffer;
-    VkDeviceMemory buffer_memory;
-}Mesh;
-
-typedef struct Shader{
-    Application* app;
-
-    VkShaderModule fragment_shader;
-    VkShaderModule vertex_shader;
-
-    VkPipelineLayout pipeline_layout;
-    VkPipeline pipeline;
-
-    VkDescriptorSetLayout set_layout;
-    VkDescriptorPool descriptor_pool;
-    VkDescriptorSet descriptor_set;
-}Shader;
-
-typedef struct Application{
-    xcb_connection_t* connection;
-    xcb_window_t window;
-    xcb_atom_t delete_window_atom;
-
-    VkInstance instance;
-    VkAllocationCallbacks* vk_allocator;
-
-    VkSurfaceKHR window_surface;
-    VkSwapchainKHR swapchain;
-    VkSurfaceFormatKHR swapchain_format;
-    uint32_t num_swapchain_images;
-    VkImage* swapchain_images;
-    VkImageView* swapchain_image_views;
-    VkFramebuffer* swapchain_framebuffers;
-
-    VkPhysicalDevice physical_device;
-    VkDevice device;
-
-    uint32_t graphics_queue_family_index;
-    VkQueue graphics_queue;
-    uint32_t present_queue_family_index;
-    VkQueue present_queue;
-
-    VkRenderPass render_pass;
-
-    Shader* shader;
-} Application;
-
 xcb_atom_t App_xcb_intern_atom(Application* app,const char* atom_name){
     xcb_intern_atom_cookie_t atom_cookie=xcb_intern_atom(app->connection, 0, strlen(atom_name), atom_name);
     xcb_intern_atom_reply_t* atom_reply=xcb_intern_atom_reply(app->connection, atom_cookie, NULL);
@@ -149,100 +50,11 @@ void App_set_window_title(Application* app,const char* title){
     xcb_change_property_checked(app->connection, XCB_PROP_MODE_REPLACE, app->window, net_wm_visible_name, App_xcb_intern_atom(app,"UTF8_STRING"), 8, strlen(title), title);
 }
 
-Mesh* App_upload_mesh(
-    Application* app,
-
-    VkCommandBuffer recording_command_buffer,
-
-    uint32_t num_vertices,
-    VertexData* vertex_data
-){
-    Mesh* mesh=malloc(sizeof(Mesh));
-
-    VkDeviceSize mesh_memory_size=num_vertices*sizeof(VertexData);
-
-    VkBufferCreateInfo buffer_create_info={
-        .sType=VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-        .pNext=NULL,
-        .flags=0,
-        .size=mesh_memory_size,
-        .usage=VK_BUFFER_USAGE_TRANSFER_DST_BIT|VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-        .sharingMode=VK_SHARING_MODE_EXCLUSIVE,
-        .queueFamilyIndexCount=0,
-        .pQueueFamilyIndices=NULL
-    };
-    VkResult res=vkCreateBuffer(app->device, &buffer_create_info, app->vk_allocator, &mesh->buffer);
-    if(res!=VK_SUCCESS){
-        fprintf(stderr,"failed to create buffer\n");
-        exit(-20);
-    }
-
-    VkMemoryRequirements buffer_memory_requirements;
-    vkGetBufferMemoryRequirements(app->device, mesh->buffer, &buffer_memory_requirements);
-
-    VkPhysicalDeviceMemoryProperties memory_properties;
-    vkGetPhysicalDeviceMemoryProperties(app->physical_device, &memory_properties);
-
-    uint32_t memory_type_index=UINT32_MAX;
-    for(uint32_t i=0;i<memory_properties.memoryTypeCount;i++){
-        if(
-            (1<<i)&buffer_memory_requirements.memoryTypeBits
-            && memory_properties.memoryTypes[i].propertyFlags&VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
-        ){
-            memory_type_index=i;
-            break;
-        }
-    }
-    if(memory_type_index==UINT32_MAX){exit(FATAL_UNEXPECTED_ERROR);}
-
-    VkMemoryAllocateInfo memory_allocate_info={
-        .sType=VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
-        .pNext=NULL,
-        .allocationSize=buffer_memory_requirements.size,
-        .memoryTypeIndex=memory_type_index
-    };
-    res=vkAllocateMemory(app->device, &memory_allocate_info, app->vk_allocator, &mesh->buffer_memory);
-    if(res!=VK_SUCCESS){
-        fprintf(stderr,"failed to allocate memory\n");
-        exit(-21);
-    }
-
-    res=vkBindBufferMemory(app->device, mesh->buffer, mesh->buffer_memory, 0);
-    if(res!=VK_SUCCESS){
-        fprintf(stderr,"failed to bind buffer memory\n");
-        exit(-22);
-    }
-
-    // map device memory
-    VertexData* mapped_gpu_memory;
-    vkMapMemory(app->device, mesh->buffer_memory, 0, buffer_memory_requirements.size, 0, (void**)&mapped_gpu_memory);
-    // copy mesh data
-    memcpy(mapped_gpu_memory, vertex_data, num_vertices*sizeof(VertexData));
-    // flush memory to gpu
-    VkMappedMemoryRange mapped_memory_range={
-        .sType=VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
-        .pNext=NULL,
-        .memory=mesh->buffer_memory,
-        .offset=0,
-        .size=buffer_memory_requirements.size
-    };
-    vkFlushMappedMemoryRanges(app->device, 1, &mapped_memory_range);
-    vkUnmapMemory(app->device, mesh->buffer_memory);
-
-    discard recording_command_buffer;
-
-    return mesh;
-}
-void App_destroy_mesh(Application* app,Mesh* mesh){
-    vkFreeMemory(app->device, mesh->buffer_memory, app->vk_allocator);
-    vkDestroyBuffer(app->device, mesh->buffer, app->vk_allocator);
-}
-
 VkShaderModule App_create_shader_module(Application* app,const char* shader_file_path){
     FILE* shader_file=fopen(shader_file_path,"rb");
     if(shader_file==NULL){
         fprintf(stderr,"failed to open shader file %s\n",shader_file_path);
-        exit(-15);
+        exit(VULKAN_SHADER_FILE_NOT_FOUND);
     }
 
     discard fseek(shader_file,0,SEEK_END);
@@ -299,7 +111,7 @@ Shader* App_create_shader(
     VkResult res=vkCreateDescriptorSetLayout(app->device, &descriptor_set_layout, app->vk_allocator, &shader->set_layout);
     if(res!=VK_SUCCESS){
         fprintf(stderr,"failed to create descriptor set layout\n");
-        exit(-16);
+        exit(VULKAN_CREATE_DESCRIPTOR_SET_LAYOUT_FAILURE);
     }
 
     VkDescriptorPoolSize pool_sizes[1]={{
@@ -317,7 +129,7 @@ Shader* App_create_shader(
     res=vkCreateDescriptorPool(app->device, &descriptor_pool_create_info, app->vk_allocator, &shader->descriptor_pool);
     if(res!=VK_SUCCESS){
         fprintf(stderr,"failed to create descriptor pool\n");
-        exit(-17);
+        exit(VULKAN_CREATE_DESCRIPTOR_POOL_FAILURE);
     }
     
     VkDescriptorSetAllocateInfo descriptor_set_allocate_info={
@@ -330,7 +142,7 @@ Shader* App_create_shader(
     res=vkAllocateDescriptorSets(app->device, &descriptor_set_allocate_info, &shader->descriptor_set);
     if(res!=VK_SUCCESS){
         fprintf(stderr,"failed to allocate descriptor sets\n");
-        exit(-18);
+        exit(VULKAN_ALLOCATE_DESCRIPTOR_SETS_FAILURE);
     }
 
     VkPipelineLayoutCreateInfo pipeline_layout_create_info={
@@ -565,7 +377,7 @@ Application* App_new(void){
     xcb_generic_error_t* change_property_error=xcb_request_check(app->connection, change_property_cookie);
     if(change_property_error!=NULL){
         fprintf(stderr,"failed to set property because %s\n",xcb_event_get_error_label(change_property_error->error_code));
-        exit(-7);
+        exit(XCB_CHANGE_PROPERTY_FAILURE);
     }
 
     xcb_map_window(app->connection,app->window);
@@ -768,7 +580,7 @@ Application* App_new(void){
     };
     res=vkCreateDevice(app->physical_device,&device_create_info,app->vk_allocator,&app->device);
     if(res!=VK_SUCCESS){
-        exit(-6);
+        exit(VULKAN_CREATE_DEVICE_FAILURE);
     }
     free(queue_create_infos);
 
@@ -788,7 +600,7 @@ Application* App_new(void){
     res=vkGetPhysicalDeviceSurfaceCapabilitiesKHR(app->physical_device,app->window_surface,&surface_capabilities);
     if(res!=VK_SUCCESS){
         fprintf(stderr,"vkGetPhysicalDeviceSurfaceCapabilitiesKHR failed with %d\n",res);
-        exit(-9);
+        exit(VULKAN_GET_PHYSICAL_DEVICE_SURFACE_CAPABILITIES_KHR_FAILURE);
     }
 
     uint32_t num_present_modes;
@@ -897,7 +709,7 @@ Application* App_new(void){
     res=vkCreateRenderPass(app->device,&render_pass_create_info,app->vk_allocator,&app->render_pass);
     if(res!=VK_SUCCESS){
         fprintf(stderr,"failed to create renderpass\n");
-        exit(-10);
+        exit(VULKAN_CREATE_RENDER_PASS_FAILURE);
     }
 
     VkImageViewCreateInfo image_view_create_info={
@@ -996,13 +808,13 @@ void App_run(Application* app){
     res=vkCreateSemaphore(app->device,&semaphore_create_info,app->vk_allocator,&image_available_semaphore);
     if(res!=VK_SUCCESS){
         fprintf(stderr,"failed to create semaphore\n");
-        exit(-11);
+        exit(VULKAN_CREATE_SEMAPHORE_FAILURE);
     }
     VkSemaphore rendering_finished_semaphore;
     res=vkCreateSemaphore(app->device,&semaphore_create_info,app->vk_allocator,&rendering_finished_semaphore);
     if(res!=VK_SUCCESS){
         fprintf(stderr,"failed to create semaphore\n");
-        exit(-11);
+        exit(VULKAN_CREATE_SEMAPHORE_FAILURE);
     }
 
     VkCommandPoolCreateInfo command_pool_create_info={
@@ -1015,7 +827,7 @@ void App_run(Application* app){
     res=vkCreateCommandPool(app->device, &command_pool_create_info, app->vk_allocator, &command_pool);
     if(res!=VK_SUCCESS){
         fprintf(stderr,"failed to create command pool\n");
-        exit(-14);
+        exit(VULKAN_CREATE_COMMAND_POOL_FAILURE);
     }
 
     VkCommandBufferAllocateInfo command_buffer_allocate_info={
@@ -1029,7 +841,7 @@ void App_run(Application* app){
     res=vkAllocateCommandBuffers(app->device, &command_buffer_allocate_info, command_buffers);
     if(res!=VK_SUCCESS){
         fprintf(stderr,"failed to allocate command buffers\n");
-        exit(-15);
+        exit(VULKAN_ALLOCATE_COMMAND_BUFFERS_FAILURE);
     }
 
     VkCommandBuffer command_buffer=command_buffers[0];
@@ -1066,7 +878,7 @@ void App_run(Application* app){
         res=vkAcquireNextImageKHR(app->device, app->swapchain, 0xffffffffffffffff, image_available_semaphore, VK_NULL_HANDLE, &next_swapchain_image_index);
         if(res!=VK_SUCCESS){
             fprintf(stderr,"failed to acquire next swapchain image\n");
-            exit(-12);
+            exit(VULKAN_ACQUIRE_NEXT_IMAGE_KHR_FAILURE);
         }
 
         VkCommandBufferBeginInfo command_buffer_begin_info={
@@ -1160,7 +972,7 @@ void App_run(Application* app){
         res=vkEndCommandBuffer(command_buffer);
         if(res!=VK_SUCCESS){
             fprintf(stderr,"failed to end command buffer\n");
-            exit(-16);
+            exit(VULKAN_END_COMMAND_BUFFER_FAILURE);
         }
 
         res=vkQueueSubmit(app->present_queue,1,(VkSubmitInfo[1]){{
@@ -1176,7 +988,7 @@ void App_run(Application* app){
         }},VK_NULL_HANDLE);
         if(res!=VK_SUCCESS){
             fprintf(stderr,"failed to submit swapchain presentation image\n");
-            exit(-14);
+            exit(VULKAN_QUEUE_SUBMIT_FAILURE);
         }
 
         VkPresentInfoKHR swapchain_present_info={
@@ -1192,7 +1004,7 @@ void App_run(Application* app){
         res=vkQueuePresentKHR(app->present_queue, &swapchain_present_info);
         if(res!=VK_SUCCESS){
             fprintf(stderr,"failed to present swapchain image\n");
-            exit(-13);
+            exit(VULKAN_QUEUE_PRESENT_KHR_FAILURE);
         }
 
         vkDeviceWaitIdle(app->device);
@@ -1215,20 +1027,4 @@ void App_run(Application* app){
     vkDestroyCommandPool(app->device,command_pool,app->vk_allocator);
 
     free(command_buffers);
-}
-
-int main(int argc, char**argv){
-    for(int i=0;i<argc;i++){
-        printf("got arg: %s\n",argv[i]);
-    }
-
-    Application *app=App_new();
-
-    App_set_window_title(app,"my window");
-
-    App_run(app);
-
-    App_destroy(app);
-    
-    return 0;
 }
