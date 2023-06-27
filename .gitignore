@@ -3,3 +3,6 @@
 *.spv
 /.cache
 compile_commands.json
+/docs
+
+.DS_Store

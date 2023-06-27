@@ -1,5 +1,9 @@
 #pragma once
 
+/**
+ * @brief exit codes specifying the cause of the program exit
+ * 
+ */
 enum AppError{
     // xcb errors
     XCB_CONNECT_FAILURE            = -0x001,
