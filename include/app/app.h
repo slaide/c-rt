@@ -1,5 +1,6 @@
 #pragma once
 
+#include "vulkan/vulkan_core.h"
 #include <stdint.h>
 #include <stdio.h>
 #include <memory.h>
@@ -7,9 +8,6 @@
 #include <stdlib.h>
 #include <time.h>
 
-#include <xcb/xcb.h>
-#include <xcb/xcb_util.h>
-#define VK_USE_PLATFORM_XCB_KHR
 #include <vulkan/vulkan.h>
 
 #include "app/error.h"
@@ -17,6 +15,8 @@
 #define block if(1)
 #define discard (void)
 
+typedef struct PlatformWindow PlatformWindow;
+typedef struct PlatformHandle PlatformHandle;
 typedef struct Application Application;
 
 typedef struct VertexData{
@@ -51,9 +51,8 @@ typedef struct Shader{
 }Shader;
 
 typedef struct Application{
-    xcb_connection_t* connection;
-    xcb_window_t window;
-    xcb_atom_t delete_window_atom;
+    PlatformHandle* platform_handle;
+    PlatformWindow* platform_window;
 
     VkInstance instance;
     VkAllocationCallbacks* vk_allocator;
@@ -79,10 +78,14 @@ typedef struct Application{
     Shader* shader;
 } Application;
 
-Application* App_new(void);
-void App_set_window_title(Application* app,const char* title);
+Application* App_new(PlatformHandle* platform);
 void App_run(Application* app);
 void App_destroy(Application* app);
+
+PlatformWindow* App_create_window(Application* app);
+VkSurfaceKHR App_create_window_vk_surface(Application* app,PlatformWindow* platform_window);
+void App_destroy_window(Application* app, PlatformWindow* window);
+void App_set_window_title(Application* app, PlatformWindow* window, const char* title);
 
 Mesh* App_upload_mesh(
     Application* app,

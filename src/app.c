@@ -1,4 +1,87 @@
 #include "app/app.h"
+#include "vulkan/vulkan_core.h"
+
+/// get string representation of VkResult value
+const char* vkRes2str(VkResult res){
+    #define CASE(VAL) case(VAL): return #VAL;
+
+    switch(res){
+        CASE(VK_SUCCESS)
+
+        CASE(VK_NOT_READY)
+        CASE(VK_TIMEOUT)
+        CASE(VK_EVENT_SET)
+        CASE(VK_EVENT_RESET)
+        CASE(VK_INCOMPLETE)
+        CASE(VK_ERROR_OUT_OF_HOST_MEMORY)
+        CASE(VK_ERROR_OUT_OF_DEVICE_MEMORY)
+        CASE(VK_ERROR_INITIALIZATION_FAILED)
+        CASE(VK_ERROR_DEVICE_LOST)
+        CASE(VK_ERROR_MEMORY_MAP_FAILED)
+        CASE(VK_ERROR_LAYER_NOT_PRESENT)
+        CASE(VK_ERROR_EXTENSION_NOT_PRESENT)
+        CASE(VK_ERROR_FEATURE_NOT_PRESENT)
+        CASE(VK_ERROR_INCOMPATIBLE_DRIVER)
+        CASE(VK_ERROR_TOO_MANY_OBJECTS)
+        CASE(VK_ERROR_FORMAT_NOT_SUPPORTED)
+        CASE(VK_ERROR_FRAGMENTED_POOL)
+        CASE(VK_ERROR_UNKNOWN)
+
+        // Provided by VK_VERSION_1_1
+        CASE(VK_ERROR_OUT_OF_POOL_MEMORY)
+        // Provided by VK_VERSION_1_1
+        CASE(VK_ERROR_INVALID_EXTERNAL_HANDLE)
+        // Provided by VK_VERSION_1_2
+        CASE(VK_ERROR_FRAGMENTATION)
+        // Provided by VK_VERSION_1_2
+        CASE(VK_ERROR_INVALID_OPAQUE_CAPTURE_ADDRESS)
+        // Provided by VK_VERSION_1_3
+        CASE(VK_PIPELINE_COMPILE_REQUIRED)
+        // Provided by VK_KHR_surface
+        CASE(VK_ERROR_SURFACE_LOST_KHR)
+        // Provided by VK_KHR_surface
+        CASE(VK_ERROR_NATIVE_WINDOW_IN_USE_KHR)
+        // Provided by VK_KHR_swapchain
+        CASE(VK_SUBOPTIMAL_KHR)
+        // Provided by VK_KHR_swapchain
+        CASE(VK_ERROR_OUT_OF_DATE_KHR)
+        // Provided by VK_KHR_display_swapchain
+        CASE(VK_ERROR_INCOMPATIBLE_DISPLAY_KHR)
+        // Provided by VK_EXT_debug_report
+        CASE(VK_ERROR_VALIDATION_FAILED_EXT)
+        // Provided by VK_NV_glsl_shader
+        CASE(VK_ERROR_INVALID_SHADER_NV)
+        // Provided by VK_KHR_video_queue
+        CASE(VK_ERROR_IMAGE_USAGE_NOT_SUPPORTED_KHR)
+        // Provided by VK_KHR_video_queue
+        CASE(VK_ERROR_VIDEO_PICTURE_LAYOUT_NOT_SUPPORTED_KHR)
+        // Provided by VK_KHR_video_queue
+        CASE(VK_ERROR_VIDEO_PROFILE_OPERATION_NOT_SUPPORTED_KHR)
+        // Provided by VK_KHR_video_queue
+        CASE(VK_ERROR_VIDEO_PROFILE_FORMAT_NOT_SUPPORTED_KHR)
+        // Provided by VK_KHR_video_queue
+        CASE(VK_ERROR_VIDEO_PROFILE_CODEC_NOT_SUPPORTED_KHR)
+        // Provided by VK_KHR_video_queue
+        CASE(VK_ERROR_VIDEO_STD_VERSION_NOT_SUPPORTED_KHR)
+        // Provided by VK_EXT_image_drm_format_modifier
+        CASE(VK_ERROR_INVALID_DRM_FORMAT_MODIFIER_PLANE_LAYOUT_EXT)
+        // Provided by VK_KHR_global_priority
+        CASE(VK_ERROR_NOT_PERMITTED_KHR)
+        // Provided by VK_EXT_full_screen_exclusive
+        CASE(VK_ERROR_FULL_SCREEN_EXCLUSIVE_MODE_LOST_EXT)
+        // Provided by VK_KHR_deferred_host_operations
+        CASE(VK_THREAD_IDLE_KHR)
+        // Provided by VK_KHR_deferred_host_operations
+        CASE(VK_THREAD_DONE_KHR)
+        // Provided by VK_KHR_deferred_host_operations
+        CASE(VK_OPERATION_DEFERRED_KHR)
+        // Provided by VK_KHR_deferred_host_operations
+        CASE(VK_OPERATION_NOT_DEFERRED_KHR)
+
+        default:
+            return "(unimplemented result)";
+    }
+}
 
 /// return string representation of a physical device type
 ///
@@ -34,21 +117,6 @@ VertexData mesh[4]={
     }
 };
 
-xcb_atom_t App_xcb_intern_atom(Application* app,const char* atom_name){
-    xcb_intern_atom_cookie_t atom_cookie=xcb_intern_atom(app->connection, 0, strlen(atom_name), atom_name);
-    xcb_intern_atom_reply_t* atom_reply=xcb_intern_atom_reply(app->connection, atom_cookie, NULL);
-    xcb_atom_t atom=atom_reply->atom;
-    free(atom_reply);
-    return atom;
-}
-
-void App_set_window_title(Application* app,const char* title){
-    xcb_atom_t net_wm_name=App_xcb_intern_atom(app,"_NET_WM_NAME");
-    xcb_atom_t net_wm_visible_name=App_xcb_intern_atom(app,"_NET_WM_VISIBLE_NAME");
-
-    xcb_change_property_checked(app->connection, XCB_PROP_MODE_REPLACE, app->window, net_wm_name, App_xcb_intern_atom(app,"UTF8_STRING"), 8, strlen(title), title);
-    xcb_change_property_checked(app->connection, XCB_PROP_MODE_REPLACE, app->window, net_wm_visible_name, App_xcb_intern_atom(app,"UTF8_STRING"), 8, strlen(title), title);
-}
 
 VkShaderModule App_create_shader_module(Application* app,const char* shader_file_path){
     FILE* shader_file=fopen(shader_file_path,"rb");
@@ -324,63 +392,11 @@ void App_destroy_shader(Shader* shader){
 /// create a new app
 ///
 /// this struct owns all memory, unless indicated otherwise
-Application* App_new(void){
+Application* App_new(PlatformHandle* platform){
+    printf("started creating app\n");
     Application* app=malloc(sizeof(Application));
 
-    app->connection=xcb_connect(NULL,NULL);
-    int xcb_connection_error_state=xcb_connection_has_error(app->connection);
-    if(xcb_connection_error_state!=0){
-        fprintf(stderr,"xcb connection error state %d\n",xcb_connection_error_state);
-        exit(XCB_CONNECT_FAILURE);
-    }
-    const xcb_setup_t* setup=xcb_get_setup(app->connection);
-    xcb_screen_iterator_t screens=xcb_setup_roots_iterator(setup);
-
-    app->window=xcb_generate_id(app->connection);
-    xcb_flush(app->connection);
-
-    // possible value mask values are in enum xcb_cw_t
-    xcb_cw_t value_mask=XCB_CW_EVENT_MASK;
-    const uint32_t value_list[]={
-        XCB_EVENT_MASK_BUTTON_PRESS
-        | XCB_EVENT_MASK_BUTTON_RELEASE
-        | XCB_EVENT_MASK_KEY_PRESS
-        | XCB_EVENT_MASK_KEY_RELEASE
-        | XCB_EVENT_MASK_POINTER_MOTION
-        | XCB_EVENT_MASK_STRUCTURE_NOTIFY
-    };
-
-    xcb_void_cookie_t window_create_reply=xcb_create_window_checked(
-        app->connection, 
-        XCB_COPY_FROM_PARENT, 
-        app->window, 
-        screens.data->root, 
-        0,0, 
-        640,480, 
-        10, 
-        XCB_WINDOW_CLASS_INPUT_OUTPUT, 
-        screens.data->root_visual, 
-        value_mask,
-        value_list
-    );
-    xcb_flush(app->connection);
-    xcb_generic_error_t* window_create_error=xcb_request_check(app->connection, window_create_reply);
-    if(window_create_error!=NULL && window_create_error->error_code!=0){
-        fprintf(stderr,"failed to create window %d\n",window_create_error->error_code);
-        exit(XCB_WINDOW_CREATE_FAILURE);
-    }
-
-    app->delete_window_atom=App_xcb_intern_atom(app, "WM_DELETE_WINDOW");
-    xcb_atom_t wm_protocols_atom=App_xcb_intern_atom(app, "WM_PROTOCOLS");
-
-    xcb_void_cookie_t change_property_cookie=xcb_change_property_checked(app->connection, XCB_PROP_MODE_REPLACE, app->window, wm_protocols_atom, XCB_ATOM_ATOM, 32, 1, (xcb_atom_t[]){app->delete_window_atom});
-    xcb_generic_error_t* change_property_error=xcb_request_check(app->connection, change_property_cookie);
-    if(change_property_error!=NULL){
-        fprintf(stderr,"failed to set property because %s\n",xcb_event_get_error_label(change_property_error->error_code));
-        exit(XCB_CHANGE_PROPERTY_FAILURE);
-    }
-
-    xcb_map_window(app->connection,app->window);
+    app->platform_handle=platform;
 
     block{
         uint32_t num_instance_extensions;
@@ -404,22 +420,48 @@ Application* App_new(void){
         free(layer_extensions);
     }
 
+    uint32_t create_instance_flags=0;
+    #ifdef VK_USE_PLATFORM_METAL_EXT
+        create_instance_flags |= VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR;
+    #endif
+
     const char* instance_layers[1]={
         "VK_LAYER_KHRONOS_validation"
     };
     uint32_t num_instance_layers=1;
 
-    const char* instance_extensions[2]={
+    const char* instance_extensions[]={
         "VK_KHR_surface",
-        "VK_KHR_xcb_surface"
-    };
-    uint32_t num_instance_extensions=2;
 
+        #ifdef VK_USE_PLATFORM_XCB_KHR
+            "VK_KHR_xcb_surface"
+        #elifdef VK_USE_PLATFORM_METAL_EXT
+            "VK_EXT_metal_surface",
+            "VK_KHR_portability_enumeration",
+            "VK_KHR_get_physical_device_properties2"
+        #endif
+    };
+    uint32_t num_instance_extensions=1;
+    #ifdef VK_USE_PLATFOR_XCB_KHR
+        num_instance_extensions+=1;
+    #elifdef VK_USE_PLATFORM_METAL_EXT
+        num_instance_extensions+=3;
+    #endif
+
+    VkApplicationInfo application_info={
+        .sType=VK_STRUCTURE_TYPE_APPLICATION_INFO,
+        .pNext=NULL,
+        .pApplicationName="my application",
+        .applicationVersion=VK_MAKE_VERSION(0, 1, 0),
+        .pEngineName="my engine",
+        .engineVersion=VK_MAKE_VERSION(0, 1, 0),
+        .apiVersion=VK_API_VERSION_1_0
+    };
     VkInstanceCreateInfo instance_create_info={
         .sType=VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
         .pNext=NULL,
-        .flags=0,
-        .pApplicationInfo=NULL,
+        .flags=create_instance_flags,
+        .pApplicationInfo=&application_info,
         .enabledLayerCount=num_instance_layers,
         .ppEnabledLayerNames=instance_layers,
         .enabledExtensionCount=num_instance_extensions,
@@ -427,20 +469,13 @@ Application* App_new(void){
     };
     VkResult res=vkCreateInstance(&instance_create_info,app->vk_allocator,&app->instance);
     if(res!=VK_SUCCESS){
+        fprintf(stderr,"failed to create vulkan instance because %s\n",vkRes2str(res));
         exit(VULKAN_CREATE_INSTANCE_FAILURE);
     }
 
-    VkXcbSurfaceCreateInfoKHR surface_create_info={
-        .sType=VK_STRUCTURE_TYPE_XCB_SURFACE_CREATE_INFO_KHR,
-        .pNext=NULL,
-        .flags=0,
-        .connection=app->connection,
-        .window=app->window
-    };
-    res=vkCreateXcbSurfaceKHR(app->instance, &surface_create_info, app->vk_allocator, &app->window_surface);
-    if(res!=VK_SUCCESS){
-        exit(VULKAN_CREATE_XCB_SURFACE_FAILURE);
-    }
+    app->platform_window=App_create_window(app);
+
+    app->window_surface=App_create_window_vk_surface(app,app->platform_window);
 
     uint32_t num_physical_devices;
     vkEnumeratePhysicalDevices(app->instance, &num_physical_devices, NULL);
@@ -480,6 +515,9 @@ Application* App_new(void){
 
             if(surface_presentation_supported==VK_TRUE){
                 present_queue_family_index=queue_family_index;
+                printf("does support presentation\n");
+            }else{
+                printf("does not support presentation\n");
             }
 
             // prefer a queue that supports both
@@ -561,9 +599,17 @@ Application* App_new(void){
         "VK_LAYER_KHRONOS_validation"
     };
     uint32_t num_device_extensions=1;
-    const char *device_extensions[1]={
+    const char *device_extensions[]={
         "VK_KHR_swapchain"
+        #ifdef VK_USE_PLATFORM_METAL_EXT
+        ,
+        "VK_KHR_portability_subset"
+        #endif
     };
+    #ifdef VK_USE_PLATFORM_METAL_EXT
+        num_device_extensions+=1;
+    #endif
+
     VkPhysicalDeviceFeatures device_features;
     memset(&device_features,VK_FALSE,sizeof(VkPhysicalDeviceFeatures));
     VkDeviceCreateInfo device_create_info={
@@ -647,15 +693,15 @@ Application* App_new(void){
     uint32_t num_render_pass_attachments=1;
     VkAttachmentDescription render_pass_attachments[1]={
         {
-                /*VkAttachmentDescriptionFlags*/    .flags=0,
-                /*VkFormat*/                        .format=app->swapchain_format.format,
-                /*VkSampleCountFlagBits*/           .samples=VK_SAMPLE_COUNT_1_BIT,
-                /*VkAttachmentLoadOp*/              .loadOp=VK_ATTACHMENT_LOAD_OP_CLEAR,
-                /*VkAttachmentStoreOp*/             .storeOp=VK_ATTACHMENT_STORE_OP_STORE,
-                /*VkAttachmentLoadOp*/              .stencilLoadOp=VK_ATTACHMENT_LOAD_OP_DONT_CARE,
-                /*VkAttachmentStoreOp*/             .stencilStoreOp=VK_ATTACHMENT_STORE_OP_DONT_CARE,
-                /*VkImageLayout*/                   .initialLayout=VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
-                /*VkImageLayout*/                   .finalLayout=VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+            /*VkAttachmentDescriptionFlags*/    .flags=0,
+            /*VkFormat*/                        .format=app->swapchain_format.format,
+            /*VkSampleCountFlagBits*/           .samples=VK_SAMPLE_COUNT_1_BIT,
+            /*VkAttachmentLoadOp*/              .loadOp=VK_ATTACHMENT_LOAD_OP_CLEAR,
+            /*VkAttachmentStoreOp*/             .storeOp=VK_ATTACHMENT_STORE_OP_STORE,
+            /*VkAttachmentLoadOp*/              .stencilLoadOp=VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+            /*VkAttachmentStoreOp*/             .stencilStoreOp=VK_ATTACHMENT_STORE_OP_DONT_CARE,
+            /*VkImageLayout*/                   .initialLayout=VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+            /*VkImageLayout*/                   .finalLayout=VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
         }
     };
     uint32_t num_render_pass_subpass=1;
@@ -760,6 +806,8 @@ Application* App_new(void){
 
     app->shader=App_create_shader(app,0,render_pass_create_info.subpassCount);
 
+    printf("created app\n");
+
     return app;
 }
 /// destroy an app
@@ -788,10 +836,6 @@ void App_destroy(Application* app){
 
         vkDestroyInstance(app->instance,app->vk_allocator);
     }
-
-    xcb_unmap_window(app->connection,app->window);
-    xcb_destroy_window(app->connection,app->window);
-    xcb_disconnect(app->connection);
 
     free(app);
 }
@@ -855,6 +899,7 @@ void App_run(Application* app){
             break;
         }
 
+        #ifdef VK_USE_PLATFORM_XCB_KHR
         xcb_generic_event_t* event;
         while((event=xcb_poll_for_event(app->connection))){
             // full sequence is essentially event id
@@ -873,6 +918,7 @@ void App_run(Application* app){
                     printf("got event %s\n",xcb_event_get_label(event_type));
             }
         }
+        #endif
 
         uint32_t next_swapchain_image_index;
         res=vkAcquireNextImageKHR(app->device, app->swapchain, 0xffffffffffffffff, image_available_semaphore, VK_NULL_HANDLE, &next_swapchain_image_index);

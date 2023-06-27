@@ -1,6 +1,19 @@
 MODE ?= debug
+PLATFORM ?= linux
 
-# Set compilation flags based on build mode
+.PHONY: default
+default: run
+
+CC = clang
+OBJCC = clang
+CSTD = -std=gnu2x
+LINKS = -lvulkan
+FLAGS = $(OPT_FLAGS) -Wall -Werror -Wpedantic -Wextra
+CINCLUDE = -Iinclude
+CDEF = 
+
+BUILD_OBJS = app.c.o app_mesh.c.o
+
 ifeq ($(MODE), debug)
 	OPT_FLAGS := -g -O0
 else ifeq ($(MODE), release)
@@ -9,23 +22,34 @@ else
 $(error Invalid build mode: $(MODE) (valid options are { release | debug }))
 endif
 
-CC = clang
-CSTD = -std=gnu17
-LINKS = -lxcb -lvulkan -lxcb-util
-FLAGS = $(OPT_FLAGS) -Wall -Werror -Wpedantic -Wextra
-CINCLUDE = -Iinclude
+ifeq ($(PLATFORM), linux)
+	LINKS += -lxcb -lxcb-util
+	CDEF += -DVK_USE_PLATFORM_XCB_KHR
 
-COMPILE = $(CC) $(CSTD) $(FLAGS) $(CINCLUDE)
+	BUILD_OBJS += main.c.o
+else ifeq ($(PLATFORM), macos)
+	LINKS += -framework Appkit -framework Metal -framework MetalKit -framework QuartzCore
+	CDEF += -DVK_USE_PLATFORM_METAL_EXT
+	CINCLUDE += -I/opt/vulkansdk/macOS/include
 
-.PHONY: default
-default: run
+	BUILD_OBJS += platform_macos.m.o
 
-%.o: src/%.c
-	$(COMPILE) -c -o $@ $<
+%.m.o: src/%.m
+	$(OBJCC) $(FLAGS) $(CDEF) $(CINCLUDE) -c -o $@ $<
 
-BUILD_OBJS = main.o app.o app_mesh.o
+else
+
+$(error Invalid build mode: $(MODE) (valid options are { release | debug }))
+
+endif
+
+CCOMPILE = $(CC) $(CSTD) $(CDEF) $(FLAGS) $(CINCLUDE)
+
+%.c.o: src/%.c
+	$(CCOMPILE) -c -o $@ $<
+
 build: $(BUILD_OBJS)
-	$(COMPILE) $(LINKS) -o main $(BUILD_OBJS)
+	$(CCOMPILE) $(LINKS) -o main $(BUILD_OBJS)
 
 shaders/vert.spv: shaders/shader.vert
 	glslangValidator shaders/shader.vert -V -o shaders/vert.spv
