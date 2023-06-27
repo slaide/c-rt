@@ -17,6 +17,29 @@
  * 
  */
 
+typedef enum InputEventType{
+    INPUT_EVENT_TYPE_KEY_PRESS,
+    INPUT_EVENT_TYPE_WINDOW_CLOSE,
+
+    INPUT_EVENT_TYPE_UNIMPLEMENTED,
+}InputEventType;
+typedef struct InputEventKeyPress{
+    int input_event_type;
+
+    int key;
+}InputEventKeyPress;
+typedef struct InputEventGeneric{
+    int input_event_type;
+}InputEventGeneric;
+typedef struct InputEventWindowClose{
+    int input_event_type;
+}InputEventWindowClose;
+typedef union InputEvent{
+    InputEventGeneric generic;
+    InputEventKeyPress keypress;
+    InputEventWindowClose windowclose;
+}InputEvent;
+
 #include "vulkan/vulkan_core.h"
 #include <stdint.h>
 #include <stdio.h>
@@ -193,6 +216,15 @@ PlatformWindow* App_create_window(Application* app);
  * @return VkSurfaceKHR 
  */
 VkSurfaceKHR App_create_window_vk_surface(Application* app,PlatformWindow* platform_window);
+
+/**
+ * @brief attempt to retrieve a user input event
+ * 
+ * @param app 
+ * @param event 
+ * @return 1 if an event is present, otherwise 0
+ */
+int App_get_input_event(Application* app,InputEvent* event);
 /**
  * @brief destroy a window
  * 

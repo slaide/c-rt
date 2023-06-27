@@ -161,7 +161,7 @@ Texture* App_create_texture(Application* app, ImageData* image_data){
     VkResult res=vkCreateImage(app->device,&image_create_info,app->vk_allocator,&texture->image);
     if(res!=VK_SUCCESS){
         fprintf(stderr,"failed to create image\n");
-        exit(-1);
+        exit(VULKAN_CREATE_IMAGE_FAILURE);
     }
 
     VkMemoryRequirements image_memory_requirements;
@@ -186,12 +186,12 @@ Texture* App_create_texture(Application* app, ImageData* image_data){
     res=vkAllocateMemory(app->device, &image_memory_allocate_info, app->vk_allocator, &texture->image_memory);
     if(res!=VK_SUCCESS){
         fprintf(stderr,"failed to allocate image memory\n");
-        exit(-1);
+        exit(VULKAN_ALLOCATE_MEMORY_FAILURE);
     }
     res=vkBindImageMemory(app->device, texture->image, texture->image_memory, 0);
     if(res!=VK_SUCCESS){
         fprintf(stderr,"failed to bind image memory\n");
-        exit(-1);
+        exit(VULKAN_BIND_IMAGE_MEMORY_FAILURE);
     }
 
     VkImageSubresourceRange image_subresource_range={
@@ -219,7 +219,7 @@ Texture* App_create_texture(Application* app, ImageData* image_data){
     res=vkCreateImageView(app->device,&image_view_create_info,app->vk_allocator,&texture->image_view);
     if(res!=VK_SUCCESS){
         fprintf(stderr,"failed to create image view\n");
-        exit(-1);
+        exit(VULKAN_CREATE_IMAGE_VIEW_FAILURE);
     }
 
     VkSamplerCreateInfo sampler_create_info={
@@ -554,6 +554,7 @@ Application* App_new(PlatformHandle* platform){
     printf("started creating app\n");
     Application* app=malloc(sizeof(Application));
 
+    app->vk_allocator=NULL;
     app->platform_handle=platform;
 
     block{
@@ -600,7 +601,7 @@ Application* App_new(PlatformHandle* platform){
         #endif
     };
     uint32_t num_instance_extensions=1;
-    #ifdef VK_USE_PLATFOR_XCB_KHR
+    #ifdef VK_USE_PLATFORM_XCB_KHR
         num_instance_extensions+=1;
     #elifdef VK_USE_PLATFORM_METAL_EXT
         num_instance_extensions+=3;
@@ -1005,13 +1006,13 @@ Application* App_new(PlatformHandle* platform){
     res=vkAllocateMemory(app->device, &staging_buffer_memory_allocate_info, app->vk_allocator, &app->staging_buffer_memory);
     if(res!=VK_SUCCESS){
         fprintf(stderr,"failed to allocate staging buffer memory\n");
-        exit(-25);
+        exit(VULKAN_ALLOCATE_MEMORY_FAILURE);
     }
 
     res=vkBindBufferMemory(app->device, app->staging_buffer, app->staging_buffer_memory, 0);
     if(res!=VK_SUCCESS){
         fprintf(stderr,"failed to bind staging buffer memory\n");
-        exit(-26);
+        exit(VULKAN_BIND_BUFFER_MEMORY_FAILURE);
     }
 
     printf("created app\n");
@@ -1111,32 +1112,22 @@ void App_run(Application* app){
     discard sometexture;//App_destroy_texture(app,sometexture);
 
     int frame=0;
-    int window_should_close=0;
+    bool window_should_close=false;
     while(1){
         if(window_should_close){
             break;
         }
 
-        #ifdef VK_USE_PLATFORM_XCB_KHR
-        xcb_generic_event_t* event;
-        while((event=xcb_poll_for_event(app->connection))){
-            // full sequence is essentially event id
-            // sequence is the lower half of the event id
-            uint8_t event_type=XCB_EVENT_RESPONSE_TYPE(event);
-            switch(event_type){
-                case XCB_CLIENT_MESSAGE:
-                    block{
-                        xcb_client_message_event_t* client_message = (xcb_client_message_event_t*) event;
-                        if(client_message->data.data32[0]==app->delete_window_atom){
-                            window_should_close=1;
-                        }
-                    }
+        InputEvent event;
+        while(App_get_input_event(app,&event)){
+            switch(event.generic.input_event_type){
+                case INPUT_EVENT_TYPE_WINDOW_CLOSE:
+                    window_should_close=true;
                     break;
                 default:
-                    printf("got event %s\n",xcb_event_get_label(event_type));
+                    ;
             }
         }
-        #endif
 
         uint32_t next_swapchain_image_index;
         res=vkAcquireNextImageKHR(app->device, app->swapchain, 0xffffffffffffffff, image_available_semaphore, VK_NULL_HANDLE, &next_swapchain_image_index);

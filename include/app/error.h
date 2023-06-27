@@ -9,6 +9,7 @@ enum AppError{
     XCB_CONNECT_FAILURE            = -0x001,
     XCB_WINDOW_CREATE_FAILURE      = -0x002,
     XCB_CHANGE_PROPERTY_FAILURE    = -0x003,
+    XCB_INTERN_ATOM_FAILURE        = -0x004,
 
     // vulkan errors
     VULKAN_CREATE_INSTANCE_FAILURE =                -0x100,
@@ -30,6 +31,9 @@ enum AppError{
     VULKAN_ACQUIRE_NEXT_IMAGE_KHR_FAILURE =         -0x110,
     VULKAN_END_COMMAND_BUFFER_FAILURE =             -0x111,
     VULKAN_QUEUE_SUBMIT_FAILURE =                   -0x112,
+    VULKAN_CREATE_IMAGE_FAILURE =                   -0x113,
+    VULKAN_BIND_IMAGE_MEMORY_FAILURE =              -0x114,
+    VULKAN_CREATE_IMAGE_VIEW_FAILURE =              -0x115,
 
     // other errors
     FATAL_UNEXPECTED_ERROR = -0x400,
