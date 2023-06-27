@@ -1,5 +1,6 @@
 #include "vulkan/vulkan_core.h"
 #include <Foundation/Foundation.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <memory.h>
 #include <objc/objc.h>
@@ -148,6 +149,13 @@ CVReturn display_link_callback(
     }
 
 @end
+
+int App_get_input_event(Application *app, InputEvent *event){
+    discard app;
+    discard event;
+    
+    return  INPUT_EVENT_NOT_PRESENT;
+}
 
 int main(int argc, char *argv[]){
     discard argc;

@@ -217,6 +217,8 @@ PlatformWindow* App_create_window(Application* app);
  */
 VkSurfaceKHR App_create_window_vk_surface(Application* app,PlatformWindow* platform_window);
 
+#define INPUT_EVENT_PRESENT 1
+#define INPUT_EVENT_NOT_PRESENT 0
 /**
  * @brief attempt to retrieve a user input event
  * 

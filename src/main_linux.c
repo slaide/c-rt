@@ -68,8 +68,6 @@ VkSurfaceKHR App_create_window_vk_surface(Application* app,PlatformWindow* platf
     return surface;
 }
 
-#define INPUT_EVENT_PRESENT 1
-#define INPUT_EVENT_NOT_PRESENT 0
 int App_get_input_event(Application* app,InputEvent* input_event){
     xcb_generic_event_t* xcb_event=xcb_poll_for_event(app->platform_handle->connection);
     if(xcb_event == NULL){
