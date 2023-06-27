@@ -1,4 +1,5 @@
 #include "vulkan/vulkan_core.h"
+#include <CoreVideo/CoreVideo.h>
 #include <Foundation/Foundation.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -37,6 +38,110 @@
 struct PlatformWindow{
     MyWindow* window;
 };
+
+@implementation MyWindow
+    - (instancetype)initWithContentRect:(NSRect)contentRect styleMask:(NSWindowStyleMask)style{
+        self=[
+            super
+            initWithContentRect:contentRect
+            styleMask:style
+            backing:NSBackingStoreBuffered
+            defer:NO
+        ];
+    
+        self.contentView=[[MyView alloc] init];
+
+        return self;
+    }
+
+    - (void)sendEvent:(NSEvent *)event {
+        //NSLog(@"Received event: %@", event);
+
+        // Pass the event to the superclass for default handling
+        [super sendEvent:event];
+    }
+@end
+
+@interface MyAppDelegate : NSObject <NSApplicationDelegate, NSWindowDelegate> 
+
+    @property(assign, nonatomic) Application* app;
+    @property(nonatomic) CVDisplayLinkRef display_link;
+    @property (nonatomic, strong) NSMutableArray *eventList;
+
+@end
+
+struct PlatformHandle{
+    MyAppDelegate* app;
+};
+
+CVReturn display_link_callback(
+    CVDisplayLinkRef displayLink,
+    const CVTimeStamp *inNow,
+    const CVTimeStamp *inOutputTime,
+    CVOptionFlags flagsIn,
+    CVOptionFlags *flagsOut,
+    void *displayLinkContext
+){
+    discard displayLink;
+    discard inNow;
+    discard inOutputTime;
+    discard flagsIn;
+    discard flagsOut;
+
+    Application* app=(Application*)displayLinkContext;
+    App_run(app);
+    
+    CVDisplayLinkStop(app->platform_handle->app.display_link);
+
+    App_destroy(app);
+
+    [[NSApplication sharedApplication] terminate:nil];
+
+    return kCVReturnSuccess;
+}
+
+@interface WindowCloseEvent : NSObject
+
+    @property (nonatomic, strong) NSWindow *window;
+
+@end
+@implementation WindowCloseEvent
+
+@end
+
+@implementation MyAppDelegate
+
+    - (void)applicationDidFinishLaunching:(NSNotification *)notification{
+        PlatformHandle* myplatform=malloc(sizeof(PlatformHandle));
+        myplatform->app=self;
+        Application* main_app=App_new(myplatform);
+
+        CVDisplayLinkRef display_link;
+        CVDisplayLinkCreateWithActiveCGDisplays(&display_link);
+        CVDisplayLinkSetOutputCallback(display_link, display_link_callback, main_app);
+        CVDisplayLinkStart(display_link);
+
+        self.display_link=display_link;
+        printf("app finished launching\n");
+
+        self.eventList=[NSMutableArray array];
+    }
+    - (BOOL)applicationShouldTerminateAfterLastWindowClosed:(NSApplication *)sender {
+        return NO;
+    }
+    - (void)windowWillClose:(NSNotification *)notification {
+        NSWindow *closingWindow = notification.object;
+        
+        // Handle the window closing here
+        NSLog(@"Window will close: %@", closingWindow);
+
+        WindowCloseEvent* windowCloseEvent=[WindowCloseEvent alloc];
+        windowCloseEvent.window=closingWindow;
+        [self.eventList addObject:windowCloseEvent];
+    }
+
+@end
+
 PlatformWindow* App_create_window(Application* app){
     discard app;
 
@@ -52,6 +157,8 @@ PlatformWindow* App_create_window(Application* app){
 
     // from docs: Moves the window to the front of the screen list, within its level, and makes it the key window; that is, it shows the window.
     [window->window makeKeyAndOrderFront:nil];
+
+    window->window.delegate=app->platform_handle->app;
 
     return window;
 }
@@ -80,81 +187,22 @@ void App_set_window_title(Application* app, PlatformWindow* window, const char* 
     [window->window setTitle:[NSString stringWithUTF8String:title]];
 }
 
-@implementation MyWindow
-    - (instancetype)initWithContentRect:(NSRect)contentRect styleMask:(NSWindowStyleMask)style{
-        self=[
-            super
-            initWithContentRect:contentRect
-            styleMask:style
-            backing:NSBackingStoreBuffered
-            defer:NO
-        ];
-    
-        self.contentView=[[MyView alloc] init];
-
-        return self;
-    }
-@end
-
-@interface MyAppDelegate : NSObject <NSApplicationDelegate> 
-
-    @property(assign, nonatomic) Application* app;
-    @property(nonatomic) CVDisplayLinkRef display_link;
-
-@end
-
-struct PlatformHandle{
-    MyAppDelegate* app;
-};
-
-CVReturn display_link_callback(
-    CVDisplayLinkRef displayLink,
-    const CVTimeStamp *inNow,
-    const CVTimeStamp *inOutputTime,
-    CVOptionFlags flagsIn,
-    CVOptionFlags *flagsOut,
-    void *displayLinkContext
-){
-    discard displayLink;
-    discard inNow;
-    discard inOutputTime;
-    discard flagsIn;
-    discard flagsOut;
-
-    Application* app=(Application*)displayLinkContext;
-    App_run(app);
-
-    App_destroy(app);
-
-    return kCVReturnSuccess;
-}
-
-@implementation MyAppDelegate
-
-    - (void)applicationDidFinishLaunching:(NSNotification *)notification{
-        PlatformHandle* myplatform=malloc(sizeof(PlatformHandle));
-        myplatform->app=self;
-        Application* main_app=App_new(myplatform);
-
-        CVDisplayLinkRef display_link;
-        CVDisplayLinkCreateWithActiveCGDisplays(&display_link);
-        CVDisplayLinkSetOutputCallback(display_link, display_link_callback, main_app);
-        CVDisplayLinkStart(display_link);
-
-        self.display_link=display_link;
-        printf("app finished launching\n");
-    }
-    - (BOOL)applicationShouldTerminateAfterLastWindowClosed:(NSApplication *)sender {
-        return YES;
-    }
-
-@end
-
 int App_get_input_event(Application *app, InputEvent *event){
     discard app;
     discard event;
-    
-    return  INPUT_EVENT_NOT_PRESENT;
+
+    if (app->platform_handle->app.eventList.count>0) {
+        id nextEvent=[app->platform_handle->app.eventList firstObject];
+        [app->platform_handle->app.eventList removeObjectAtIndex:0];
+
+        if ([nextEvent isKindOfClass:[WindowCloseEvent class]]) {
+            event->generic.input_event_type=INPUT_EVENT_TYPE_WINDOW_CLOSE;
+        }
+
+        return INPUT_EVENT_PRESENT;
+    }
+
+    return INPUT_EVENT_NOT_PRESENT;
 }
 
 int main(int argc, char *argv[]){
