@@ -82,7 +82,6 @@ CVReturn display_link_callback(
     CVOptionFlags *flagsOut,
     void *displayLinkContext
 ){
-    discard displayLink;
     discard inNow;
     discard inOutputTime;
     discard flagsIn;
@@ -90,10 +89,10 @@ CVReturn display_link_callback(
 
     Application* app=(Application*)displayLinkContext;
     App_run(app);
-    
-    CVDisplayLinkStop(app->platform_handle->app.display_link);
 
     App_destroy(app);
+    
+    CVDisplayLinkStop(displayLink);
 
     [[NSApplication sharedApplication] terminate:nil];
 
@@ -180,6 +179,8 @@ VkSurfaceKHR App_create_window_vk_surface(Application* app,PlatformWindow* platf
 }
 void App_destroy_window(Application* app, PlatformWindow* window){
     discard app;
+    [window->window.contentView release];
+    [window->window release];
     free(window);
 }
 void App_set_window_title(Application* app, PlatformWindow* window, const char* title){
@@ -197,6 +198,7 @@ int App_get_input_event(Application *app, InputEvent *event){
 
         if ([nextEvent isKindOfClass:[WindowCloseEvent class]]) {
             event->generic.input_event_type=INPUT_EVENT_TYPE_WINDOW_CLOSE;
+            [nextEvent release];
         }
 
         return INPUT_EVENT_PRESENT;
