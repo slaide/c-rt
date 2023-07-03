@@ -12,7 +12,7 @@ FLAGS = $(OPT_FLAGS) -Wall -Werror -Wpedantic -Wextra
 CINCLUDE = -Iinclude
 CDEF = 
 
-BUILD_OBJS = app.c.o app_mesh.c.o
+BUILD_OBJS = app.c.o app_mesh.c.o image.c.o
 
 ifeq ($(MODE), debug)
 	OPT_FLAGS := -g -O0

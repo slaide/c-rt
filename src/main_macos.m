@@ -130,9 +130,6 @@ CVReturn display_link_callback(
     }
     - (void)windowWillClose:(NSNotification *)notification {
         NSWindow *closingWindow = notification.object;
-        
-        // Handle the window closing here
-        NSLog(@"Window will close: %@", closingWindow);
 
         WindowCloseEvent* windowCloseEvent=[WindowCloseEvent alloc];
         windowCloseEvent.window=closingWindow;

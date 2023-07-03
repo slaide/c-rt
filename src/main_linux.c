@@ -81,7 +81,7 @@ int App_get_input_event(Application* app,InputEvent* input_event){
     uint8_t event_type=XCB_EVENT_RESPONSE_TYPE(xcb_event);
     switch(event_type){
         case XCB_CLIENT_MESSAGE:
-            block{
+            {
                 xcb_client_message_event_t* client_message = (xcb_client_message_event_t*) xcb_event;
                 for(int window_id=0;window_id<app->platform_handle->num_open_windows;window_id++){
                     PlatformWindow* open_window=app->platform_handle->open_windows[window_id];

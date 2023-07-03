@@ -17,6 +17,9 @@
  * 
  */
 
+#define ROUND_UP(VALUE,MULTIPLE_OF) (((VALUE) + ((MULTIPLE_OF)-1)) / (MULTIPLE_OF)) * (MULTIPLE_OF);
+#define MASK(LENGTH) ((1<<(LENGTH))-1)
+
 typedef enum InputEventType{
     INPUT_EVENT_TYPE_KEY_PRESS,
     INPUT_EVENT_TYPE_WINDOW_CLOSE,
@@ -52,11 +55,6 @@ typedef union InputEvent{
 
 #include "app/error.h"
 
-/**
- * @brief utility macro for slightly nicer code
- * 
- */
-#define block if(1)
 /**
  * @brief utility macro
  * 
@@ -184,7 +182,7 @@ typedef enum PixelFormat{
     PIXEL_FORMAT_Ru8Gu8Bu8Au8
 }PixelFormat;
 typedef struct ImageData{
-    void* data;
+    uint8_t* data;
 
     int height;
     int width;
@@ -269,3 +267,10 @@ Mesh* App_upload_mesh(
  * @param mesh 
  */
 void App_destroy_mesh(Application* app,Mesh* mesh);
+
+typedef enum ImageParseResult{
+    IMAGE_PARSE_RESULT_OK,
+    IMAGE_PARSE_RESULT_FILE_NOT_FOUND,
+}ImageParseResult;
+
+ImageParseResult Image_read_jpeg(const char* filepath,ImageData* image_data);

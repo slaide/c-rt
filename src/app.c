@@ -2,6 +2,9 @@
 #include "app/error.h"
 #include "vulkan/vulkan_core.h"
 #include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 /**
  * @brief get string representation of VkResult value
@@ -132,6 +135,13 @@ struct Texture{
     VkDeviceMemory image_memory;
     VkImageView image_view;
 };
+/**
+ * @brief create texture fit for supplied image data (does not upload data to gpu!)
+ * 
+ * @param app 
+ * @param image_data 
+ * @return Texture* 
+ */
 Texture* App_create_texture(Application* app, ImageData* image_data){
     discard image_data;
 
@@ -144,8 +154,8 @@ Texture* App_create_texture(Application* app, ImageData* image_data){
         .imageType=VK_IMAGE_TYPE_2D,
         .format=app->swapchain_format.format,
         .extent={
-            .width=3,
-            .height=3,
+            .width=image_data->width,
+            .height=image_data->height,
             .depth=1
         },
         .mipLevels=1,
@@ -229,9 +239,9 @@ Texture* App_create_texture(Application* app, ImageData* image_data){
         .magFilter=VK_FILTER_NEAREST,
         .minFilter=VK_FILTER_NEAREST,
         .mipmapMode=VK_SAMPLER_MIPMAP_MODE_NEAREST,
-        .addressModeU=VK_SAMPLER_ADDRESS_MODE_REPEAT,
-        .addressModeV=VK_SAMPLER_ADDRESS_MODE_REPEAT,
-        .addressModeW=VK_SAMPLER_ADDRESS_MODE_REPEAT,
+        .addressModeU=VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+        .addressModeV=VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+        .addressModeW=VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
         .mipLodBias=0.0,
         .anisotropyEnable=VK_FALSE,
         .maxAnisotropy=0.0,
@@ -267,6 +277,113 @@ Texture* App_create_texture(Application* app, ImageData* image_data){
     vkUpdateDescriptorSets(app->device, 1, &write_descriptor_set, 0, NULL);
 
     return texture;
+}
+void App_upload_texture(
+    Application* app,
+    Texture* texture,
+    ImageData* image_data,
+    VkCommandBuffer recording_command_buffer
+){
+    VkCommandBuffer command_buffer=recording_command_buffer;
+
+    vkCmdPipelineBarrier(
+        command_buffer, 
+        VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+        VK_PIPELINE_STAGE_TRANSFER_BIT, 
+        0, 
+        0, NULL, 
+        0, NULL, 
+        1, (VkImageMemoryBarrier[1]){{
+            .sType=VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+            .pNext=NULL,
+            .srcAccessMask=0,  
+            .dstAccessMask=VK_ACCESS_TRANSFER_WRITE_BIT,  
+            .oldLayout=VK_IMAGE_LAYOUT_UNDEFINED,  
+            .newLayout=VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,  
+            .srcQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED,  
+            .dstQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED,  
+            .image=texture->image, 
+            {
+                .aspectMask=VK_IMAGE_ASPECT_COLOR_BIT,
+                .baseMipLevel=0,
+                .levelCount=1,
+                .baseArrayLayer=0,
+                .layerCount=1 
+            }
+        }}
+    );
+
+    VkPhysicalDeviceProperties physical_device_properties;
+    vkGetPhysicalDeviceProperties(app->physical_device,&physical_device_properties);
+
+    VkDeviceSize image_memory_size=image_data->height*image_data->width*4;
+    image_memory_size=ROUND_UP(image_memory_size, physical_device_properties.limits.nonCoherentAtomSize);
+
+    void* staging_buffer_cpu_memory;
+    VkResult res=vkMapMemory(app->device, app->staging_buffer_memory, app->staging_buffer_size-app->staging_buffer_size_remaining, image_memory_size, 0, &staging_buffer_cpu_memory);
+    if (res!=VK_SUCCESS) {
+        fprintf(stderr,"failed to map memory\n");
+        exit(VULKAN_MAP_MEMORY_FAILURE);
+    }
+
+    memcpy(staging_buffer_cpu_memory,image_data->data,image_memory_size);
+
+    VkMappedMemoryRange flush_memory_range={
+        .sType=VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
+        .pNext=NULL,
+        .memory=app->staging_buffer_memory,
+        .offset=0,
+        .size=image_memory_size
+    };
+    res=vkFlushMappedMemoryRanges(app->device, 1, &flush_memory_range);
+    if (res!=VK_SUCCESS) {
+        fprintf(stderr,"failed to flush mapped memory ranges\n");
+        exit(VULKAN_FLUSH_MAPPED_MEMORY_RANGES_FAILURE);
+    }
+
+    vkUnmapMemory(app->device, app->staging_buffer_memory);
+
+    VkBufferImageCopy buffer_image_copy={
+        .bufferOffset=0,
+        .bufferRowLength=0,
+        .bufferImageHeight=0,
+        .imageSubresource={
+            .aspectMask=VK_IMAGE_ASPECT_COLOR_BIT,
+            .mipLevel=0,
+            .baseArrayLayer=0,
+            .layerCount=1,
+        },
+        .imageOffset={.x=0,.y=0,.z=0},
+        .imageExtent={.width=image_data->width,.height=image_data->height,.depth=1}
+    };
+    vkCmdCopyBufferToImage(command_buffer, app->staging_buffer, texture->image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &buffer_image_copy);
+    // TODO copy data to image
+    vkCmdPipelineBarrier(
+        command_buffer, 
+        VK_PIPELINE_STAGE_TRANSFER_BIT,
+        VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 
+        0, 
+        0, NULL, 
+        0, NULL, 
+        1, (VkImageMemoryBarrier[1]){{
+            .sType=VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+            .pNext=NULL,
+            .srcAccessMask=VK_ACCESS_TRANSFER_WRITE_BIT,  
+            .dstAccessMask=VK_ACCESS_SHADER_READ_BIT,  
+            .oldLayout=VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,  
+            .newLayout=VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,  
+            .srcQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED,  
+            .dstQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED,  
+            .image=texture->image, 
+            {
+                .aspectMask=VK_IMAGE_ASPECT_COLOR_BIT,
+                .baseMipLevel=0,
+                .levelCount=1,
+                .baseArrayLayer=0,
+                .layerCount=1 
+            }
+        }}
+    );
 }
 void App_destroy_texture(Application* app, Texture* texture){
     vkDestroyImageView(app->device,texture->image_view,app->vk_allocator);
@@ -557,7 +674,7 @@ Application* App_new(PlatformHandle* platform){
     app->vk_allocator=NULL;
     app->platform_handle=platform;
 
-    block{
+    {
         uint32_t num_instance_extensions;
         vkEnumerateInstanceExtensionProperties(NULL, &num_instance_extensions, NULL);
         VkExtensionProperties* instance_extensions=malloc(num_instance_extensions*sizeof(VkExtensionProperties));
@@ -696,7 +813,7 @@ Application* App_new(PlatformHandle* platform){
     }
     free(physical_devices);
 
-    block{
+    {
         uint32_t num_device_extensions;
         vkEnumerateDeviceExtensionProperties(app->physical_device, NULL, &num_device_extensions,NULL);
         VkExtensionProperties* device_extensions=malloc(num_device_extensions*sizeof(VkExtensionProperties));
@@ -1101,15 +1218,25 @@ void App_run(Application* app){
 
     Mesh* quadmesh=NULL;
 
-    ImageData image_data={
+    ImageData image_data_jpeg;
+    ImageParseResult image_parse_res=Image_read_jpeg("garbage.jpg",&image_data_jpeg);
+    if (image_parse_res!=IMAGE_PARSE_RESULT_OK) {
+        fprintf(stderr, "failed to parse jpeg\n");
+        exit(-31);
+    }
+
+    ImageData image_data_ex={
         .data=(uint8_t[4]){255,255,0,255},
         .height=1,
         .width=1,
         .pixel_format=PIXEL_FORMAT_Ru8Gu8Bu8Au8,
         .interleaved=true
     };
-    Texture* sometexture=App_create_texture(app,&image_data);
-    discard sometexture;//App_destroy_texture(app,sometexture);
+    discard image_data_ex;
+
+    ImageData* image_data=&image_data_jpeg;//&image_data_ex;
+
+    Texture* sometexture=App_create_texture(app,image_data);
 
     int frame=0;
     bool window_should_close=false;
@@ -1129,6 +1256,8 @@ void App_run(Application* app){
             }
         }
 
+        app->staging_buffer_size_remaining=app->staging_buffer_size;
+
         uint32_t next_swapchain_image_index;
         res=vkAcquireNextImageKHR(app->device, app->swapchain, 0xffffffffffffffff, image_available_semaphore, VK_NULL_HANDLE, &next_swapchain_image_index);
         if(res!=VK_SUCCESS){
@@ -1147,59 +1276,7 @@ void App_run(Application* app){
         if(frame==0){
             quadmesh=App_upload_mesh(app, command_buffer, 4, mesh);
 
-            vkCmdPipelineBarrier(
-                command_buffer, 
-                VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
-                VK_PIPELINE_STAGE_TRANSFER_BIT, 
-                0, 
-                0, NULL, 
-                0, NULL, 
-                1, (VkImageMemoryBarrier[1]){{
-                    .sType=VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-                    .pNext=NULL,
-                    .srcAccessMask=0,  
-                    .dstAccessMask=VK_ACCESS_TRANSFER_WRITE_BIT,  
-                    .oldLayout=VK_IMAGE_LAYOUT_UNDEFINED,  
-                    .newLayout=VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,  
-                    .srcQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED,  
-                    .dstQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED,  
-                    .image=sometexture->image, 
-                    {
-                        .aspectMask=VK_IMAGE_ASPECT_COLOR_BIT,
-                        .baseMipLevel=0,
-                        .levelCount=1,
-                        .baseArrayLayer=0,
-                        .layerCount=1 
-                    }
-                }}
-            );
-            // TODO copy data to image
-            vkCmdPipelineBarrier(
-                command_buffer, 
-                VK_PIPELINE_STAGE_TRANSFER_BIT,
-                VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 
-                0, 
-                0, NULL, 
-                0, NULL, 
-                1, (VkImageMemoryBarrier[1]){{
-                    .sType=VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-                    .pNext=NULL,
-                    .srcAccessMask=VK_ACCESS_TRANSFER_WRITE_BIT,  
-                    .dstAccessMask=VK_ACCESS_SHADER_READ_BIT,  
-                    .oldLayout=VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,  
-                    .newLayout=VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,  
-                    .srcQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED,  
-                    .dstQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED,  
-                    .image=sometexture->image, 
-                    {
-                        .aspectMask=VK_IMAGE_ASPECT_COLOR_BIT,
-                        .baseMipLevel=0,
-                        .levelCount=1,
-                        .baseArrayLayer=0,
-                        .layerCount=1 
-                    }
-                }}
-            );
+            App_upload_texture(app, sometexture, image_data, command_buffer);
         }
 
         vkCmdPipelineBarrier(
@@ -1329,7 +1406,13 @@ void App_run(Application* app){
         discard frame;
     }
 
+    App_destroy_texture(app,sometexture);
+
     App_destroy_mesh(app,quadmesh);
+
+    vkDestroyBuffer(app->device, app->staging_buffer, app->vk_allocator);
+    vkFreeMemory(app->device, app->staging_buffer_memory, app->vk_allocator);
+    vkDestroySampler(app->device, app->shader->image_sampler, app->vk_allocator);
 
     vkDestroySemaphore(app->device,image_available_semaphore,app->vk_allocator);
     vkDestroySemaphore(app->device,rendering_finished_semaphore,app->vk_allocator);
