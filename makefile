@@ -17,7 +17,7 @@ BUILD_OBJS = app.c.o app_mesh.c.o image.c.o
 ifeq ($(MODE), debug)
 	OPT_FLAGS := -g -O0
 else ifeq ($(MODE), release)
-	OPT_FLAGS := -O2 -flto=full
+	OPT_FLAGS := -O3 -flto=full
 else
 $(error Invalid build mode: $(MODE) (valid options are { release | debug }))
 endif

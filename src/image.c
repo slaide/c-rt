@@ -7,6 +7,16 @@
 #include <strings.h>
 #include <math.h>
 
+float min_f32(float a, float b){
+    return (a<b)?a:b;
+}
+float max_f32(float a, float b){
+    return (a>b)?a:b;
+}
+float clamp_f32(float v_min,float v_max, float v){
+    return max_f32(v_min, min_f32(v_max, v));
+}
+
 void cause_sigseg(){
     int* whatever=NULL;
     int a=*whatever;
@@ -275,8 +285,6 @@ void HuffmanCodingTable_new(
         }
     }
 
-    printf("huffman tree max bits %u\n",table->max_code_length_bits);
-
     struct ParseLeaf parse_leafs[260];
     for (uint32_t i=0; i<260; i++) {
         if (i<total_num_values) {
@@ -297,8 +305,6 @@ void HuffmanCodingTable_new(
             parse_leafs[i].rcode=0;
         }
     }
-
-    printf("total num values %d\n",total_num_values);
 
     uint32_t bl_count[17];
     memset(bl_count,0,17*4);
@@ -327,12 +333,6 @@ void HuffmanCodingTable_new(
     table->code_length_lookup_table=malloc(num_possible_leafs*sizeof(uint32_t));
     for (uint32_t i=0; i<total_num_values; i++) {
         struct ParseLeaf* leaf=&parse_leafs[i];
-
-        if (1) {
-            char code_str[33]={[32]=0};
-            integer_to_str(leaf->rcode, code_str);
-            printf("index %3d : rcode %s value %d len %d\n",i,code_str,leaf->value,leaf->len);
-        }
 
         uint32_t mask_len=table->max_code_length_bits - leaf->len;
         uint32_t mask=mask_u32(mask_len);
@@ -435,17 +435,9 @@ int HuffmanCodingTable_lookup(
 ){
     uint64_t bits=BitStream_get_bits(bit_stream, table->max_code_length_bits);
 
-    char s_buffer[65]={[64]=0};
-    uint64_to_str(bit_stream->buffer, s_buffer);
-
-    char s[65]={[64]=0};
-    uint64_to_str(bits, s);
-
     int value=table->value_lookup_table[bits];
     int code_length=table->code_length_lookup_table[bits];
     BitStream_advance(bit_stream, code_length);
-
-    //printf("got bits %s of len %u = value %d len %d\n",s,table->max_code_length_bits,value,code_length);
 
     return value;
 }
@@ -494,9 +486,6 @@ void decode_block(
         int32_t dc_value=0;
         if (dc_magnitude>0) {
             dc_value=BitStream_get_bits_advance(bit_stream, dc_magnitude);
-            char s[33]={[32]=0};
-            integer_to_str(dc_value, s);
-            //printf("dc value bits %s\n",s);
             dc_value=twos_complement(dc_magnitude, dc_value);
         }
 
@@ -556,6 +545,142 @@ void decode_block(
         //printf("ac coeff %d\n",ac_value);
 
         block_mem[UNZIGZAG[c]]=ac_value<<successive_approximation_bit_low;
+    }
+}
+uint8_t refine_block(
+    BLOCK_ELEMENT_TYPE block_mem[64],
+
+    BitStream* bit_stream,
+
+    uint8_t range_start,
+    uint8_t range_end,
+
+    uint8_t num_zeros,
+    BLOCK_ELEMENT_TYPE bit
+){
+    for(int i= range_start;i<=range_end;i++){
+        int index=UNZIGZAG[i];
+
+        if(block_mem[index]==0){
+            if(num_zeros==0){
+                return i;
+            }
+
+            num_zeros -= 1;
+        }else{
+            int next_bit=BitStream_get_bits_advance(bit_stream,1);
+            if(next_bit==1 && (block_mem[index]&bit) == 0){
+                if(block_mem[index]>0){
+                    block_mem[index] += bit;
+                }else{
+                    block_mem[index] -= bit;
+                }
+            }
+        }
+    }
+
+    return range_end;
+}
+void decode_block_with_sbh(
+    BLOCK_ELEMENT_TYPE block_mem[64],
+
+    HuffmanCodingTable* ac_table,
+
+    int32_t spectral_selection_start,
+    int32_t spectral_selection_end,
+
+    BitStream* bit_stream,
+
+    int32_t successive_approximation_bit_low,
+    int32_t successive_approximation_bit_high,
+
+    int32_t* eob_run
+){
+    discard successive_approximation_bit_high;
+
+    int succ_approx_bit_shifted=1<<successive_approximation_bit_low;
+    
+    if(spectral_selection_start == 0){
+        if(BitStream_get_bits_advance(bit_stream,1)==1){
+            block_mem[0] += succ_approx_bit_shifted;
+        }
+        return;
+    }
+
+    if(*eob_run>0){
+        *eob_run -= 1;
+
+        discard refine_block(
+            block_mem,
+            bit_stream, 
+
+            spectral_selection_start, 
+            spectral_selection_end, 
+
+            64, 
+            succ_approx_bit_shifted
+        );
+
+        return;
+    }
+
+    // go through all ac values, some of which may be run length encoded
+
+    // if no AC values are encoded in current scan
+    if(spectral_selection_end >= 1){
+        uint8_t next_pixel_index=spectral_selection_start;
+
+        while(next_pixel_index <= spectral_selection_end){
+            int ac_coeff=HuffmanCodingTable_lookup(ac_table, bit_stream);
+
+            // 4 most significant bits are number of zero-value bytes inserted before actual value (may be zero)
+            int num_zeros=ac_coeff>>4;
+            // no matter number of '0' bytes inserted, last 4 bits in ac value denote (additional) pixel value
+            ac_coeff&=0xF;
+
+            int value=0;
+
+            switch(ac_coeff){
+                case 0:
+                    switch(num_zeros){
+                        case 15:
+                            break; // num_zeros is 15, value is zero => 16 zeros written already
+                        default:
+                            *eob_run=0;
+                            if(num_zeros>0){
+                                int eob_run_bits=BitStream_get_bits_advance(bit_stream,num_zeros);
+                                //guard eob_run_bits >= 1<<(num_zeros-1) else {fatalError("variable length bit pattern \(eob_run_bits) too small to warrant magnitude of \(num_zeros)")}
+                                *eob_run=mask_u32(num_zeros) + eob_run_bits;
+                            }
+                            num_zeros=64;
+                    }
+                case 1:
+                    if(BitStream_get_bits(bit_stream,1)==1){
+                        value = succ_approx_bit_shifted;
+                    }else{
+                        value = -succ_approx_bit_shifted;
+                    }
+                default:
+                    cause_sigseg();
+            }
+
+            next_pixel_index=refine_block(
+                block_mem,
+                bit_stream, 
+
+                next_pixel_index, 
+                spectral_selection_end, 
+
+                num_zeros, 
+                succ_approx_bit_shifted
+            );
+
+            if(value != 0){
+                block_mem[UNZIGZAG[next_pixel_index]]=value;
+            }
+            
+            next_pixel_index+=1;
+        }
     }
 }
 
@@ -637,15 +762,12 @@ ImageParseResult Image_read_jpeg(const char* filepath,ImageData* image_data){
     int P,X,Y,Nf;
 
 
-
     bool parsing_done=false;
     while (!parsing_done) {
         uint32_t next_header;
         GET_U16(next_header);
 
         uint32_t segment_size;
-
-        printf("got segment %s\n",Image_jpeg_segment_type_name(next_header));
 
         // implementing a new segment parser looks like this:
         /*
@@ -680,6 +802,14 @@ ImageParseResult Image_read_jpeg(const char* filepath,ImageData* image_data){
                 break;
 
             case APP0:
+                {
+                    GET_U16(segment_size);
+                    uint32_t segment_end_position=current_byte_position+segment_size-2;
+                    current_byte_position=segment_end_position;
+                }
+                break;
+
+            case APP1:
                 {
                     GET_U16(segment_size);
                     uint32_t segment_end_position=current_byte_position+segment_size-2;
@@ -723,16 +853,12 @@ ImageParseResult Image_read_jpeg(const char* filepath,ImageData* image_data){
                     int table_index=LB_U8(table_index_and_class);
                     int table_class=HB_U8(table_index_and_class);
 
-                    //printf("table index %d class %d\n",table_index,table_class);
-
                     HuffmanCodingTable* target_table=NULL;
                     switch (table_class) {
                         case  0:
-                            printf("constructing dc table #%d\n",table_index);
                             target_table=&dc_coding_tables[table_index];
                             break;
                         case  1:
-                            printf("constructing ac table #%d\n",table_index);
                             target_table=&ac_coding_tables[table_index];
                             break;
                         default:
@@ -743,7 +869,6 @@ ImageParseResult Image_read_jpeg(const char* filepath,ImageData* image_data){
                     int num_values_of_length[16];
                     for (int i=0; i<16; i++) {
                         num_values_of_length[i]=GET_NB;
-                        //printf("values of length %d : %d\n",i,num_values_of_length[i]);
 
                         total_num_values+=num_values_of_length[i];
                     }
@@ -758,7 +883,6 @@ ImageParseResult Image_read_jpeg(const char* filepath,ImageData* image_data){
                         for (int i=0; i<num_values_of_length[code_length]; i++) {
                             values[value_index]=GET_NB;
                             value_code_lengths[value_index]=code_length+1;
-                            //printf("value length %d (value %d)\n",code_length,values[value_index]);
 
                             value_index+=1;
                         }
@@ -783,14 +907,11 @@ ImageParseResult Image_read_jpeg(const char* filepath,ImageData* image_data){
                     uint32_t segment_end_position=current_byte_position+segment_size-2;
 
                     GET_U8(P);
-                    GET_U16(X);
                     GET_U16(Y);
+                    GET_U16(X);
                     GET_U8(Nf);
 
-                    image_data->height=Y;
-                    image_data->width=X;
-
-                    printf("got image with prec %d, x=%d, y=%d, nf=%d\n",P,X,Y,Nf);
+                    printf("image has prec %d, x=%d, y=%d, nf=%d\n",P,X,Y,Nf);
 
                     if (P!=8) {
                         fprintf(stderr,"image precision is not 8 - is %d instead\n",P);
@@ -815,15 +936,22 @@ ImageParseResult Image_read_jpeg(const char* filepath,ImageData* image_data){
                         }
                     }
 
-                    int num_lines=ROUND_UP(Y, max_component_vert_sample_factor*8);
-                    int num_samples_per_lines=ROUND_UP(X, max_component_horz_sample_factor*8);
+                    int num_lines=ROUND_UP(Y, 8);
+                    int num_samples_per_lines=ROUND_UP(X, 8);
+
+                    X=num_samples_per_lines;
+                    Y=num_lines;
+
+                    image_data->height=Y;
+                    image_data->width=X;
+
+                    printf("image has prec %d, x=%d, y=%d, nf=%d\n",P,X,Y,Nf);
 
                     for (int i=0; i<Nf; i++) {
-                        image_components[i].vert_samples=num_lines*image_components[i].vert_sample_factor/max_component_vert_sample_factor;
-                        image_components[i].horz_samples=num_samples_per_lines*image_components[i].horz_sample_factor/max_component_horz_sample_factor;
+                        image_components[i].vert_samples=(ROUND_UP(num_lines,8*max_component_vert_sample_factor))*image_components[i].vert_sample_factor/max_component_vert_sample_factor;
+                        image_components[i].horz_samples=(ROUND_UP(num_samples_per_lines,8*max_component_horz_sample_factor))*image_components[i].horz_sample_factor/max_component_horz_sample_factor;
 
                         int component_data_size=image_components[i].vert_samples*image_components[i].horz_samples;
-                        printf("got %d bytes for component %d\n",component_data_size,i);
                         component_data[i]=malloc(component_data_size*sizeof(BLOCK_ELEMENT_TYPE));
                         discard memset(component_data[i],0,component_data_size*sizeof(BLOCK_ELEMENT_TYPE));
 
@@ -843,9 +971,10 @@ ImageParseResult Image_read_jpeg(const char* filepath,ImageData* image_data){
                 break;
 
             case SOS:
+                printf("start of scan\n");
                 {
                     GET_U16(segment_size);
-                    uint32_t segment_end_position=current_byte_position+segment_size-2;
+                    //uint32_t segment_end_position=current_byte_position+segment_size-2;
 
                     int num_scan_components=GET_NB;
 
@@ -862,8 +991,6 @@ ImageParseResult Image_read_jpeg(const char* filepath,ImageData* image_data){
 
                         scan_component_dc_table_index[i]=HB_U8(table_indices);
                         scan_component_ac_table_index[i]=LB_U8(table_indices);
-
-                        printf("scan component %d has id %d and table index ac %d dc %d\n",i,scan_component_id[i],scan_component_ac_table_index[i],scan_component_dc_table_index[i]);
                     }
 
                     int spectral_selection_start=GET_NB;
@@ -872,8 +999,8 @@ ImageParseResult Image_read_jpeg(const char* filepath,ImageData* image_data){
                     int32_t eob_run=0;
 
                     int32_t successive_approximation_bits=GET_NB;
-                    int32_t successive_approximation_bit_low=HB_U8(successive_approximation_bits);
-                    int32_t successive_approximation_bit_high=LB_U8(successive_approximation_bits);
+                    int32_t successive_approximation_bit_low=LB_U8(successive_approximation_bits);
+                    int32_t successive_approximation_bit_high=HB_U8(successive_approximation_bits);
 
                     printf("scan information spec sel start %d end %d succ approx low %d high %d\n",spectral_selection_start,spectral_selection_end,successive_approximation_bit_low,successive_approximation_bit_high);
 
@@ -881,7 +1008,11 @@ ImageParseResult Image_read_jpeg(const char* filepath,ImageData* image_data){
                     discard differential_dc;
 
                     int32_t dummy_block[64];
-                    discard dummy_block;
+                    discard memset(dummy_block, 0, 64*4);
+
+                    int stuffed_byte_index_count=0;
+                    int stuffed_byte_index_capacity=1024;
+                    int* stuffed_byte_indices=malloc(4*stuffed_byte_index_capacity);
 
                     uint8_t* de_zeroed_file_contents=malloc(file_size);
                     int out_index=0;
@@ -892,17 +1023,21 @@ ImageParseResult Image_read_jpeg(const char* filepath,ImageData* image_data){
                         de_zeroed_file_contents[out_index]=current_byte;
 
                         if ((current_byte==0xFF) && (next_byte==0)) {
+                            stuffed_byte_indices[stuffed_byte_index_count++]=i;
+                            if (stuffed_byte_index_count==stuffed_byte_index_capacity) {
+                                stuffed_byte_index_capacity*=2;
+                                stuffed_byte_indices=realloc(stuffed_byte_indices, 4*stuffed_byte_index_capacity);
+                            }
+
                             i++;
                         }
                         out_index+=1;
                     }
 
                     BitStream bit_stream;
-                    //BitStream_new(&bit_stream, &file_contents[current_byte_position]);
                     BitStream_new(&bit_stream, de_zeroed_file_contents);
 
                     int num_mcus=image_components[0].vert_samples*image_components[0].horz_samples/(8*8*image_components[0].horz_sample_factor*image_components[0].vert_sample_factor);
-                    printf("num mcus: %d\n",num_mcus);
 
                     int max_vert_samples=0;
                     int max_horz_samples=0;
@@ -923,15 +1058,15 @@ ImageParseResult Image_read_jpeg(const char* filepath,ImageData* image_data){
                         int mcu_col=mcu_id%mcu_cols;
 
                         for (int c=0; c<num_scan_components; c++) {
-                            int component_vert_samples=0;
-                            int component_horz_samples=0;
+                            int component_vert_sample_factor=0;
+                            int component_horz_sample_factor=0;
 
                             int component_index_in_image=0;
 
                             for (int i=0; i<Nf; i++) {
                                 if (image_components[i].component_id==scan_component_id[c]) {
-                                    component_vert_samples=image_components[i].vert_sample_factor;
-                                    component_horz_samples=image_components[i].horz_sample_factor;
+                                    component_vert_sample_factor=image_components[i].vert_sample_factor;
+                                    component_horz_sample_factor=image_components[i].horz_sample_factor;
 
                                     component_index_in_image=i;
                                     break;
@@ -939,13 +1074,14 @@ ImageParseResult Image_read_jpeg(const char* filepath,ImageData* image_data){
                             }
 
                             //int blocks_per_mcu=component_vert_samples*component_horz_samples;
+                            int num_component_blocks=image_components[c].horz_samples/8*image_components[c].vert_samples/8;
 
-                            for (int vert_sid=0; vert_sid<component_vert_samples; vert_sid++) {
-                                for (int horz_sid=0; horz_sid<component_horz_samples; horz_sid++) {
+                            for (int vert_sid=0; vert_sid<component_vert_sample_factor; vert_sid++) {
+                                for (int horz_sid=0; horz_sid<component_horz_sample_factor; horz_sid++) {
                                     int component_block_id;
                                     if (is_interleaved) {
                                         int block_col=mcu_col*image_components[c].horz_sample_factor + horz_sid;
-                                        int block_row=mcu_row*image_components[c].vert_sample_factor   + vert_sid;
+                                        int block_row=mcu_row*image_components[c].vert_sample_factor + vert_sid;
 
                                         component_block_id = block_col + block_row * mcu_cols*image_components[c].horz_sample_factor;
                                     }else {
@@ -957,40 +1093,74 @@ ImageParseResult Image_read_jpeg(const char* filepath,ImageData* image_data){
                                     }
                                     //printf("decoding block %d\n",component_block_id);
 
-                                    decode_block(
-                                        &component_data[component_index_in_image][component_block_id*64], 
-                                        &dc_coding_tables[scan_component_dc_table_index[component_index_in_image]], 
-                                        &differential_dc[component_index_in_image], 
-                                        &ac_coding_tables[scan_component_ac_table_index[component_index_in_image]], 
-                                        spectral_selection_start, 
-                                        spectral_selection_end, 
-                                        &bit_stream, 
-                                        successive_approximation_bit_low, 
-                                        &eob_run
-                                    );
+                                    int32_t* block_mem;
+                                    if (component_block_id>=num_component_blocks) {
+                                        block_mem=dummy_block;
+                                    }else {
+                                        block_mem=&component_data[component_index_in_image][component_block_id*64];
+                                    }
+
+                                    if (successive_approximation_bit_high==0) {
+                                        decode_block(
+                                            block_mem, 
+                                            &dc_coding_tables[scan_component_dc_table_index[component_index_in_image]], 
+                                            &differential_dc[component_index_in_image], 
+                                            &ac_coding_tables[scan_component_ac_table_index[component_index_in_image]], 
+                                            spectral_selection_start, 
+                                            spectral_selection_end, 
+                                            &bit_stream, 
+                                            successive_approximation_bit_low, 
+                                            &eob_run
+                                        );
+                                    }else {
+                                        decode_block_with_sbh(
+                                            block_mem,
+                                            &ac_coding_tables[scan_component_ac_table_index[component_index_in_image]], 
+                                            spectral_selection_start, 
+                                            spectral_selection_end, 
+                                            &bit_stream, 
+                                            successive_approximation_bit_low, 
+                                            successive_approximation_bit_high, 
+                                            &eob_run
+                                        );
+                                    }
                                 }
                             }
                         }
                     }
 
-                    current_byte_position=segment_end_position;
-                }
+                    printf("bitstream buffer size %d\n",bit_stream.buffer_bits_filled);
 
-                /*for (int c=0; c<3; c++) {
-                    int pixels_for_component=image_components[c].horz_samples*image_components[c].vert_samples;
-                    for (int i=0; i<pixels_for_component; i++) {
-                        printf("c %d p %d value %d\n",c,i,component_data[c][i]);
+                    int bytes_read_from_stream=bit_stream.next_data_index-1;
+
+                    bytes_read_from_stream-=bit_stream.buffer_bits_filled/8;
+
+                    if (bit_stream.buffer_bits_filled%8 != 0) {
+                        bytes_read_from_stream+=1;
                     }
-                }*/
+
+                    int stuffed_byte_count_skipped=0;
+                    for (int i=0; i<stuffed_byte_index_count; i++) {
+                        if (bytes_read_from_stream>=stuffed_byte_indices[i]) {
+                            stuffed_byte_count_skipped+=1;
+                        }else {
+                            break;
+                        }
+                    }
+                    current_byte_position+=bytes_read_from_stream+stuffed_byte_count_skipped;
+
+                    printf("added to fo: %d %d\n",bytes_read_from_stream*8,stuffed_byte_count_skipped*8);
+                    free(stuffed_byte_indices);
+                }
 
                 image_data->interleaved=true;
                 image_data->pixel_format=PIXEL_FORMAT_Ru8Gu8Bu8Au8;
 
-                parsing_done=true;
+                //parsing_done=true;
                 break;
 
             default:
-                printf("unhandled segment %s ( %d ) \n",Image_jpeg_segment_type_name(next_header),next_header);
+                fprintf(stderr,"unhandled segment %s ( %X ) \n",Image_jpeg_segment_type_name(next_header),next_header);
                 exit(-40);
         }
     }
@@ -1035,23 +1205,28 @@ ImageParseResult Image_read_jpeg(const char* filepath,ImageData* image_data){
             out_block_downsampled[i]=0.0;
         }
 
+        printf("component %d has quant table id %d\n",c,image_components[c].quant_table_specifier);
+
         for(int block_id=0;block_id<component_total_blocks;block_id++){
             int32_t* in_block=&component_data[c][block_id*64];
             float* out_block=&out_block_downsampled[block_id*64];
 
             for(int cosine_index = 0;cosine_index<64;cosine_index++){
-                float cosine_mask_strength=(float)(in_block[cosine_index])*quant_tables[image_components[c].quant_table_specifier][cosine_index];
+                float cosine_mask_strength=(float)(in_block[cosine_index]);
+                cosine_mask_strength*=quant_tables[image_components[c].quant_table_specifier][cosine_index];
 
                 // minor optimization
-                if(cosine_mask_strength == 0) {
+                /*if(cosine_mask_strength == 0) {
                     continue;
-                }
+                }*/
                 
                 for(int pixel_index = 0;pixel_index<64;pixel_index++){
                     float cosine_mask_pixel=idct_mask_set.idct_element_masks[cosine_index][pixel_index];
                     out_block[pixel_index]+=cosine_mask_pixel*cosine_mask_strength;
                 }
             }
+
+            //break;
         }
 
         // -- convert blocks to row-column oriented image data
@@ -1085,7 +1260,8 @@ ImageParseResult Image_read_jpeg(const char* filepath,ImageData* image_data){
 
         float* out_block;
         // if downsampled image has output size (because it was not actually downsampled), there is no need to upsample anything
-        if(out_block_size==X*Y){
+        if(out_block_size==Y*X){
+            printf("size matches\n");
             out_block=out_block_downsampled_reordered;
         }else{
             int block_element_count=Y*X;
@@ -1102,8 +1278,9 @@ ImageParseResult Image_read_jpeg(const char* filepath,ImageData* image_data){
             ){
                 // fast path for common component sample combination (2 samples for Y, 1 component for Cb and 1 for Cr)
                 case (0x02010201):
-                    for(int out_row =0;out_row<Y/2;out_row++){
-                        for(int out_col =0;out_col<X/2;out_col++){
+                    printf("found special case\n");
+                    for(int out_row =0;out_row<(Y/2);out_row++){
+                        for(int out_col =0;out_col<(X/2);out_col++){
                             float pixel=out_block_downsampled_reordered[out_row*downsampled_cols+out_col];
 
                             out_block[   out_row * 2       * X + out_col * 2     ]=pixel;
@@ -1144,9 +1321,6 @@ ImageParseResult Image_read_jpeg(const char* filepath,ImageData* image_data){
         case 0x010203:
             {
                 int total_num_pixels_in_image=X*Y;
-                //int total_num_pixels=X*Y*Nf;
-
-                //let conversion_time=time_this{image_data=Array(unsafeUninitializedCapacity: total_num_pixels, initializingWith: init_image)};
 
                 image_data->data=(uint8_t*)malloc(sizeof(uint8_t)*total_num_pixels_in_image*4);
 
@@ -1174,8 +1348,8 @@ ImageParseResult Image_read_jpeg(const char* filepath,ImageData* image_data){
                     B+=128.0;
 
                     r[i] = R;
-                    g[i] = G;
-                    b[i] = B;
+                    g[i] = B;
+                    b[i] = G;
                 }
 
                 // -- deinterlace and convert to uint8
@@ -1187,13 +1361,9 @@ ImageParseResult Image_read_jpeg(const char* filepath,ImageData* image_data){
                     float G=g[i];
                     float B=b[i];
 
-                    #define min(a,b) ((a)<(b)?(a):(b))
-                    #define max(a,b) ((a)>(b)?(a):(b))
-                    #define clamp(_min,_max,_value) max(_min,min(_value,_max))
-
-                    image_data->data[base_index + 0] = (uint8_t)clamp(0.0,255.0,R);
-                    image_data->data[base_index + 1] = (uint8_t)clamp(0.0,255.0,G);
-                    image_data->data[base_index + 2] = (uint8_t)clamp(0.0,255.0,B);
+                    image_data->data[base_index + 0] = (uint8_t)clamp_f32(0.0,255.0,R);
+                    image_data->data[base_index + 1] = (uint8_t)clamp_f32(0.0,255.0,G);
+                    image_data->data[base_index + 2] = (uint8_t)clamp_f32(0.0,255.0,B);
                     image_data->data[base_index + 3] = UINT8_MAX;
                 }
             }

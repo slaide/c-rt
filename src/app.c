@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 /**
  * @brief get string representation of VkResult value
@@ -114,19 +115,19 @@ const char* device_type_name(int device_type){
 VertexData mesh[4]={
     {
         -0.7f, -0.7f, 0.0f, 1.0f,
-        1.0f, 1.0f
+        0.0f, 0.0f
     },
     {
         -0.7f, 0.7f, 0.0f, 1.0f,
-        1.0f, 0.0f
-    },
-    {
-        0.7f, -0.7f, 0.0f, 1.0f,
         0.0f, 1.0f
     },
     {
+        0.7f, -0.7f, 0.0f, 1.0f,
+        1.0f, 0.0f
+    },
+    {
         0.7f, 0.7f, 0.0f, 1.0f,
-        0.0f, 0.0f
+        1.0f, 1.0f
     }
 };
 
@@ -1166,6 +1167,19 @@ void App_destroy(Application* app){
     free(app);
 }
 
+/**
+ * @brief get timediff in s
+ * 
+ * @param start 
+ * @param end 
+ * @return float 
+ */
+float timespecDiff(struct timespec start, struct timespec end) {
+    float diff = end.tv_sec - start.tv_sec;
+    diff += ((float)(end.tv_nsec - start.tv_nsec))/1000000000.0;
+    return diff;
+}
+
 void App_run(Application* app){
     VkResult res;
 
@@ -1217,13 +1231,27 @@ void App_run(Application* app){
     VkCommandBuffer command_buffer=command_buffers[0];
 
     Mesh* quadmesh=NULL;
+    struct timespec start_time,end_time;
+    int start_time_get_result=clock_gettime(CLOCK_MONOTONIC, &start_time);
+    if (start_time_get_result != 0) {
+        fprintf(stderr, "failed to get start time because %d\n",start_time_get_result);
+        exit(-66);
+    }
 
     ImageData image_data_jpeg;
-    ImageParseResult image_parse_res=Image_read_jpeg("garbage.jpg",&image_data_jpeg);
+    ImageParseResult image_parse_res=Image_read_jpeg("../swift-rt/Resources/cat.jpg",&image_data_jpeg);
     if (image_parse_res!=IMAGE_PARSE_RESULT_OK) {
         fprintf(stderr, "failed to parse jpeg\n");
         exit(-31);
     }
+
+    int end_time_get_result=clock_gettime(CLOCK_MONOTONIC, &end_time);
+    if (end_time_get_result != 0) {
+        fprintf(stderr, "failed to get end time because %d\n",end_time_get_result);
+        exit(-67);
+    }
+
+    printf("parsed jpeg in %fs\n",timespecDiff(start_time,end_time));    
 
     ImageData image_data_ex={
         .data=(uint8_t[4]){255,255,0,255},

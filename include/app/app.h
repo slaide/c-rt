@@ -17,7 +17,7 @@
  * 
  */
 
-#define ROUND_UP(VALUE,MULTIPLE_OF) (((VALUE) + ((MULTIPLE_OF)-1)) / (MULTIPLE_OF)) * (MULTIPLE_OF);
+#define ROUND_UP(VALUE,MULTIPLE_OF) (((VALUE) + ((MULTIPLE_OF)-1)) / (MULTIPLE_OF)) * (MULTIPLE_OF)
 #define MASK(LENGTH) ((1<<(LENGTH))-1)
 
 typedef enum InputEventType{
@@ -43,7 +43,6 @@ typedef union InputEvent{
     InputEventWindowClose windowclose;
 }InputEvent;
 
-#include "vulkan/vulkan_core.h"
 #include <stdint.h>
 #include <stdio.h>
 #include <memory.h>
