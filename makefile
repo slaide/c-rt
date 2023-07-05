@@ -19,7 +19,7 @@ ifeq ($(MODE), debug)
 	OPT_FLAGS := -g -O0
 else ifeq ($(MODE), release)
 	CDEF += -DRELEASE
-	OPT_FLAGS := -O3 -flto=full
+	OPT_FLAGS := -O3 -flto=full -ffast-math
 else
 $(error Invalid build mode: $(MODE) (valid options are { release | debug }))
 endif

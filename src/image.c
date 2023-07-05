@@ -17,12 +17,6 @@ float clamp_f32(float v_min,float v_max, float v){
     return max_f32(v_min, min_f32(v_max, v));
 }
 
-void cause_sigseg(){
-    int* whatever=NULL;
-    int a=*whatever;
-    printf("should not print %d\n",a);
-}
-
 /**
  * @brief format integer as binary number
  * 
@@ -54,6 +48,23 @@ void uint64_to_str(uint64_t v,char s[64]){
             s[i]='0';
         }
     }
+}
+
+uint32_t mask_u32(uint32_t n){
+    if (n==0) return  0;
+    uint32_t shift_by=32-n;
+    uint32_t base=0xffffffff;
+    uint32_t ret=base>>shift_by;
+
+    return ret;
+}
+uint64_t mask_u64(uint64_t n){
+    if (n==0) return  0;
+    uint64_t shift_by=64-n;
+    uint64_t base=0xffffffffffffffff;
+    uint64_t ret=base>>shift_by;
+
+    return ret;
 }
 
 typedef  enum JpegSegmentType{
@@ -165,23 +176,6 @@ const char* Image_jpeg_segment_type_name(JpegSegmentType segment_type){
     return NULL;
 }
 
-uint32_t mask_u32(uint32_t n){
-    if (n==0) return  0;
-    uint32_t shift_by=32-n;
-    uint32_t base=0xffffffff;
-    uint32_t ret=base>>shift_by;
-
-    return ret;
-}
-uint64_t mask_u64(uint64_t n){
-    if (n==0) return  0;
-    uint64_t shift_by=64-n;
-    uint64_t base=0xffffffffffffffff;
-    uint64_t ret=base>>shift_by;
-
-    return ret;
-}
-
 const int ZIGZAG[64]={
     0,  1,  5,  6,  14, 15, 27, 28,
     2,  4,  7,  13, 16, 26, 29, 42,
@@ -213,14 +207,6 @@ typedef struct ImageComponent{
     int quant_table_specifier;
 }ImageComponent;
 
-typedef int QuantizationTable[64];
-typedef struct HuffmanCodingTable{
-    uint32_t max_code_length_bits;
-
-    int* value_lookup_table;
-    uint32_t* code_length_lookup_table;
-}HuffmanCodingTable;
-
 /**
  * @brief reverse a sequence of len bits
  * 
@@ -236,6 +222,14 @@ int reverse_bits(int bits,int len){
     }
     return ret;
 }
+
+typedef int QuantizationTable[64];
+typedef struct HuffmanCodingTable{
+    uint32_t max_code_length_bits;
+
+    int* value_lookup_table;
+    uint32_t* code_length_lookup_table;
+}HuffmanCodingTable;
 
 struct LookupLeaf{
     int value;
@@ -354,7 +348,7 @@ typedef struct BitStream{
 }BitStream;
 
 /**
- * @brief initialise stream (does NOT fill buffer automatically)
+ * @brief initialise stream
  * 
  * @param stream 
  * @param data 
@@ -367,7 +361,7 @@ void BitStream_new(BitStream* stream,void* data){
 }
 /**
  * @brief fill internal bit buffer (used for fast lookup)
- * 
+ * this function is called automatically (internally) when required
  * @param stream 
  */
 void BitStream_fill_buffer(BitStream* stream){
@@ -402,8 +396,9 @@ uint64_t BitStream_get_bits(BitStream* stream,int n_bits){
     uint64_t res=stream->buffer>>shift_by;
     return res;
 }
+
 /**
- * @brief 
+ * @brief advance stream
  * 
  * @param stream 
  * @param n_bits 
@@ -452,6 +447,19 @@ int32_t twos_complement(uint32_t magnitude, int32_t value){
 
 #define BLOCK_ELEMENT_TYPE int32_t
 
+/**
+ * @brief decode block with successive approximation high at zero
+ * 
+ * @param block_mem 
+ * @param dc_table 
+ * @param diff_dc 
+ * @param ac_table 
+ * @param spectral_selection_start 
+ * @param spectral_selection_end 
+ * @param bit_stream 
+ * @param successive_approximation_bit_low 
+ * @param eob_run 
+ */
 void decode_block(
     BLOCK_ELEMENT_TYPE block_mem[64],
 
@@ -562,6 +570,18 @@ uint8_t refine_block(
 
     return range_end;
 }
+/**
+ * @brief decode block with successive approximation high set
+ * 
+ * @param block_mem 
+ * @param ac_table 
+ * @param spectral_selection_start 
+ * @param spectral_selection_end 
+ * @param bit_stream 
+ * @param successive_approximation_bit_low 
+ * @param successive_approximation_bit_high 
+ * @param eob_run 
+ */
 void decode_block_with_sbh(
     BLOCK_ELEMENT_TYPE block_mem[64],
 
@@ -666,6 +686,12 @@ void decode_block_with_sbh(
     }
 }
 
+/**
+ * @brief used internally for idct mask generation
+ * 
+ * @param u 
+ * @return float 
+ */
 float coeff(int u){
     if(u==0){
         return 1.0/sqrt(2.0);
@@ -673,8 +699,6 @@ float coeff(int u){
         return 1.0;
     }
 }
-
-#define  PI 
 
 #define IDCT_MASK_ELEMENT_TYPE float
 typedef struct IDCTMaskSet {
@@ -1323,6 +1347,7 @@ ImageParseResult Image_read_jpeg(const char* filepath,ImageData* image_data){
     int color_space=(image_components[0].component_id<<8*2)
         | (image_components[1].component_id<<8*1)
         | (image_components[2].component_id<<8*0);
+
     switch(color_space){
         case 0x010203:
             {
@@ -1331,41 +1356,27 @@ ImageParseResult Image_read_jpeg(const char* filepath,ImageData* image_data){
                 image_data->data=(uint8_t*)malloc(sizeof(uint8_t)*total_num_pixels_in_image*4);
 
                 float* y=final_components[0];
-                float* cb=final_components[2];
                 float* cr=final_components[1];
-
-                float* r=final_components[0];
-                float* g=final_components[2];
-                float* b=final_components[1];
+                float* cb=final_components[2];
 
                 // -- convert ycbcr to rgb
 
                 for(int i = 0;i<total_num_pixels_in_image;i++){
                     float Y=y[i];
-                    float Cb=cb[i];
                     float Cr=cr[i];
+                    float Cb=cb[i];
 
                     float R = Cr * 1.402 + Y;
                     float B = Cb * 1.772 + Y;
                     float G = (Y - 0.114 * B - 0.299 * R ) / 0.587;
 
-                    r[i] = R;
-                    g[i] = G;
-                    b[i] = B;
-                }
+                    // -- deinterlace and convert to uint8
 
-                // -- deinterlace and convert to uint8
-
-                for(int i = 0;i<total_num_pixels_in_image;i++){
                     int base_index=i*4;
 
-                    float R=r[i]+128;
-                    float G=g[i]+128;
-                    float B=b[i]+128;
-
-                    image_data->data[base_index + 0] = (uint8_t)clamp_f32(0.0,255.0,R);
-                    image_data->data[base_index + 1] = (uint8_t)clamp_f32(0.0,255.0,G);
-                    image_data->data[base_index + 2] = (uint8_t)clamp_f32(0.0,255.0,B);
+                    image_data->data[base_index + 0] = (uint8_t)clamp_f32(0.0,255.0,R+128);
+                    image_data->data[base_index + 1] = (uint8_t)clamp_f32(0.0,255.0,G+128);
+                    image_data->data[base_index + 2] = (uint8_t)clamp_f32(0.0,255.0,B+128);
                     image_data->data[base_index + 3] = UINT8_MAX;
                 }
 

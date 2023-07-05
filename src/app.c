@@ -1239,7 +1239,7 @@ void App_run(Application* app){
     }
 
     ImageData image_data_jpeg;
-    ImageParseResult image_parse_res=Image_read_jpeg("../swift-rt/Resources/cat.jpg",&image_data_jpeg);
+    ImageParseResult image_parse_res=Image_read_jpeg("complex_pattern.jpg",&image_data_jpeg);
     if (image_parse_res!=IMAGE_PARSE_RESULT_OK) {
         fprintf(stderr, "failed to parse jpeg\n");
         exit(-31);
