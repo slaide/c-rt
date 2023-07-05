@@ -945,8 +945,8 @@ ImageParseResult Image_read_jpeg(const char* filepath,ImageData* image_data){
                     uint32_t segment_end_position=current_byte_position+segment_size-2;
 
                     GET_U8(P);
-                    GET_U16(Y);
-                    GET_U16(X);
+                    GET_U16(real_Y);
+                    GET_U16(real_X);
                     GET_U8(Nf);
 
                     if (P!=8) {
@@ -972,21 +972,15 @@ ImageParseResult Image_read_jpeg(const char* filepath,ImageData* image_data){
                         }
                     }
 
-                    real_X=X;
-                    real_Y=Y;
-
-                    int num_lines=ROUND_UP(Y, 8);
-                    int num_samples_per_lines=ROUND_UP(X, 8);
-
-                    X=num_samples_per_lines;
-                    Y=num_lines;
+                    X=ROUND_UP(real_X,8);
+                    Y=ROUND_UP(real_Y,8);
 
                     image_data->height=Y;
                     image_data->width=X;
 
                     for (int i=0; i<Nf; i++) {
-                        image_components[i].vert_samples=(ROUND_UP(num_lines,8*max_component_vert_sample_factor))*image_components[i].vert_sample_factor/max_component_vert_sample_factor;
-                        image_components[i].horz_samples=(ROUND_UP(num_samples_per_lines,8*max_component_horz_sample_factor))*image_components[i].horz_sample_factor/max_component_horz_sample_factor;
+                        image_components[i].vert_samples=(ROUND_UP(Y,8*max_component_vert_sample_factor))*image_components[i].vert_sample_factor/max_component_vert_sample_factor;
+                        image_components[i].horz_samples=(ROUND_UP(X,8*max_component_horz_sample_factor))*image_components[i].horz_sample_factor/max_component_horz_sample_factor;
 
                         int component_data_size=image_components[i].vert_samples*image_components[i].horz_samples;
                         component_data[i]=malloc(component_data_size*sizeof(BLOCK_ELEMENT_TYPE));
@@ -1004,7 +998,6 @@ ImageParseResult Image_read_jpeg(const char* filepath,ImageData* image_data){
             case SOS:
                 {
                     GET_U16(segment_size);
-                    //uint32_t segment_end_position=current_byte_position+segment_size-2;
 
                     int num_scan_components=GET_NB;
 
@@ -1065,42 +1058,47 @@ ImageParseResult Image_read_jpeg(const char* filepath,ImageData* image_data){
                     BitStream bit_stream;
                     BitStream_new(&bit_stream, de_zeroed_file_contents);
 
-                    int num_mcus=image_components[0].vert_samples*image_components[0].horz_samples/(8*8*image_components[0].horz_sample_factor*image_components[0].vert_sample_factor);
+                    uint32_t num_mcus=image_components[0].vert_samples*image_components[0].horz_samples/(8*8*image_components[0].horz_sample_factor*image_components[0].vert_sample_factor);
 
-                    int mcu_cols=image_components[0].horz_samples/image_components[0].horz_sample_factor/8;
+                    uint32_t mcu_cols=image_components[0].horz_samples/image_components[0].horz_sample_factor/8;
 
-                    for (int mcu_id=0;mcu_id<num_mcus;mcu_id++) {
-                        int mcu_row=mcu_id/mcu_cols;
-                        int mcu_col=mcu_id%mcu_cols;
+                    uint32_t scan_component_vert_sample_factor[3];
+                    uint32_t scan_component_horz_sample_factor[3];
+                    uint32_t scan_component_index_in_image[3];
+
+                    for (int scan_component_index=0; scan_component_index<num_scan_components; scan_component_index++) {
+                        for (int i=0; i<Nf; i++) {
+                            if (image_components[i].component_id==scan_component_id[scan_component_index]) {
+                                scan_component_vert_sample_factor[scan_component_index]=image_components[i].vert_sample_factor;
+                                scan_component_horz_sample_factor[scan_component_index]=image_components[i].horz_sample_factor;
+
+                                scan_component_index_in_image[scan_component_index]=i;
+                                break;
+                            }
+                        }
+                        if (scan_component_index_in_image[scan_component_index]==INT32_MAX) {
+                            fprintf(stderr,"did not find image component?!\n");
+                            exit(-102);
+                        }
+                    }
+
+                    for (uint32_t mcu_id=0;mcu_id<num_mcus;mcu_id++) {
+                        uint32_t mcu_row=mcu_id/mcu_cols;
+                        uint32_t mcu_col=mcu_id%mcu_cols;
 
                         for (int scan_component_index=0; scan_component_index<num_scan_components; scan_component_index++) {
-                            int component_vert_sample_factor=0;
-                            int component_horz_sample_factor=0;
+                            uint32_t component_vert_sample_factor=scan_component_vert_sample_factor[scan_component_index];
+                            uint32_t component_horz_sample_factor=scan_component_horz_sample_factor[scan_component_index];
+                            uint32_t component_index_in_image=scan_component_index_in_image[scan_component_index];
 
-                            int32_t component_index_in_image=INT32_MAX;
+                            uint32_t num_component_blocks=image_components[component_index_in_image].horz_samples/8*image_components[component_index_in_image].vert_samples/8;
 
-                            for (int i=0; i<Nf; i++) {
-                                if (image_components[i].component_id==scan_component_id[scan_component_index]) {
-                                    component_vert_sample_factor=image_components[i].vert_sample_factor;
-                                    component_horz_sample_factor=image_components[i].horz_sample_factor;
+                            for (uint32_t vert_sid=0; vert_sid<component_vert_sample_factor; vert_sid++) {
+                                for (uint32_t horz_sid=0; horz_sid<component_horz_sample_factor; horz_sid++) {
+                                    uint32_t block_col=mcu_col*image_components[component_index_in_image].horz_sample_factor + horz_sid;
+                                    uint32_t block_row=mcu_row*image_components[component_index_in_image].vert_sample_factor + vert_sid;
 
-                                    component_index_in_image=i;
-                                    break;
-                                }
-                            }
-                            if (component_index_in_image==INT32_MAX) {
-                                fprintf(stderr,"did not find image component?!\n");
-                                exit(-102);
-                            }
-
-                            int num_component_blocks=image_components[component_index_in_image].horz_samples/8*image_components[component_index_in_image].vert_samples/8;
-
-                            for (int vert_sid=0; vert_sid<component_vert_sample_factor; vert_sid++) {
-                                for (int horz_sid=0; horz_sid<component_horz_sample_factor; horz_sid++) {
-                                    int block_col=mcu_col*image_components[component_index_in_image].horz_sample_factor + horz_sid;
-                                    int block_row=mcu_row*image_components[component_index_in_image].vert_sample_factor + vert_sid;
-
-                                    int component_block_id;
+                                    uint32_t component_block_id;
                                     if (is_interleaved) {
                                         component_block_id = block_col + block_row * mcu_cols*image_components[component_index_in_image].horz_sample_factor;
                                     }else {
