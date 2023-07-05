@@ -687,10 +687,10 @@ Application* App_new(PlatformHandle* platform){
         vkEnumerateInstanceLayerProperties(&num_instance_layers, layer_extensions);
 
         for(uint32_t i=0;i<num_instance_extensions;i++){
-            printf("instance extension: %s\n",instance_extensions[i].extensionName);
+            //printf("instance extension: %s\n",instance_extensions[i].extensionName);
         }
         for(uint32_t i=0;i<num_instance_layers;i++){
-            printf("instance layer: %s\n",layer_extensions[i].layerName);
+            //printf("instance layer: %s\n",layer_extensions[i].layerName);
         }
 
         free(instance_extensions);
@@ -826,10 +826,10 @@ Application* App_new(PlatformHandle* platform){
         vkEnumerateDeviceLayerProperties(app->physical_device, &num_device_layers, device_layers);
 
         for(uint32_t i=0;i<num_device_extensions;i++){
-            printf("device extension: %s\n",device_extensions[i].extensionName);
+            //printf("device extension: %s\n",device_extensions[i].extensionName);
         }
         for(uint32_t i=0;i<num_device_layers;i++){
-            printf("device layer: %s\n",device_layers[i].layerName);
+            //printf("device layer: %s\n",device_layers[i].layerName);
         }
         
         free(device_extensions);
@@ -1251,18 +1251,9 @@ void App_run(Application* app){
         exit(-67);
     }
 
-    printf("parsed jpeg in %fs\n",timespecDiff(start_time,end_time));    
+    printf("parsed jpeg in %fs\n",timespecDiff(start_time,end_time));
 
-    ImageData image_data_ex={
-        .data=(uint8_t[4]){255,255,0,255},
-        .height=1,
-        .width=1,
-        .pixel_format=PIXEL_FORMAT_Ru8Gu8Bu8Au8,
-        .interleaved=true
-    };
-    discard image_data_ex;
-
-    ImageData* image_data=&image_data_jpeg;//&image_data_ex;
+    ImageData* image_data=&image_data_jpeg;
 
     Texture* sometexture=App_create_texture(app,image_data);
 

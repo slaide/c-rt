@@ -15,15 +15,17 @@ CDEF =
 BUILD_OBJS = app.c.o app_mesh.c.o image.c.o
 
 ifeq ($(MODE), debug)
+	CDEF += -DDEBUG
 	OPT_FLAGS := -g -O0
 else ifeq ($(MODE), release)
+	CDEF += -DRELEASE
 	OPT_FLAGS := -O3 -flto=full
 else
 $(error Invalid build mode: $(MODE) (valid options are { release | debug }))
 endif
 
 ifeq ($(PLATFORM), linux)
-	LINKS += -lxcb -lxcb-util
+	LINKS += -lxcb -lxcb-util -lm
 	CDEF += -DVK_USE_PLATFORM_XCB_KHR
 
 	BUILD_OBJS += main_linux.c.o
@@ -48,13 +50,13 @@ CCOMPILE = $(CC) $(CSTD) $(CDEF) $(FLAGS) $(CINCLUDE)
 %.c.o: src/%.c
 	$(CCOMPILE) -c -o $@ $<
 
-build: $(BUILD_OBJS) shaders/vert.spv shaders/frag.spv
-	$(CCOMPILE) $(LINKS) -o main $(BUILD_OBJS)
-
 shaders/vert.spv: shaders/shader.vert
 	glslangValidator shaders/shader.vert -V -o shaders/vert.spv
 shaders/frag.spv: shaders/shader.frag
 	glslangValidator shaders/shader.frag -V -o shaders/frag.spv
+
+build: $(BUILD_OBJS) shaders/vert.spv shaders/frag.spv
+	$(CCOMPILE) $(LINKS) -o main $(BUILD_OBJS)
 
 run: build
 	./main
