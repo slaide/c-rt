@@ -1009,7 +1009,7 @@ void JpegParser_parse_file(JpegParser* parser,ImageData* image_data){
 
                     for (uint32_t mcu_row=0;mcu_row<num_mcus/mcu_cols;mcu_row++) {
                         for (uint32_t mcu_col=0;mcu_col<mcu_cols;mcu_col++) {
-                            uint32_t mcu_id=mcu_cols+mcu_row*mcu_cols;
+                            uint32_t mcu_id=mcu_col+mcu_row*mcu_cols;
 
                             for (int c=0; c<num_scan_components; c++) {
                                 for (uint32_t vert_sid=0; vert_sid<scan_components[c].vert_sample_factor; vert_sid++) {
@@ -1171,8 +1171,6 @@ ImageParseResult Image_read_jpeg(const char* filepath,ImageData* image_data){
                 args[i].idct_mask_set=&idct_mask_set;
                 args[i].block_range_start=i*blocks_per_thread;
                 args[i].block_range_end=(i+1)*blocks_per_thread;
-
-                printf("thread %d will process blocks %d ..< %d\n",i,args[i].block_range_start,args[i].block_range_end);
 
                 if((i+1)==num_threads){
                     args[i].block_range_end=parser.image_components[c].vert_samples/8;
