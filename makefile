@@ -7,7 +7,7 @@ default: run
 CC = clang
 OBJCC = clang
 CSTD = -std=gnu2x
-LINKS = -lvulkan
+LINKS = -lvulkan -pthread
 FLAGS = $(OPT_FLAGS) -Wall -Werror -Wpedantic -Wextra
 CINCLUDE = -Iinclude
 CDEF = 
