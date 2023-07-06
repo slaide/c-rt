@@ -23,14 +23,8 @@ float current_time(){
     return ret;
 }
 
-float min_f32(float a, float b){
-    return (a<b)?a:b;
-}
-float max_f32(float a, float b){
-    return (a>b)?a:b;
-}
 float clamp_f32(float v_min,float v_max, float v){
-    return max_f32(v_min, min_f32(v_max, v));
+    return fmaxf(v_min, fminf(v_max, v));
 }
 
 int32_t twos_complement(uint32_t magnitude, int32_t value){
@@ -44,7 +38,7 @@ int32_t twos_complement(uint32_t magnitude, int32_t value){
     return value;
 }
 
-typedef  enum JpegSegmentType{
+typedef enum JpegSegmentType{
     JPEG_SEGMENT_SOI=0xFFD8,
     JPEG_SEGMENT_EOI=0xFFD9,
 
@@ -176,6 +170,8 @@ const int UNZIGZAG[64]={
     53, 60, 61, 54, 47, 55, 62, 63
 };
 
+#define BLOCK_ELEMENT_TYPE int32_t
+
 typedef struct ImageComponent{
     int vert_samples;
     int horz_samples;
@@ -184,9 +180,10 @@ typedef struct ImageComponent{
     int vert_sample_factor;
     int horz_sample_factor;
     int quant_table_specifier;
-}ImageComponent;
 
-#define BLOCK_ELEMENT_TYPE int32_t
+    BLOCK_ELEMENT_TYPE* raw_blocks;
+
+}ImageComponent;
 
 /**
  * @brief decode block with successive approximation high at zero
@@ -591,10 +588,9 @@ void JpegParser_parse_file(JpegParser* parser,ImageData* image_data){
                             exit(-45);
                         }
 
-                        int table_entries[64];
-                        for (int i=0;i<64;i++){
-                            table_entries[i]=GET_NB;
-                        }
+                        uint8_t table_entries[64];
+                        memcpy(table_entries,&parser->file_contents[parser->current_byte_position],64);
+                        parser->current_byte_position+=64;
 
                         segment_bytes_read+=65;
 
@@ -632,29 +628,28 @@ void JpegParser_parse_file(JpegParser* parser,ImageData* image_data){
                                 exit(FATAL_UNEXPECTED_ERROR);
                         }
 
-                        int total_num_values=0;
-                        int num_values_of_length[16];
-                        for (int i=0; i<16; i++) {
-                            num_values_of_length[i]=GET_NB;
+                        int32_t total_num_values=0;
+                        uint8_t num_values_of_length[16];
 
+                        memcpy(num_values_of_length,&parser->file_contents[parser->current_byte_position],16);
+                        parser->current_byte_position+=16;
+
+                        for (int i=0; i<16; i++) {
                             total_num_values+=num_values_of_length[i];
                         }
 
                         segment_bytes_read+=17;
 
-                        int values[260];
-                        memset(values, 0, 260*4);
-                        uint32_t value_code_lengths[260];
-                        memset(value_code_lengths, 0, 260*4);
+                        uint8_t values[260];
+                        memcpy(values,&parser->file_contents[parser->current_byte_position],total_num_values);
+                        parser->current_byte_position+=total_num_values;
 
-                        int value_index=0;
-                        for (uint32_t code_length=0; code_length<16; code_length++) {
-                            for (int i=0; i<num_values_of_length[code_length]; i++) {
-                                values[value_index]=GET_NB;
-                                value_code_lengths[value_index]=code_length+1;
+                        uint8_t value_code_lengths[260];
 
-                                value_index+=1;
-                            }
+                        uint32_t value_index=0;
+                        for (uint8_t code_length=0; code_length<16; code_length++) {
+                            memset(&value_code_lengths[value_index],code_length+1,num_values_of_length[code_length]);
+                            value_index+=num_values_of_length[code_length];
                         }
 
                         segment_bytes_read+=value_index;
@@ -718,18 +713,14 @@ void JpegParser_parse_file(JpegParser* parser,ImageData* image_data){
 
                         int component_data_size=parser->image_components[i].vert_samples*parser->image_components[i].horz_samples;
                         parser->component_data[i]=malloc(component_data_size*sizeof(BLOCK_ELEMENT_TYPE));
-                        for(int p=0;p<component_data_size;p++){
-                            parser->component_data[i][p]=0.0;
-                        }
                     }
-
-                    image_data->data=malloc(image_data->height*image_data->width*4);
 
                     parser->current_byte_position=segment_end_position;
                 }
                 break;
 
             case SOS:
+                printf("starting SOS at %f\n",current_time());
                 {
                     GET_U16(segment_size);
 
@@ -760,9 +751,6 @@ void JpegParser_parse_file(JpegParser* parser,ImageData* image_data){
                     int32_t successive_approximation_bit_high=HB_U8(successive_approximation_bits);
 
                     int32_t differential_dc[3]={0,0,0};
-
-                    int32_t dummy_block[64];
-                    discard memset(dummy_block, 0, 64*4);
 
                     int stuffed_byte_index_count=0;
                     int stuffed_byte_index_capacity=1024;
@@ -810,63 +798,82 @@ void JpegParser_parse_file(JpegParser* parser,ImageData* image_data){
                                 break;
                             }
                         }
+
                         if (scan_component_index_in_image[scan_component_index]==INT32_MAX) {
                             fprintf(stderr,"did not find image component?!\n");
                             exit(-102);
                         }
                     }
 
+                    struct ScanComponent{
+                        uint32_t vert_sample_factor;
+                        uint32_t horz_sample_factor;
+                        
+                        uint32_t component_index_in_image;
+
+                        uint32_t num_blocks;
+
+                        HuffmanCodingTable* ac_table;
+                        HuffmanCodingTable* dc_table;
+
+                        int32_t* component_memory;
+                    };
+
+                    struct ScanComponent scan_components[3];
+                    for (int c=0; c<num_scan_components; c++) {
+                        scan_components[c].vert_sample_factor=scan_component_vert_sample_factor[c];
+                        scan_components[c].horz_sample_factor=scan_component_horz_sample_factor[c];
+
+                        uint32_t component_index_in_image=scan_component_index_in_image[c];
+                        scan_components[c].component_index_in_image=component_index_in_image;
+
+                        scan_components[c].num_blocks=parser->image_components[component_index_in_image].horz_samples/8*parser->image_components[component_index_in_image].vert_samples/8;
+
+                        scan_components[c].dc_table=&parser->dc_coding_tables[scan_component_dc_table_index[c]];
+                        scan_components[c].ac_table=&parser->ac_coding_tables[scan_component_ac_table_index[c]];
+
+                        scan_components[c].component_memory=parser->component_data[component_index_in_image];
+                    }
+
                     for (uint32_t mcu_id=0;mcu_id<num_mcus;mcu_id++) {
                         uint32_t mcu_row=mcu_id/mcu_cols;
                         uint32_t mcu_col=mcu_id%mcu_cols;
 
-                        for (int scan_component_index=0; scan_component_index<num_scan_components; scan_component_index++) {
-                            uint32_t component_vert_sample_factor=scan_component_vert_sample_factor[scan_component_index];
-                            uint32_t component_horz_sample_factor=scan_component_horz_sample_factor[scan_component_index];
-                            uint32_t component_index_in_image=scan_component_index_in_image[scan_component_index];
-
-                            uint32_t num_component_blocks=parser->image_components[component_index_in_image].horz_samples/8*parser->image_components[component_index_in_image].vert_samples/8;
-
-                            for (uint32_t vert_sid=0; vert_sid<component_vert_sample_factor; vert_sid++) {
-                                for (uint32_t horz_sid=0; horz_sid<component_horz_sample_factor; horz_sid++) {
-                                    uint32_t block_col=mcu_col*parser->image_components[component_index_in_image].horz_sample_factor + horz_sid;
-                                    uint32_t block_row=mcu_row*parser->image_components[component_index_in_image].vert_sample_factor + vert_sid;
+                        for (int c=0; c<num_scan_components; c++) {
+                            for (uint32_t vert_sid=0; vert_sid<scan_components[c].vert_sample_factor; vert_sid++) {
+                                for (uint32_t horz_sid=0; horz_sid<scan_components[c].horz_sample_factor; horz_sid++) {
+                                    uint32_t block_col=mcu_col*scan_components[c].horz_sample_factor + horz_sid;
+                                    uint32_t block_row=mcu_row*scan_components[c].vert_sample_factor + vert_sid;
 
                                     uint32_t component_block_id;
                                     if (is_interleaved) {
-                                        component_block_id = block_col + block_row * mcu_cols*parser->image_components[component_index_in_image].horz_sample_factor;
+                                        component_block_id = block_col + block_row * mcu_cols*scan_components[c].horz_sample_factor;
                                     }else {
                                         component_block_id = mcu_id
-                                            * parser->image_components[component_index_in_image].horz_sample_factor*parser->image_components[component_index_in_image].vert_sample_factor
+                                            * scan_components[c].horz_sample_factor*scan_components[c].vert_sample_factor
                                             + horz_sid
                                             + vert_sid
-                                            * parser->image_components[component_index_in_image].horz_sample_factor;
+                                            * scan_components[c].horz_sample_factor;
                                     }
                                     
-                                    int32_t* block_mem;
-                                    bool use_dummy_block=component_block_id>=num_component_blocks;
-                                    if (use_dummy_block) {
-                                        block_mem=dummy_block;
-                                    }else {
-                                        block_mem=&parser->component_data[component_index_in_image][component_block_id*64];
-                                    }
+                                    int32_t* block_mem=&scan_components[c].component_memory[component_block_id*64];
 
                                     if (successive_approximation_bit_high==0) {
                                         decode_block(
                                             block_mem, 
-                                            &parser->dc_coding_tables[scan_component_dc_table_index[scan_component_index]], 
-                                            &differential_dc[scan_component_index],
-                                            &parser->ac_coding_tables[scan_component_ac_table_index[scan_component_index]], 
+                                            scan_components[c].dc_table, 
+                                            &differential_dc[c],
+                                            scan_components[c].ac_table, 
                                             spectral_selection_start, 
                                             spectral_selection_end, 
                                             &bit_stream, 
                                             successive_approximation_bit_low, 
                                             &eob_run
                                         );
-                                    }else {
+                                    }else{
                                         decode_block_with_sbh(
                                             block_mem,
-                                            &parser->ac_coding_tables[scan_component_ac_table_index[scan_component_index]], 
+                                            scan_components[c].ac_table, 
                                             spectral_selection_start, 
                                             spectral_selection_end, 
                                             &bit_stream, 
@@ -894,6 +901,7 @@ void JpegParser_parse_file(JpegParser* parser,ImageData* image_data){
                     }
                     parser->current_byte_position+=bytes_read_from_stream+stuffed_byte_count_skipped;
 
+                    free(de_zeroed_file_contents);
                     free(stuffed_byte_indices);
                 }
 
@@ -1036,24 +1044,21 @@ void JpegParser_process_channel(JpegParser* parser,int c,IDCTMaskSet* idct_mask_
     // -- resample block data to match final image size
 
     float* out_block;
-    // if downsampled image has output size (because it was not actually downsampled), there is no need to upsample anything
-    if(out_block_size==parser->Y*parser->X){
-        out_block=out_block_downsampled_reordered;
-    }else{
+    {
         int block_element_count=parser->Y*parser->X;
-        out_block=malloc(sizeof(float)*block_element_count);
         
         // this works in both directions:
         //   if image component has fewer samples than max sample count, this upsamples the component
         //   if image component has more samples (because of spec A.2.4 which may require padding), the blocks used for padding are skipped
-        switch (
-            (max_vert_samples<<3*8)
+        int sample_descriptor=(max_vert_samples<<3*8)
             | (parser->image_components[c].vert_sample_factor<<2*8)
             | (max_horz_samples<<8)
-            | (parser->image_components[c].horz_sample_factor)
-        ){
+            | (parser->image_components[c].horz_sample_factor);
+            
+        switch (sample_descriptor){
             // fast path for common component sample combination (2 samples for Y, 1 component for Cb and 1 for Cr)
-            case (0x02010201):
+            case 0x02010201:
+                out_block=malloc(sizeof(float)*block_element_count);
                 for(int out_row =0;out_row<(parser->Y/2);out_row++){
                     for(int out_col =0;out_col<(parser->X/2);out_col++){
                         float pixel=out_block_downsampled_reordered[out_row*downsampled_cols+out_col];
@@ -1064,19 +1069,18 @@ void JpegParser_process_channel(JpegParser* parser,int c,IDCTMaskSet* idct_mask_
                         out_block[ ( out_row * 2 + 1 ) * parser->X + out_col * 2 + 1 ] = pixel;
                     }
                 }
+                free(out_block_downsampled_reordered);
                 break;
 
-            case (0x01010101):
-                for(int out_row =0;out_row<parser->Y;out_row++){
-                    for(int out_col =0;out_col<parser->X;out_col++){
-                        float pixel=out_block_downsampled_reordered[out_row*downsampled_cols+out_col];
-
-                        out_block[ out_row * parser->X + out_col ]=pixel;
-                    }
-                }
+            case (0x01010101*1):
+            case (0x01010101*2):
+            case (0x01010101*3):
+            case (0x01010101*4):
+                out_block=out_block_downsampled_reordered;
                 break;
                 
             default:
+                out_block=malloc(sizeof(float)*block_element_count);
                 for(int out_row = 0;out_row<parser->Y;out_row++){
                     int downsampled_row=out_row*parser->image_components[c].vert_sample_factor/max_vert_samples;
                     for(int out_col = 0;out_col<parser->X;out_col++){
@@ -1088,9 +1092,8 @@ void JpegParser_process_channel(JpegParser* parser,int c,IDCTMaskSet* idct_mask_
                         out_block[out_row*parser->X+out_col]=pixel;
                     }
                 }
+                free(out_block_downsampled_reordered);
         }
-
-        free(out_block_downsampled_reordered);
     }
     parser->final_components[c]=out_block;
 }
@@ -1128,9 +1131,9 @@ ImageParseResult Image_read_jpeg(const char* filepath,ImageData* image_data){
 
     typedef void*(*pthread_callback)(void*);
 
-    uint32_t num_threads=3;
+    const uint32_t num_threads=3;
 
-    {
+    if(num_threads>1){
         struct JpegParser_process_channel_argset* args=malloc(num_threads*sizeof(struct JpegParser_process_channel_argset));
         pthread_t* threads=malloc(num_threads*sizeof(pthread_t));
 
@@ -1140,14 +1143,13 @@ ImageParseResult Image_read_jpeg(const char* filepath,ImageData* image_data){
             args[i].idct_mask_set=&idct_mask_set;
         }
 
-        for(uint32_t i=1;i<num_threads;i++){
+        for(uint32_t i=0;i<num_threads;i++){
             if(pthread_create(&threads[i], NULL, (pthread_callback)JpegParser_process_channel_pthread, &args[i])!=0){
                 fprintf(stderr,"failed to create pthread\n");
                 exit(110);
             }
         }
-        JpegParser_process_channel_pthread(&args[0]);
-        for(uint32_t i=1;i<num_threads;i++){
+        for(uint32_t i=0;i<num_threads;i++){
             if(pthread_join(threads[i], NULL)!=0){
                 fprintf(stderr,"failed to join pthread\n");
                 exit(111);
@@ -1155,6 +1157,10 @@ ImageParseResult Image_read_jpeg(const char* filepath,ImageData* image_data){
         }
 
         printf("idct, re-orientation and adjusted to final size %f\n",current_time());
+    }else{
+        for(int c=0;c<3;c++){
+            JpegParser_process_channel(&parser,c,&idct_mask_set);
+        }
     }
 
     // and convert ycbcr to rgb
@@ -1173,7 +1179,7 @@ ImageParseResult Image_read_jpeg(const char* filepath,ImageData* image_data){
 
                 image_data->data=(uint8_t*)malloc(sizeof(uint8_t)*total_num_pixels_in_image*4);
 
-                {
+                if(num_threads>1){
                     struct JpegParser_convert_colorspace_argset* thread_args=malloc(num_threads*sizeof(struct JpegParser_convert_colorspace_argset));
                     pthread_t* threads=malloc(num_threads*sizeof(pthread_t));
 
@@ -1189,16 +1195,14 @@ ImageParseResult Image_read_jpeg(const char* filepath,ImageData* image_data){
                         }
                     }
 
-                    for(uint32_t i=1;i<num_threads;i++){
+                    for(uint32_t i=0;i<num_threads;i++){
                         if(pthread_create(&threads[i], NULL, (pthread_callback)JpegParser_convert_colorspace_pthread, &thread_args[i])!=0){
                             fprintf(stderr,"failed to launch pthread\n");
                             exit(-107);
                         }
                     }
 
-                    JpegParser_convert_colorspace_pthread(&thread_args[0]);
-
-                    for(uint32_t i=1;i<num_threads;i++){
+                    for(uint32_t i=0;i<num_threads;i++){
                         if(pthread_join(threads[i],NULL)!=0){
                             fprintf(stderr,"failed to join pthread\n");
                             exit(-108);
@@ -1206,6 +1210,8 @@ ImageParseResult Image_read_jpeg(const char* filepath,ImageData* image_data){
                     }
 
                     printf("converted color space at %f\n",current_time());
+                }else{
+                    JpegParser_convert_colorspace(&parser,image_data,0,total_num_pixels_in_image);
                 }
 
                 // -- crop to real size

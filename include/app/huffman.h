@@ -12,17 +12,14 @@ typedef struct HuffmanCodingTable{
 }HuffmanCodingTable;
 
 struct LookupLeaf{
-    int value;
+    uint8_t value;
     uint32_t len;
 };
 struct ParseLeaf{
-    bool present;
-
-    int value;
-    uint32_t len;
+    uint8_t value;
+    uint8_t len;
 
     uint32_t code;
-    uint32_t rcode;
 };
 /**
  * @brief create a new huffman coding table at the target location based on the input values
@@ -36,11 +33,11 @@ struct ParseLeaf{
 void HuffmanCodingTable_new(
     HuffmanCodingTable* table,
 
-    int num_values_of_length[16],
+    uint8_t num_values_of_length[16],
 
     uint32_t total_num_values,
-    uint32_t value_code_lengths[260],
-    int values[260]
+    uint8_t value_code_lengths[260],
+    uint8_t values[260]
 );
 
 typedef struct BitStream{
@@ -68,6 +65,8 @@ void BitStream_new(BitStream* stream,void* data);
  * @return int 
  */
 uint64_t BitStream_get_bits(BitStream* stream,int n_bits);
+
+void BitStream_advance_unsafe(BitStream* stream,int n_bits);
 /**
  * @brief advance stream
  * 
@@ -76,9 +75,28 @@ uint64_t BitStream_get_bits(BitStream* stream,int n_bits);
  */
 void BitStream_advance(BitStream* stream,int n_bits);
 
+/**
+ * @brief ensure that the bitstream has at least n bits cached
+ * this function will fill the internal cache if the cache does not already have sufficient number of bits
+ * @param stream 
+ * @param n_bits 
+ */
+void BitStream_ensure_filled(BitStream* stream,int n_bits);
+/**
+ * @brief fill internal bit buffer (used for fast lookup)
+ * this function is called automatically (internally) when required
+ * @param stream 
+ */
+void BitStream_fill_buffer(BitStream* stream);
+
 uint64_t BitStream_get_bits_advance(BitStream* stream,int n_bits);
+uint64_t BitStream_get_bits_advance_unsafe(BitStream* stream,int n_bits);
 
 int HuffmanCodingTable_lookup(
+    HuffmanCodingTable* table,
+    BitStream* bit_stream
+);
+int HuffmanCodingTable_lookup_unsafe(
     HuffmanCodingTable* table,
     BitStream* bit_stream
 );

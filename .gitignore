@@ -6,3 +6,11 @@ compile_commands.json
 /docs
 
 .DS_Store
+
+/flame_graph.svg
+/folded_data.txt
+/perf.data
+/perf.data.old
+/profile_data.txt
+/FlameGraph
+/generate_flamegraph.sh
