@@ -152,18 +152,18 @@ void BitStream_fill_buffer(BitStream* stream){
     stream->next_data_index+=num_bytes_missing;
 }
 
-void BitStream_ensure_filled(BitStream* stream,int n_bits){
+void BitStream_ensure_filled(BitStream* stream,uint8_t n_bits){
     if(stream->buffer_bits_filled<n_bits){
         BitStream_fill_buffer(stream);
     }
 }
 
-uint64_t BitStream_get_bits_unsafe(BitStream* stream,int n_bits){
+uint64_t BitStream_get_bits_unsafe(BitStream* stream,uint8_t n_bits){
     uint64_t shift_by=stream->buffer_bits_filled-n_bits;
     uint64_t res=stream->buffer>>shift_by;
     return res;
 }
-uint64_t BitStream_get_bits(BitStream* stream,int n_bits){
+uint64_t BitStream_get_bits(BitStream* stream,uint8_t n_bits){
     if (n_bits>stream->buffer_bits_filled) {
         BitStream_fill_buffer(stream);
     }
@@ -171,27 +171,29 @@ uint64_t BitStream_get_bits(BitStream* stream,int n_bits){
     return BitStream_get_bits_unsafe(stream,n_bits);
 }
 
-void BitStream_advance_unsafe(BitStream* stream,int n_bits){
+void BitStream_advance_unsafe(BitStream* stream,uint8_t n_bits){
     stream->buffer_bits_filled-=n_bits;
     uint64_t mask=mask_u64(stream->buffer_bits_filled);
     stream->buffer&=mask;
 }
-void BitStream_advance(BitStream* stream,int n_bits){
-    if (n_bits>stream->buffer_bits_filled) {
-        fprintf(stderr, "bitstream advance by %d bits invalid with %d current buffer length\n",n_bits,stream->buffer_bits_filled);
-        exit(-50);
-    }
+void BitStream_advance(BitStream* stream,uint8_t n_bits){
+    #ifdef DEBUG
+        if (n_bits>stream->buffer_bits_filled) {
+            fprintf(stderr, "bitstream advance by %d bits invalid with %d current buffer length\n",n_bits,stream->buffer_bits_filled);
+            exit(-50);
+        }
+    #endif
     BitStream_advance_unsafe(stream,n_bits);
 }
 
-uint64_t BitStream_get_bits_advance(BitStream* stream,int n_bits){
+uint64_t BitStream_get_bits_advance(BitStream* stream,uint8_t n_bits){
     uint64_t res=BitStream_get_bits(stream, n_bits);
 
     BitStream_advance(stream,n_bits);
 
     return res;
 }
-uint64_t BitStream_get_bits_advance_unsafe(BitStream* stream,int n_bits){
+uint64_t BitStream_get_bits_advance_unsafe(BitStream* stream,uint8_t n_bits){
     uint64_t res=BitStream_get_bits_unsafe(stream, n_bits);
 
     BitStream_advance_unsafe(stream,n_bits);
@@ -206,7 +208,7 @@ int HuffmanCodingTable_lookup(
     uint64_t bits=BitStream_get_bits(bit_stream, table->max_code_length_bits);
 
     int value=table->value_lookup_table[bits];
-    int code_length=table->code_length_lookup_table[bits];
+    uint32_t code_length=table->code_length_lookup_table[bits];
     BitStream_advance_unsafe(bit_stream, code_length);
 
     return value;
@@ -219,7 +221,7 @@ int HuffmanCodingTable_lookup_unsafe(
     uint64_t bits=BitStream_get_bits_unsafe(bit_stream, table->max_code_length_bits);
 
     int value=table->value_lookup_table[bits];
-    int code_length=table->code_length_lookup_table[bits];
+    uint32_t code_length=table->code_length_lookup_table[bits];
     BitStream_advance_unsafe(bit_stream, code_length);
 
     return value;

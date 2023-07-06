@@ -64,16 +64,16 @@ void BitStream_new(BitStream* stream,void* data);
  * @param n_bits 
  * @return int 
  */
-uint64_t BitStream_get_bits(BitStream* stream,int n_bits);
+uint64_t BitStream_get_bits(BitStream* stream,uint8_t n_bits);
 
-void BitStream_advance_unsafe(BitStream* stream,int n_bits);
+void BitStream_advance_unsafe(BitStream* stream,uint8_t n_bits);
 /**
  * @brief advance stream
  * 
  * @param stream 
  * @param n_bits 
  */
-void BitStream_advance(BitStream* stream,int n_bits);
+void BitStream_advance(BitStream* stream,uint8_t n_bits);
 
 /**
  * @brief ensure that the bitstream has at least n bits cached
@@ -81,7 +81,7 @@ void BitStream_advance(BitStream* stream,int n_bits);
  * @param stream 
  * @param n_bits 
  */
-void BitStream_ensure_filled(BitStream* stream,int n_bits);
+void BitStream_ensure_filled(BitStream* stream,uint8_t n_bits);
 /**
  * @brief fill internal bit buffer (used for fast lookup)
  * this function is called automatically (internally) when required
@@ -89,8 +89,8 @@ void BitStream_ensure_filled(BitStream* stream,int n_bits);
  */
 void BitStream_fill_buffer(BitStream* stream);
 
-uint64_t BitStream_get_bits_advance(BitStream* stream,int n_bits);
-uint64_t BitStream_get_bits_advance_unsafe(BitStream* stream,int n_bits);
+uint64_t BitStream_get_bits_advance(BitStream* stream,uint8_t n_bits);
+uint64_t BitStream_get_bits_advance_unsafe(BitStream* stream,uint8_t n_bits);
 
 int HuffmanCodingTable_lookup(
     HuffmanCodingTable* table,
