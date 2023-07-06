@@ -12,7 +12,7 @@ FLAGS = $(OPT_FLAGS) -Wall -Werror -Wpedantic -Wextra
 CINCLUDE = -Iinclude
 CDEF = 
 
-BUILD_OBJS = app.c.o app_mesh.c.o image.c.o
+BUILD_OBJS = app.c.o app_mesh.c.o image.c.o huffman.c.o
 
 ifeq ($(MODE), debug)
 	CDEF += -DDEBUG
@@ -40,9 +40,7 @@ else ifeq ($(PLATFORM), macos)
 	$(OBJCC) $(FLAGS) $(CDEF) $(CINCLUDE) -c -o $@ $<
 
 else
-
 $(error Invalid platform: $(MODE) (valid options are { linux | macos }))
-
 endif
 
 CCOMPILE = $(CC) $(CSTD) $(CDEF) $(FLAGS) $(CINCLUDE)

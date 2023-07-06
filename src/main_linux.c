@@ -162,9 +162,7 @@ PlatformWindow* App_create_window(Application* application){
     }
 
     window->delete_window_atom=Platform_xcb_intern_atom(application->platform_handle, "WM_DELETE_WINDOW");
-    printf("delete window atom %d\n",window->delete_window_atom);
     xcb_atom_t wm_protocols_atom=Platform_xcb_intern_atom(application->platform_handle, "WM_PROTOCOLS");
-    printf("delete window atom %d\n",wm_protocols_atom);
 
     xcb_void_cookie_t change_property_cookie=xcb_change_property_checked(application->platform_handle->connection, XCB_PROP_MODE_REPLACE, window->window, wm_protocols_atom, XCB_ATOM_ATOM, 32, 1, &window->delete_window_atom);
     xcb_generic_error_t* change_property_error=xcb_request_check(application->platform_handle->connection, change_property_cookie);
