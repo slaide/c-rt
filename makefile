@@ -16,10 +16,12 @@ BUILD_OBJS = app.c.o app_mesh.c.o image.c.o huffman.c.o
 
 ifeq ($(MODE), debug)
 	CDEF += -DDEBUG
+	FLAGS += -fsanitize=address
 	OPT_FLAGS := -g -O0
 else ifeq ($(MODE), debugrelease)
 	CDEF += -DDEBUG -DRELEASE
-	OPT_FLAGS := -g -O3 -ffast-math -fno-omit-frame-pointer -fno-inline
+	FLAGS += -fno-omit-frame-pointer -fno-inline
+	OPT_FLAGS := -g -O3 -ffast-math
 else ifeq ($(MODE), release)
 	CDEF += -DRELEASE
 	OPT_FLAGS := -O3 -flto=full -ffast-math
