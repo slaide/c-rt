@@ -16,7 +16,7 @@ BUILD_OBJS = app.c.o app_mesh.c.o image.c.o huffman.c.o
 
 ifeq ($(MODE), debug)
 	CDEF += -DDEBUG
-	FLAGS += -fsanitize=address
+	FLAGS += -fsanitize=address # -fsanitize=thread
 	OPT_FLAGS := -g -O0
 else ifeq ($(MODE), debugrelease)
 	CDEF += -DDEBUG -DRELEASE
