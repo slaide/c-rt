@@ -1157,6 +1157,10 @@ void App_destroy(Application* app){
             vkDestroySwapchainKHR(app->device, app->swapchain, app->vk_allocator);
 
             vkDestroyDevice(app->device,app->vk_allocator);
+
+            free(app->swapchain_images);
+            free(app->swapchain_image_views);
+            free(app->swapchain_framebuffers);
         }
 
         vkDestroySurfaceKHR(app->instance, app->window_surface, app->vk_allocator);
@@ -1239,7 +1243,7 @@ void App_run(Application* app){
     }
 
     ImageData image_data_jpeg;
-    const char* file_path="complex_pattern.jpg";
+    const char* file_path="../swift-rt/Resources/cat2.jpg";
     ImageParseResult image_parse_res=Image_read_jpeg(file_path,&image_data_jpeg);
     if (image_parse_res!=IMAGE_PARSE_RESULT_OK) {
         fprintf(stderr, "failed to parse jpeg\n");
@@ -1297,6 +1301,7 @@ void App_run(Application* app){
             quadmesh=App_upload_mesh(app, command_buffer, 4, mesh);
 
             App_upload_texture(app, sometexture, image_data, command_buffer);
+            free(image_data->data);
         }
 
         vkCmdPipelineBarrier(

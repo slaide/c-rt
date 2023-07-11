@@ -8,7 +8,7 @@ CC = clang
 OBJCC = clang
 CSTD = -std=gnu2x
 LINKS = -lvulkan -pthread
-FLAGS = $(OPT_FLAGS) -Wall -Werror -Wpedantic -Wextra
+FLAGS = -Wall -Werror -Wpedantic -Wextra
 CINCLUDE = -Iinclude
 CDEF = 
 
@@ -16,8 +16,8 @@ BUILD_OBJS = app.c.o app_mesh.c.o image.c.o huffman.c.o
 
 ifeq ($(MODE), debug)
 	CDEF += -DDEBUG
-	FLAGS += -fsanitize=address # -fsanitize=thread
-	OPT_FLAGS := -g -O0
+	FLAGS += -g -fsanitize=address
+	FLAGS += -fno-omit-frame-pointer -fno-inline
 else ifeq ($(MODE), debugrelease)
 	CDEF += -DDEBUG -DRELEASE
 	FLAGS += -fno-omit-frame-pointer -fno-inline
@@ -48,7 +48,7 @@ else
 $(error Invalid platform: $(MODE) (valid options are { linux | macos }))
 endif
 
-CCOMPILE = $(CC) $(CSTD) $(CDEF) $(FLAGS) $(CINCLUDE)
+CCOMPILE = $(CC) $(OPT_FLAGS) $(CSTD) $(CDEF) $(FLAGS) $(CINCLUDE)
 
 %.c.o: src/%.c
 	$(CCOMPILE) -c -o $@ $<

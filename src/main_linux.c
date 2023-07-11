@@ -97,6 +97,8 @@ int App_get_input_event(Application* app,InputEvent* input_event){
             printf("got event %s\n",xcb_event_get_label(event_type));
     }
 
+    free(xcb_event);
+
     return INPUT_EVENT_PRESENT;
 }
 

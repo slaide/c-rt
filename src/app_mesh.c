@@ -87,4 +87,6 @@ Mesh* App_upload_mesh(
 void App_destroy_mesh(Application* app,Mesh* mesh){
     vkFreeMemory(app->device, mesh->buffer_memory, app->vk_allocator);
     vkDestroyBuffer(app->device, mesh->buffer, app->vk_allocator);
+
+    free(mesh);
 }

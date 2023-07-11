@@ -33,23 +33,6 @@ void uint64_to_str(uint64_t v,char s[64]){
     }
 }
 
-uint32_t mask_u32(uint32_t n){
-    if (n==0) return  0;
-    uint32_t shift_by=32-n;
-    uint32_t base=0xffffffff;
-    uint32_t ret=base>>shift_by;
-
-    return ret;
-}
-uint64_t mask_u64(uint64_t n){
-    if (n==0) return  0;
-    uint64_t shift_by=64-n;
-    uint64_t base=0xffffffffffffffff;
-    uint64_t ret=base>>shift_by;
-
-    return ret;
-}
-
 /**
  * @brief reverse a sequence of len bits
  * 
@@ -128,6 +111,12 @@ void HuffmanCodingTable_new(
             table->code_length_lookup_table[leaf_index]=leaf->len;
         }
     }
+}
+void HuffmanCodingTable_destroy(HuffmanCodingTable* table){
+    if(table->code_length_lookup_table)
+        free(table->code_length_lookup_table);
+    if(table->value_lookup_table)
+        free(table->value_lookup_table);
 }
 
 void BitStream_new(BitStream* stream,void* data){

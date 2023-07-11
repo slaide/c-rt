@@ -4,6 +4,23 @@
 #include <string.h>
 #include <strings.h>
 
+static inline uint32_t mask_u32(uint32_t n){
+    if (n==0) return  0;
+    uint32_t shift_by=32-n;
+    uint32_t base=0xffffffff;
+    uint32_t ret=base>>shift_by;
+
+    return ret;
+}
+static inline uint64_t mask_u64(uint64_t n){
+    if (n==0) return  0;
+    uint64_t shift_by=64-n;
+    uint64_t base=0xffffffffffffffff;
+    uint64_t ret=base>>shift_by;
+
+    return ret;
+}
+
 typedef struct HuffmanCodingTable{
     uint32_t max_code_length_bits;
 
@@ -39,6 +56,7 @@ void HuffmanCodingTable_new(
     uint8_t value_code_lengths[260],
     uint8_t values[260]
 );
+void HuffmanCodingTable_destroy(HuffmanCodingTable* table);
 
 typedef struct BitStream{
     uint8_t* data;
@@ -100,5 +118,3 @@ int HuffmanCodingTable_lookup_unsafe(
     HuffmanCodingTable* table,
     BitStream* bit_stream
 );
-uint32_t mask_u32(uint32_t n);
-uint64_t mask_u64(uint64_t n);
