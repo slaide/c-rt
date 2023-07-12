@@ -5,18 +5,14 @@
 #include <strings.h>
 
 static inline uint32_t mask_u32(uint32_t n){
-    if (n==0) return  0;
-    uint32_t shift_by=32-n;
-    uint32_t base=0xffffffff;
-    uint32_t ret=base>>shift_by;
+    uint32_t base=1;
+    uint32_t ret=(base<<n)-1;
 
     return ret;
 }
 static inline uint64_t mask_u64(uint64_t n){
-    if (n==0) return  0;
-    uint64_t shift_by=64-n;
-    uint64_t base=0xffffffffffffffff;
-    uint64_t ret=base>>shift_by;
+    uint64_t base=1;
+    uint64_t ret=(base<<n)-1;
 
     return ret;
 }

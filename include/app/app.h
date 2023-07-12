@@ -273,3 +273,15 @@ typedef enum ImageParseResult{
 }ImageParseResult;
 
 ImageParseResult Image_read_jpeg(const char* filepath,ImageData* image_data);
+
+void App_upload_data(
+    Application* app,
+
+    VkCommandBuffer recording_command_buffer,
+
+    VkBuffer* buffer,
+    VkDeviceMemory* buffer_memory,
+
+    uint32_t data_size_bytes,
+    void* data
+);
