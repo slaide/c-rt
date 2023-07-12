@@ -1262,6 +1262,26 @@ void App_run(Application* app){
 
     Texture* sometexture=App_create_texture(app,image_data);
 
+    struct CameraData{
+        int width;
+        int height;
+    };
+    struct CameraData camera_data;
+    VkBuffer camera_buffer;
+    VkDeviceMemory camera_buffer_memory;
+
+    App_upload_data(
+        app,
+
+        VK_NULL_HANDLE,
+
+        &camera_buffer,
+        &camera_buffer_memory,
+
+        sizeof(struct CameraData),
+        &camera_data
+    );
+
     int frame=0;
     bool window_should_close=false;
     while(1){

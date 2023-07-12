@@ -15,7 +15,9 @@
 
 typedef void*(*pthread_callback)(void*);
 
-float current_time(){
+#define MAX_NSEC 999999999
+
+double current_time(){
     struct timespec current_time;
     int time_get_result=clock_gettime(CLOCK_MONOTONIC, &current_time);
     if (time_get_result != 0) {
@@ -23,8 +25,8 @@ float current_time(){
         exit(-66);
     }
 
-    float ret=current_time.tv_sec;
-    ret+=((float)current_time.tv_nsec)/1000000000.0;
+    double ret=current_time.tv_sec;
+    ret+=((double)current_time.tv_nsec)/(double)(MAX_NSEC+1);
     return ret;
 }
 
@@ -201,11 +203,6 @@ typedef struct ImageComponent{
      * @brief 
      * 
      */
-    float* raw_blocks;
-    /**
-     * @brief 
-     * 
-     */
     float* out_block_downsampled;
 }ImageComponent;
 
@@ -222,7 +219,7 @@ typedef struct ImageComponent{
  * @param successive_approximation_bit_low 
  * @param eob_run 
  */
-void decode_block(
+static inline void decode_block(
     BLOCK_ELEMENT_TYPE block_mem[64],
 
     HuffmanCodingTable* dc_table,
@@ -238,7 +235,7 @@ void decode_block(
 
     int32_t* eob_run
 ){
-    if (spectral_selection_start==0) {
+  if (spectral_selection_start==0) {
         int32_t dc_magnitude=HuffmanCodingTable_lookup(dc_table, bit_stream);
         int32_t dc_value=0;
         if (dc_magnitude>0) {
@@ -253,22 +250,24 @@ void decode_block(
         spectral_selection_start=1;
     }
 
-    if (spectral_selection_end>=1) {
-        if (*eob_run>0) {
-            *eob_run-=1;
-            return;
-        }
+    if (spectral_selection_end==0) {
+        return;
+    }
+
+    if (*eob_run>0) {
+        *eob_run-=1;
+        return;
     }
 
     for (int c=spectral_selection_start; c<=spectral_selection_end; c++) {
-        int ac_bits=HuffmanCodingTable_lookup(ac_table, bit_stream);
+        int32_t ac_bits=HuffmanCodingTable_lookup(ac_table, bit_stream);
 
         if (ac_bits==0) {
             break;
         }
 
-        int num_zeros=ac_bits>>4;
-        int ac_magnitude=ac_bits&0xF;
+        uint32_t num_zeros=ac_bits>>4;
+        uint32_t ac_magnitude=ac_bits&0xF;
 
         if (ac_magnitude==0) {
             if (num_zeros==15) {
@@ -298,7 +297,7 @@ void decode_block(
         block_mem[UNZIGZAG[c]]=ac_value<<successive_approximation_bit_low;
     }
 }
-uint8_t refine_block(
+static inline uint8_t refine_block(
     BLOCK_ELEMENT_TYPE block_mem[64],
 
     BitStream* bit_stream,
@@ -344,7 +343,7 @@ uint8_t refine_block(
  * @param successive_approximation_bit_high 
  * @param eob_run 
  */
-void decode_block_with_sbh(
+static inline void decode_block_with_sbh(
     BLOCK_ELEMENT_TYPE block_mem[64],
 
     HuffmanCodingTable* ac_table,
@@ -454,7 +453,7 @@ void decode_block_with_sbh(
  * @param u 
  * @return float 
  */
-float coeff(int u){
+static inline float coeff(int u){
     if(u==0){
         return 1.0/sqrt(2.0);
     }else{
@@ -466,7 +465,7 @@ float coeff(int u){
 typedef struct IDCTMaskSet {
     IDCT_MASK_ELEMENT_TYPE idct_element_masks[64][64];
 } IDCTMaskSet;
-void IDCTMaskSet_generate(IDCTMaskSet* mask_set){
+static inline void IDCTMaskSet_generate(IDCTMaskSet* mask_set){
     for(int mask_index = 0;mask_index<64;mask_index++){
         for(int ix = 0;ix<8;ix++){
             for(int iy = 0;iy<8;iy++){
@@ -536,7 +535,6 @@ void JpegParser_init_empty(JpegParser* parser){
         parser->image_components[i].quant_table_specifier=0;
 
         parser->image_components[i].scan_memory=NULL;
-        parser->image_components[i].raw_blocks=NULL;
         parser->image_components[i].out_block_downsampled=NULL;
     }
 
@@ -582,10 +580,10 @@ void JpegParser_process_channel(JpegParser* parser,int c,IDCTMaskSet* idct_mask_
                 float cosine_mask_strength=in_block[0]*(*component_quant_table)[0];
                 float* idct_mask=idct_mask_set->idct_element_masks[0];
 
-                float idct_mask_0_value=idct_mask[0];
+                float idct_mask_0_value=idct_mask[0]*cosine_mask_strength;
                 
                 for(uint32_t pixel_index = 0;pixel_index<64;pixel_index++){
-                    out_block[pixel_index]=idct_mask_0_value*cosine_mask_strength;
+                    out_block[pixel_index]=idct_mask_0_value;
                 }
             }
 
@@ -726,7 +724,16 @@ void JpegParser_parse_file(JpegParser* parser,ImageData* image_data,bool paralle
                     GET_U16(segment_size);
                     uint32_t segment_end_position=parser->current_byte_position+segment_size-2;
 
-                    // new code here
+                    uint32_t comment_length=segment_size-2;
+
+                    char* comment_str=malloc(comment_length+1);
+                    comment_str[comment_length]=0;
+
+                    memcpy(comment_str,&parser->file_contents[parser->current_byte_position],comment_length);
+
+                    println("found jpeg file comment: \"%s\"",comment_str);
+
+                    free(comment_str);
 
                     parser->current_byte_position=segment_end_position;
                 }
@@ -1030,26 +1037,23 @@ void JpegParser_parse_file(JpegParser* parser,ImageData* image_data,bool paralle
 
                     for (uint32_t mcu_row=0;mcu_row<mcu_rows;mcu_row++) {
                         for (uint32_t mcu_col=0;mcu_col<mcu_cols;mcu_col++) {
-                            uint32_t mcu_id=mcu_col+mcu_row*mcu_cols;
-
                             for (int c=0; c<num_scan_components; c++) {
                                 for (uint32_t vert_sid=0; vert_sid<scan_components[c].vert_sample_factor; vert_sid++) {
                                     for (uint32_t horz_sid=0; horz_sid<scan_components[c].horz_sample_factor; horz_sid++) {
                                         uint32_t block_col=mcu_col*scan_components[c].horz_sample_factor + horz_sid;
-                                        uint32_t block_row=mcu_row*scan_components[c].vert_sample_factor + vert_sid;
+                                        //uint32_t block_row=mcu_row*scan_components[c].vert_sample_factor + vert_sid;
 
                                         uint32_t component_block_id;
                                         if (is_interleaved) {
-                                            component_block_id = block_col + block_row * scan_components[c].num_horz_blocks;
+                                            component_block_id = block_col + vert_sid * scan_components[c].num_horz_blocks;
                                         }else {
-                                            component_block_id = mcu_id
-                                                * scan_components[c].horz_sample_factor*scan_components[c].vert_sample_factor
+                                            component_block_id =
+                                                mcu_col
+                                                    * scan_components[c].horz_sample_factor*scan_components[c].vert_sample_factor
                                                 + horz_sid
                                                 + vert_sid
-                                                * scan_components[c].horz_sample_factor;
+                                                    * scan_components[c].horz_sample_factor;
                                         }
-
-                                        component_block_id%=scan_components[c].num_blocks_in_scan;
                                         
                                         int32_t* block_mem=&scan_components[c].scan_memory[mcu_row][component_block_id*64];
 
@@ -1116,6 +1120,8 @@ void JpegParser_parse_file(JpegParser* parser,ImageData* image_data,bool paralle
         }
     }
 
+    println("parsing done at %f",current_time());
+
     if(parallel)
         for(int t=0;t<3;t++)
             pthread_join(async_scan_processors[t], NULL);
@@ -1125,6 +1131,8 @@ void JpegParser_parse_file(JpegParser* parser,ImageData* image_data,bool paralle
             JpegParser_process_channel(parser,c,&idct_mask_set,0,parser->image_components[c].num_scans);
         }
     }
+
+    println("processing done at %f",current_time());
 }
 
 struct JpegParser_convert_colorspace_argset{
@@ -1254,8 +1262,6 @@ ImageParseResult Image_read_jpeg(const char* filepath,ImageData* image_data){
     
     JpegParser_parse_file(&parser, image_data, num_threads>1);
 
-    printf("parsing done at %f\n",current_time());
-
     // -- convert idct magnitude values to channel pixel values
     // then upsample channels to final resolution
 
@@ -1319,6 +1325,8 @@ ImageParseResult Image_read_jpeg(const char* filepath,ImageData* image_data){
             fprintf(stderr,"color space %X other than YCbCr (component IDs 1,2,3) currently unimplemented",color_space);
             exit(-65);
     }
+
+    println("colorspace done at %f",current_time());
 
     // -- crop to real size
 
