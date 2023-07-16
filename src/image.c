@@ -195,16 +195,6 @@ static const uint8_t ZIGZAG[64]={
     21, 34, 37, 47, 50, 56, 59, 61,
     35, 36, 48, 49, 57, 58, 62, 63,
 };
-static const uint8_t UNZIGZAG[64]={
-    0,  1,  8,  16, 9,  2,  3,  10, 
-    17, 24, 32, 25, 18, 11, 4,  5, 
-    12, 19, 26, 33, 40, 48, 41, 34, 
-    27, 20, 13, 6,  7,  14, 21, 28, 
-    35, 42, 49, 56, 57, 50, 43, 36, 
-    29, 22, 15, 23, 30, 37, 44, 51, 
-    58, 59, 52, 45, 38, 31, 39, 46, 
-    53, 60, 61, 54, 47, 55, 62, 63
-};
 
 typedef struct ImageComponent{
     uint32_t vert_samples;
@@ -319,7 +309,7 @@ static inline void decode_block_ac(
 
         const MCU_EL ac_value=(MCU_EL)twos_complement(ac_magnitude,ac_value_bits);
 
-        block_mem[UNZIGZAG[spec_sel++]]=(MCU_EL)(ac_value<<successive_approximation_bit_low);
+        block_mem[spec_sel++]=(MCU_EL)(ac_value<<successive_approximation_bit_low);
     }
 }
 
@@ -335,12 +325,10 @@ static inline uint8_t refine_block(
     uint8_t num_zeros,
     const MCU_EL bit
 ){
-    for(uint8_t i= range_start;i<=range_end;i++){
-        const int index=UNZIGZAG[i];
-
+    for(uint8_t index= range_start;index<=range_end;index++){
         if(block_mem[index]==0){
             if(num_zeros==0){
-                return i;
+                return index;
             }
 
             num_zeros -= 1;
@@ -431,7 +419,7 @@ static inline void decode_block_with_sbh(
         );
 
         if(value != 0){
-            block_mem[UNZIGZAG[next_pixel_index]]=value;
+            block_mem[next_pixel_index]=value;
         }
         
         next_pixel_index+=1;
@@ -598,11 +586,12 @@ static void JpegParser_process_channel(JpegParser* parser,int c,uint32_t scan_id
                     }
 
                     for(uint32_t cosine_index = 1;cosine_index<64;cosine_index++){
-                        if(in_block[cosine_index] == 0) {
+                        uint32_t corrected_cosine_index=ZIGZAG[cosine_index];
+                        if(in_block[corrected_cosine_index] == 0) {
                             continue;
                         }
 
-                        const float cosine_mask_strength=(float)(in_block[cosine_index]*component_quant_table[cosine_index]);
+                        const float cosine_mask_strength=(float)(in_block[corrected_cosine_index]*component_quant_table[cosine_index]);
                         const float* const idct_mask=idct_mask_set[cosine_index];
                         
                         for(uint32_t pixel_index = 0;pixel_index<64;pixel_index++){
@@ -811,7 +800,7 @@ static inline void process_mcu_generic(
 
                     const MCU_EL ac_value=(MCU_EL)twos_complement(ac_magnitude,ac_value_bits);
 
-                    block_mem[UNZIGZAG[spec_sel++]]=(MCU_EL)(ac_value<<successive_approximation_bit_low);
+                    block_mem[spec_sel++]=(MCU_EL)(ac_value<<successive_approximation_bit_low);
                 }
             }else{
                 if(spectral_selection_start == 0){
@@ -1536,8 +1525,6 @@ void JpegParser_convert_colorspace(JpegParser* parser,ImageData* image_data,uint
     const float* const y=image_components[0].out_block_downsampled;
     const float* const cr=image_components[1].out_block_downsampled;
     const float* const cb=image_components[2].out_block_downsampled;
-
-    uint32_t img_size_X=parser->X;
 
     uint32_t row_scale[3]={
         parser->max_component_vert_sample_factor/image_components[0].vert_sample_factor,
