@@ -241,7 +241,7 @@ static inline void BitStream_advance_unsafe(BitStream* const stream,const uint8_
 [[clang::always_inline,gnu::flatten]]
 static inline void BitStream_advance(BitStream* const stream,const uint8_t n_bits){
     if (n_bits>stream->buffer_bits_filled) {
-        fprintf(stderr, "bitstream advance by %d bits invalid with %lu current buffer length\n",n_bits,stream->buffer_bits_filled);
+        fprintf(stderr, "bitstream advance by %d bits invalid with %llu current buffer length\n",n_bits,stream->buffer_bits_filled);
         exit(-50);
     }
 

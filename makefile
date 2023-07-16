@@ -16,7 +16,13 @@ BUILD_OBJS = app.c.o app_mesh.c.o image.c.o huffman.c.o
 
 ifeq ($(MODE), debug)
 	CDEF += -DDEBUG
-	COMPILE_FLAGS += -g -fsanitize=address
+	COMPILE_FLAGS += -g
+
+	# not available on (arm64) macos
+	ifeq ($(PLATFORM), linux)
+		COMPILE_FLAGS += -fsanitize=address
+	endif
+
 	COMPILE_FLAGS += -fno-omit-frame-pointer -fno-inline
 else ifeq ($(MODE), debugrelease)
 	CDEF += -DDEBUG -DRELEASE

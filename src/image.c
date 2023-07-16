@@ -1114,14 +1114,14 @@ void JpegParser_parse_file(JpegParser* parser,ImageData* image_data,const bool p
                         parser->image_components[i].num_scans=component_num_scans;
                         parser->image_components[i].num_blocks_in_scan=component_num_scan_elements/64;
 
-                        parser->image_components[i].out_block_downsampled=aligned_alloc(64,sizeof(IDCT_MASK_ELEMENT_TYPE)*component_data_size);
+                        parser->image_components[i].out_block_downsampled=aligned_alloc(64,ROUND_UP(sizeof(IDCT_MASK_ELEMENT_TYPE)*component_data_size,64));
 
                         parser->image_components[i].total_num_blocks=parser->image_components[i].vert_samples*parser->image_components[i].horz_samples/64;
                     }
 
                     const uint32_t total_num_pixels_in_image=parser->X*parser->Y;
 
-                    image_data->data=(uint8_t*)aligned_alloc(64,sizeof(uint8_t)*total_num_pixels_in_image*4);
+                    image_data->data=(uint8_t*)aligned_alloc(64,ROUND_UP(sizeof(uint8_t)*total_num_pixels_in_image*4,64));
 
                     parser->current_byte_position=segment_end_position;
                 }
@@ -1643,7 +1643,7 @@ ImageParseResult Image_read_jpeg(const char* filepath,ImageData* image_data){
     parser.file_size=(uint64_t)ftell_res;
     rewind(file);
 
-    parser.file_contents=aligned_alloc(64,parser.file_size);
+    parser.file_contents=aligned_alloc(64,ROUND_UP(parser.file_size,64));
     discard fread(parser.file_contents, 1, parser.file_size, file);
     
     fclose(file);
@@ -1714,7 +1714,7 @@ ImageParseResult Image_read_jpeg(const char* filepath,ImageData* image_data){
 
     if(parser.X!=parser.real_X || parser.Y!=parser.real_Y){
         uint8_t* const old_data=image_data->data;
-        uint8_t* const real_data=aligned_alloc(64,parser.real_X*parser.real_Y*4);
+        uint8_t* const real_data=aligned_alloc(64,ROUND_UP(parser.real_X*parser.real_Y*4,64));
 
         for (uint32_t y=0; y<parser.real_Y; y++) {
             for(uint32_t x=0; x<parser.real_X; x++) {
