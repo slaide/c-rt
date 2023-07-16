@@ -10,7 +10,7 @@
 struct PlatformHandle{
     xcb_connection_t* connection;
 
-    int num_open_windows;
+    uint32_t num_open_windows;
     PlatformWindow** open_windows;
 };
 struct PlatformWindow{
@@ -19,7 +19,7 @@ struct PlatformWindow{
 };
 
 xcb_atom_t Platform_xcb_intern_atom(PlatformHandle* platform,const char* atom_name){
-    xcb_intern_atom_cookie_t atom_cookie=xcb_intern_atom(platform->connection, 0, strlen(atom_name), atom_name);
+    xcb_intern_atom_cookie_t atom_cookie=xcb_intern_atom(platform->connection, 0, (uint16_t)strlen(atom_name), atom_name);
     xcb_generic_error_t* error;
     xcb_intern_atom_reply_t* atom_reply=xcb_intern_atom_reply(platform->connection, atom_cookie, &error);
     xcb_atom_t atom=atom_reply->atom;
@@ -40,14 +40,14 @@ void App_set_window_title(Application* app, PlatformWindow* window, const char* 
         window->window, 
         net_wm_name, 
         Platform_xcb_intern_atom(app->platform_handle,"UTF8_STRING"), 
-        8, strlen(title), title
+        8, (uint32_t)strlen(title), title
     );
     xcb_change_property_checked(app->platform_handle->connection, 
         XCB_PROP_MODE_REPLACE, 
         window->window, 
         net_wm_visible_name, 
         Platform_xcb_intern_atom(app->platform_handle,"UTF8_STRING"), 
-        8, strlen(title), title
+        8, (uint32_t)strlen(title), title
     );
 }
 VkSurfaceKHR App_create_window_vk_surface(Application* app,PlatformWindow* platform_window){
@@ -83,7 +83,7 @@ int App_get_input_event(Application* app,InputEvent* input_event){
         case XCB_CLIENT_MESSAGE:
             {
                 xcb_client_message_event_t* client_message = (xcb_client_message_event_t*) xcb_event;
-                for(int window_id=0;window_id<app->platform_handle->num_open_windows;window_id++){
+                for(uint32_t window_id=0;window_id<app->platform_handle->num_open_windows;window_id++){
                     PlatformWindow* open_window=app->platform_handle->open_windows[window_id];
 
                     xcb_atom_t client_message_atom=client_message->data.data32[0];
@@ -181,7 +181,7 @@ PlatformWindow* App_create_window(Application* application){
 
     xcb_map_window(application->platform_handle->connection,window->window);
 
-    int new_window_id=application->platform_handle->num_open_windows;
+    uint32_t new_window_id=application->platform_handle->num_open_windows;
     application->platform_handle->num_open_windows+=1;
     application->platform_handle->open_windows=realloc(application->platform_handle->open_windows, application->platform_handle->num_open_windows*sizeof(PlatformWindow*));
 
@@ -193,11 +193,15 @@ void App_destroy_window(Application *app, PlatformWindow *window){
     xcb_unmap_window(app->platform_handle->connection,window->window);
     xcb_destroy_window(app->platform_handle->connection,window->window);
 
-    app->platform_handle->num_open_windows-=1;
+    free(window);
+
     if(app->platform_handle->num_open_windows>0){
-        app->platform_handle->open_windows=realloc(app->platform_handle->open_windows,app->platform_handle->num_open_windows*sizeof(PlatformWindow*));
-    }else{
-        free(app->platform_handle->open_windows);
+        app->platform_handle->num_open_windows-=1;
+        if(app->platform_handle->num_open_windows>0){
+            app->platform_handle->open_windows=realloc(app->platform_handle->open_windows,app->platform_handle->num_open_windows*sizeof(PlatformWindow*));
+        }else{
+            free(app->platform_handle->open_windows);
+        }
     }
 }
 

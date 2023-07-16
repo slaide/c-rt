@@ -100,16 +100,16 @@ const char* vkRes2str(VkResult res){
  * @param device_type 
  * @return const char* NULL on invalid or unknown device type
  */
-const char* device_type_name(int device_type){
+[[gnu::pure]]
+const char* device_type_name(VkPhysicalDeviceType device_type){
     switch(device_type){
         case VK_PHYSICAL_DEVICE_TYPE_CPU: return "VK_PHYSICAL_DEVICE_TYPE_CPU";
         case VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU: return "VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU";
         case VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU: return "VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU";
         case VK_PHYSICAL_DEVICE_TYPE_VIRTUAL_GPU: return "VK_PHYSICAL_DEVICE_TYPE_VIRTUAL_GPU";
         case VK_PHYSICAL_DEVICE_TYPE_OTHER: return "VK_PHYSICAL_DEVICE_TYPE_OTHER";
+        default: return NULL;
     }
-
-    return NULL;
 }
 
 VertexData mesh[4]={
@@ -143,6 +143,7 @@ struct Texture{
  * @param image_data 
  * @return Texture* 
  */
+[[gnu::nonnull(1,2)]]
 Texture* App_create_texture(Application* app, ImageData* image_data){
     discard image_data;
 
@@ -402,7 +403,12 @@ VkShaderModule App_create_shader_module(Application* app,const char* shader_file
     }
 
     discard fseek(shader_file,0,SEEK_END);
-    int shader_size=ftell(shader_file);
+    int64_t shader_size_res=ftell(shader_file);
+    if(shader_size_res<0){
+        fprintf(stderr,"could not get shader file size.\n");
+        exit(FATAL_UNEXPECTED_ERROR);
+    }
+    uint64_t shader_size=(uint64_t)shader_size_res;
     rewind(shader_file);
 
     uint32_t* shader_code=malloc(shader_size);
@@ -760,8 +766,8 @@ Application* App_new(PlatformHandle* platform){
     vkEnumeratePhysicalDevices(app->instance, &num_physical_devices, physical_devices);
 
     // look for fit physical device, and required queue families
-    int graphics_queue_family_index=-1;
-    int present_queue_family_index=-1;
+    uint32_t graphics_queue_family_index=UINT32_MAX;
+    uint32_t present_queue_family_index=UINT32_MAX;
 
     for(uint32_t i=0;i<num_physical_devices;i++){
         VkPhysicalDevice physical_device=physical_devices[i];
@@ -778,8 +784,8 @@ Application* App_new(PlatformHandle* platform){
         VkQueueFamilyProperties* queue_families=malloc(num_queue_families*sizeof(VkQueueFamilyProperties));
         vkGetPhysicalDeviceQueueFamilyProperties(physical_device, &num_queue_families,queue_families);
 
-        graphics_queue_family_index=-1;
-        present_queue_family_index=-1;
+        graphics_queue_family_index=UINT32_MAX;
+        present_queue_family_index=UINT32_MAX;
 
         for(uint32_t queue_family_index=0;queue_family_index<num_queue_families;queue_family_index++){
             uint32_t qflag=queue_families[queue_family_index].queueFlags;
@@ -798,14 +804,14 @@ Application* App_new(PlatformHandle* platform){
             }
 
             // prefer a queue that supports both
-            if(graphics_queue_family_index==present_queue_family_index && present_queue_family_index!=-1){
+            if(graphics_queue_family_index==present_queue_family_index && present_queue_family_index!=UINT32_MAX){
                 break;
             }
         }
 
         free(queue_families);
 
-        if(graphics_queue_family_index==-1 || present_queue_family_index==-1){
+        if(graphics_queue_family_index==UINT32_MAX || present_queue_family_index==UINT32_MAX){
             printf("  device incompatible\n");
             continue;
         }
@@ -933,7 +939,7 @@ Application* App_new(PlatformHandle* platform){
     VkPresentModeKHR swapchain_present_mode=present_modes[0];
     free(present_modes);
 
-    int swapchain_image_count=1;
+    uint32_t swapchain_image_count=1;
     if(surface_capabilities.minImageCount>0){
         swapchain_image_count=surface_capabilities.minImageCount;
     }
@@ -1133,13 +1139,14 @@ Application* App_new(PlatformHandle* platform){
         exit(VULKAN_BIND_BUFFER_MEMORY_FAILURE);
     }
 
-    printf("created app\n");
-
     return app;
 }
-/// destroy an app
-///
-/// frees owned memory
+
+/**
+ * @brief destroy an app
+ * 
+ * @param app 
+ */
 void App_destroy(Application* app){
     if(app->instance!=VK_NULL_HANDLE){
         if(app->device!=VK_NULL_HANDLE){
@@ -1168,9 +1175,14 @@ void App_destroy(Application* app){
         vkDestroyInstance(app->instance,app->vk_allocator);
     }
 
+    App_destroy_window(app,app->platform_window);
+
     free(app);
 }
 
+double get_time(struct timespec t){
+    return (double)(t.tv_sec)+((double)(t.tv_nsec)/(double)(999999999+1));
+}
 /**
  * @brief get timediff in s
  * 
@@ -1178,9 +1190,8 @@ void App_destroy(Application* app){
  * @param end 
  * @return float 
  */
-float timespecDiff(struct timespec start, struct timespec end) {
-    float diff = end.tv_sec - start.tv_sec;
-    diff += ((float)(end.tv_nsec - start.tv_nsec))/1000000000.0;
+double timespecDiff(struct timespec start, struct timespec end) {
+    double diff = get_time(end)-get_time(start);
     return diff;
 }
 
@@ -1235,28 +1246,20 @@ void App_run(Application* app){
     VkCommandBuffer command_buffer=command_buffers[0];
 
     Mesh* quadmesh=NULL;
-    struct timespec start_time,end_time;
-    int start_time_get_result=clock_gettime(CLOCK_MONOTONIC, &start_time);
-    if (start_time_get_result != 0) {
-        fprintf(stderr, "failed to get start time because %d\n",start_time_get_result);
-        exit(-66);
-    }
 
     ImageData image_data_jpeg;
-    const char* file_path="../swift-rt/Resources/cat2.jpg";
-    ImageParseResult image_parse_res=Image_read_jpeg(file_path,&image_data_jpeg);
-    if (image_parse_res!=IMAGE_PARSE_RESULT_OK) {
-        fprintf(stderr, "failed to parse jpeg\n");
-        exit(-31);
-    }
+    const char* file_path="../swift-rt/Resources/cat.jpg";
+    for(int i=0;i<5;i++){
+        if(i>0){
+            free(image_data_jpeg.data);
+        }
 
-    int end_time_get_result=clock_gettime(CLOCK_MONOTONIC, &end_time);
-    if (end_time_get_result != 0) {
-        fprintf(stderr, "failed to get end time because %d\n",end_time_get_result);
-        exit(-67);
+        ImageParseResult image_parse_res=Image_read_jpeg(file_path,&image_data_jpeg);
+        if (image_parse_res!=IMAGE_PARSE_RESULT_OK) {
+            fprintf(stderr, "failed to parse jpeg\n");
+            exit(-31);
+        }
     }
-
-    printf("parsed jpeg in %fs\n",timespecDiff(start_time,end_time));
 
     ImageData* image_data=&image_data_jpeg;
 
@@ -1450,6 +1453,10 @@ void App_run(Application* app){
         frame+=1;
         discard frame;
     }
+
+
+    vkDestroyBuffer(app->device,camera_buffer,app->vk_allocator);
+    vkFreeMemory(app->device,camera_buffer_memory,app->vk_allocator);
 
     App_destroy_texture(app,sometexture);
 

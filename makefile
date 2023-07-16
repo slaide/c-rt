@@ -8,7 +8,7 @@ CC = clang
 OBJCC = clang
 CSTD = -std=gnu2x
 LINKS = -lvulkan -pthread
-FLAGS = -Wall -Werror -Wpedantic -Wextra
+COMPILE_FLAGS = -Wall -Werror -Wpedantic -Wextra -Wno-unused-function -Wno-unused-variable -Wno-sequence-point -Wconversion
 CINCLUDE = -Iinclude
 CDEF = 
 
@@ -16,15 +16,17 @@ BUILD_OBJS = app.c.o app_mesh.c.o image.c.o huffman.c.o
 
 ifeq ($(MODE), debug)
 	CDEF += -DDEBUG
-	FLAGS += -g -fsanitize=address
-	FLAGS += -fno-omit-frame-pointer -fno-inline
+	COMPILE_FLAGS += -g -fsanitize=address
+	COMPILE_FLAGS += -fno-omit-frame-pointer -fno-inline
 else ifeq ($(MODE), debugrelease)
 	CDEF += -DDEBUG -DRELEASE
-	FLAGS += -fno-omit-frame-pointer -fno-inline
-	OPT_FLAGS := -g -O3 -ffast-math
+	COMPILE_FLAGS += -fno-omit-frame-pointer -fno-inline
+	COMPILE_FLAGS += -g
+	OPT_FLAGS := -O2 -ffast-math
 else ifeq ($(MODE), release)
 	CDEF += -DRELEASE
-	OPT_FLAGS := -O3 -flto=full -ffast-math
+	OPT_FLAGS := -O3 -ffast-math 
+	LINKS += -flto=full 
 else
 $(error Invalid build mode: $(MODE) (valid options are { release | debug }))
 endif
@@ -42,13 +44,13 @@ else ifeq ($(PLATFORM), macos)
 	BUILD_OBJS += main_macos.m.o
 
 %.m.o: src/%.m
-	$(OBJCC) $(FLAGS) $(CDEF) $(CINCLUDE) -c -o $@ $<
+	$(OBJCC) $(COMPILE_FLAGS) $(CDEF) $(CINCLUDE) -c -o $@ $<
 
 else
 $(error Invalid platform: $(MODE) (valid options are { linux | macos }))
 endif
 
-CCOMPILE = $(CC) $(OPT_FLAGS) $(CSTD) $(CDEF) $(FLAGS) $(CINCLUDE)
+CCOMPILE = $(CC) $(OPT_FLAGS) $(CSTD) $(CDEF) $(COMPILE_FLAGS) $(CINCLUDE)
 
 %.c.o: src/%.c
 	$(CCOMPILE) -c -o $@ $<
@@ -59,17 +61,25 @@ shaders/frag.spv: shaders/shader.frag
 	glslangValidator shaders/shader.frag -V -o shaders/frag.spv
 
 build: $(BUILD_OBJS) shaders/vert.spv shaders/frag.spv
-	$(CCOMPILE) $(LINKS) -o main $(BUILD_OBJS)
+	$(CC) $(OPT_FLAGS) $(CSTD) $(CDEF) $(CINCLUDE) $(LINKS) -o main $(BUILD_OBJS)
 
 run: build
 	./main
 
+.PHONY: profile disasm-image
+profile:
+	make -Bj fresh MODE=debugrelease
+	valgrind --tool=cachegrind --cachegrind-out-file=cachegrind.out ./main
+	callgrind_annotate cachegrind.out > cachegrind.out.annotation
+	less cachegrind.out.annotation
+
+disasm-image:
+	make -Bj fresh MODE=debugrelease
+	llvm-objdump -d -S image.c.o > image.asm ; less image.asm
 
 .PHONY: clean fresh doc
 doc:
 	doxygen Doxyfile
 clean:
 	$(RM) *.o main shaders/*.spv
-fresh:
-	$(MAKE) clean
-	$(MAKE) build
+fresh: clean build

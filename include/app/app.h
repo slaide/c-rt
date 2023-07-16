@@ -183,8 +183,8 @@ typedef enum PixelFormat{
 typedef struct ImageData{
     uint8_t* data;
 
-    int height;
-    int width;
+    uint32_t height;
+    uint32_t width;
 
     PixelFormat pixel_format;
     bool interleaved;
