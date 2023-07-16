@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
+#include <inttypes.h>
 
 #define mask_u32(n) ((1ul<<(uint32_t)(n))-1ul)
 #define mask_u64(n) ((1ull<<(uint64_t)(n))-1ull)
@@ -241,7 +242,7 @@ static inline void BitStream_advance_unsafe(BitStream* const stream,const uint8_
 [[clang::always_inline,gnu::flatten]]
 static inline void BitStream_advance(BitStream* const stream,const uint8_t n_bits){
     if (n_bits>stream->buffer_bits_filled) {
-        fprintf(stderr, "bitstream advance by %d bits invalid with %llu current buffer length\n",n_bits,stream->buffer_bits_filled);
+        fprintf(stderr, "bitstream advance by %d bits invalid with %" PRIu64 " current buffer length\n",n_bits,stream->buffer_bits_filled);
         exit(-50);
     }
 
