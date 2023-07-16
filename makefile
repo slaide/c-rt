@@ -8,7 +8,7 @@ CC = clang
 OBJCC = clang
 CSTD = -std=gnu2x
 LINKS = -lvulkan -pthread
-COMPILE_FLAGS = -Wall -Werror -Wpedantic -Wextra -Wno-unused-function -Wno-unused-variable -Wno-sequence-point -Wconversion
+COMPILE_FLAGS = -Wall -Werror -Wpedantic -Wextra -Wno-sequence-point -Wconversion
 CINCLUDE = -Iinclude
 CDEF = 
 

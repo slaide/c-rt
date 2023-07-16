@@ -60,7 +60,7 @@ static inline int32_t clamp_i32(const int32_t v_min,const int32_t v_max, const i
 }
 
 [[clang::always_inline,gnu::flatten,gnu::hot]]
-static inline int32_t twos_complement(uint32_t magnitude, int32_t value){
+static inline int32_t twos_complement_32(uint32_t magnitude, int32_t value){
     int32_t threshold=1<<(magnitude-1);
     if (value<threshold){
         int32_t ret=value+1;
@@ -70,6 +70,18 @@ static inline int32_t twos_complement(uint32_t magnitude, int32_t value){
 
     return value;
 }
+[[clang::always_inline,gnu::flatten,gnu::hot]]
+static inline int16_t twos_complement_16(uint16_t magnitude, int16_t value){
+    int16_t threshold=(int16_t)(1<<(magnitude-1));
+    if (value<threshold){
+        int16_t ret=value+1;
+        ret-=1<<magnitude;
+        return ret;
+    }
+
+    return value;
+}
+#define twos_complement(a,b) (_Generic(a, uint32_t:twos_complement_32,uint16_t:twos_complement_16)((a),(b)))
 
 typedef enum JpegSegmentType{
     JPEG_SEGMENT_SOI=0xFFD8,
@@ -244,7 +256,7 @@ static inline void decode_dc(
     if (dc_magnitude>0) {
         const MCU_EL dc_value_bits=(MCU_EL)BitStream_get_bits_advance(stream, dc_magnitude);
         
-        MCU_EL dc_value=(MCU_EL)twos_complement(dc_magnitude, dc_value_bits);
+        MCU_EL dc_value=(MCU_EL)twos_complement((uint16_t)dc_magnitude, dc_value_bits);
 
         *diff_dc+=dc_value;
     }
@@ -305,9 +317,9 @@ static inline void decode_block_ac(
             break;
         }
 
-        const int32_t ac_value_bits=(int32_t)BitStream_get_bits_advance(stream,ac_magnitude);
+        const MCU_EL ac_value_bits=(MCU_EL)BitStream_get_bits_advance(stream,ac_magnitude);
 
-        const MCU_EL ac_value=(MCU_EL)twos_complement(ac_magnitude,ac_value_bits);
+        const MCU_EL ac_value=(MCU_EL)twos_complement((uint16_t)ac_magnitude,ac_value_bits);
 
         block_mem[spec_sel++]=(MCU_EL)(ac_value<<successive_approximation_bit_low);
     }
@@ -469,6 +481,8 @@ static inline void IDCTMaskSet_generate(IDCTMaskSet* mask_set){
 
 typedef struct JpegParser{
     double start_time;
+
+    ImageData* image_data;
 
     uint64_t file_size;
     uint8_t* file_contents;
@@ -796,9 +810,9 @@ static inline void process_mcu_generic(
                         break;
                     }
 
-                    const int32_t ac_value_bits=(int32_t)BitStream_get_bits_advance(stream,ac_magnitude);
+                    const MCU_EL ac_value_bits=(MCU_EL)BitStream_get_bits_advance(stream,ac_magnitude);
 
-                    const MCU_EL ac_value=(MCU_EL)twos_complement(ac_magnitude,ac_value_bits);
+                    const MCU_EL ac_value=(MCU_EL)twos_complement((uint16_t)ac_magnitude,ac_value_bits);
 
                     block_mem[spec_sel++]=(MCU_EL)(ac_value<<successive_approximation_bit_low);
                 }
@@ -1331,25 +1345,30 @@ void JpegParser_parse_file(JpegParser* parser,ImageData* image_data,const bool p
     println("processing done at %f",current_time()-parser->start_time);
 }
 
-[[gnu::hot,gnu::flatten,gnu::nonnull(1,3,4,5,8)]]
+[[gnu::hot,gnu::flatten,gnu::nonnull(1)]]
 static inline void convert_colors_112222(
     const JpegParser* const parser,
-    const ImageComponent image_components[3],
-
-    const float* const y,
-    const float* const cr,
-    const float* const cb,
 
     const uint32_t mcu_col,
     const uint32_t mcu_row,
-
-    ImageData* const image_data,
 
     const uint32_t scan_offset,
     const uint32_t mcu_offset
 ){
     static const uint32_t row_scale[3]={1,2,2};
     static const uint32_t col_scale[3]={1,2,2};
+
+    uint8_t* const image_data_data=parser->image_data->data;
+
+    const ImageComponent image_components[3]={
+        parser->image_components[0],
+        parser->image_components[1],
+        parser->image_components[2]
+    };
+
+    const float* const y=image_components[0].out_block_downsampled;
+    const float* const cr=image_components[1].out_block_downsampled;
+    const float* const cb=image_components[2].out_block_downsampled;
 
     for(uint32_t mcu_row_sample=0;mcu_row_sample<2;mcu_row_sample++){
         const uint32_t mcu_row_offset=mcu_row_sample*8*parser->X;
@@ -1404,28 +1423,21 @@ static inline void convert_colors_112222(
 
                     // -- deinterlace and convert to uint8
 
-                    image_data->data[(i)* 4 + 0] = (uint8_t)clamp_f32(0.0f,255.0f,R+128.0f);
-                    image_data->data[(i)* 4 + 1] = (uint8_t)clamp_f32(0.0f,255.0f,G+128.0f);
-                    image_data->data[(i)* 4 + 2] = (uint8_t)clamp_f32(0.0f,255.0f,B+128.0f);
-                    image_data->data[(i)* 4 + 3] = UINT8_MAX;
+                    image_data_data[(i)* 4 + 0] = (uint8_t)clamp_f32(0.0f,255.0f,R+128.0f);
+                    image_data_data[(i)* 4 + 1] = (uint8_t)clamp_f32(0.0f,255.0f,G+128.0f);
+                    image_data_data[(i)* 4 + 2] = (uint8_t)clamp_f32(0.0f,255.0f,B+128.0f);
+                    image_data_data[(i)* 4 + 3] = UINT8_MAX;
                 }
             }
         }
     }
 }
-[[gnu::hot,gnu::flatten]]
+[[gnu::hot,gnu::flatten,gnu::nonnull(1)]]
 static inline void convert_colors_generic(
     const JpegParser* const parser,
-    const ImageComponent image_components[3],
-
-    const float* const y,
-    const float* const cr,
-    const float* const cb,
 
     const uint32_t mcu_col,
     const uint32_t mcu_row,
-
-    ImageData* const image_data,
 
     const uint32_t scan_offset,
     const uint32_t mcu_offset,
@@ -1433,6 +1445,18 @@ static inline void convert_colors_generic(
     const uint32_t row_scale[3],
     const uint32_t col_scale[3]
 ){
+    const ImageComponent image_components[3]={
+        parser->image_components[0],
+        parser->image_components[1],
+        parser->image_components[2]
+    };
+
+    const float* const y=image_components[0].out_block_downsampled;
+    const float* const cr=image_components[1].out_block_downsampled;
+    const float* const cb=image_components[2].out_block_downsampled;
+
+    uint8_t* const image_data_data=parser->image_data->data;
+
     for(uint32_t mcu_row_sample=0;mcu_row_sample<parser->max_component_vert_sample_factor;mcu_row_sample++){
         const uint32_t mcu_row_offset=mcu_row_sample*8*parser->X;
         for(uint32_t mcu_col_sample=0;mcu_col_sample<parser->max_component_horz_sample_factor;mcu_col_sample++){
@@ -1505,26 +1529,23 @@ static inline void convert_colors_generic(
 
                     // -- deinterlace and convert to uint8
 
-                    image_data->data[(i)* 4 + 0] = (uint8_t)clamp_f32(0.0f,255.0f,R+128.0f);
-                    image_data->data[(i)* 4 + 1] = (uint8_t)clamp_f32(0.0f,255.0f,G+128.0f);
-                    image_data->data[(i)* 4 + 2] = (uint8_t)clamp_f32(0.0f,255.0f,B+128.0f);
-                    image_data->data[(i)* 4 + 3] = UINT8_MAX;
+                    image_data_data[(i)* 4 + 0] = (uint8_t)clamp_f32(0.0f,255.0f,R+128.0f);
+                    image_data_data[(i)* 4 + 1] = (uint8_t)clamp_f32(0.0f,255.0f,G+128.0f);
+                    image_data_data[(i)* 4 + 2] = (uint8_t)clamp_f32(0.0f,255.0f,B+128.0f);
+                    image_data_data[(i)* 4 + 3] = UINT8_MAX;
                 }
             }
         }
     }
 }
 
-[[gnu::flatten,gnu::hot,gnu::nonnull(1,2)]]
-void JpegParser_convert_colorspace(JpegParser* parser,ImageData* image_data,uint32_t scan_index_start,uint32_t scan_index_end){
+[[gnu::flatten,gnu::hot,gnu::nonnull(1)]]
+void JpegParser_convert_colorspace(JpegParser* parser,uint32_t scan_index_start,uint32_t scan_index_end){
     ImageComponent image_components[3]={
         parser->image_components[0],
         parser->image_components[1],
         parser->image_components[2]
     };
-    const float* const y=image_components[0].out_block_downsampled;
-    const float* const cr=image_components[1].out_block_downsampled;
-    const float* const cb=image_components[2].out_block_downsampled;
 
     uint32_t row_scale[3]={
         parser->max_component_vert_sample_factor/image_components[0].vert_sample_factor,
@@ -1567,15 +1588,9 @@ void JpegParser_convert_colorspace(JpegParser* parser,ImageData* image_data,uint
                 case 0x112222:
                     convert_colors_112222(
                         parser, 
-                        image_components, 
-
-                        y, 
-                        cr, 
-                        cb,
 
                         mcu_col, 
                         mcu_row, 
-                        image_data, 
                         scan_offset, 
                         mcu_offset
                     );
@@ -1583,15 +1598,9 @@ void JpegParser_convert_colorspace(JpegParser* parser,ImageData* image_data,uint
                 default:
                     convert_colors_generic(
                         parser,
-                        image_components, 
-
-                        y, 
-                        cr, 
-                        cb, 
 
                         mcu_col, 
                         mcu_row, 
-                        image_data, 
                         scan_offset, 
                         mcu_offset, 
                         row_scale, 
@@ -1605,18 +1614,15 @@ void JpegParser_convert_colorspace(JpegParser* parser,ImageData* image_data,uint
 struct JpegParser_convert_colorspace_argset{
     JpegParser* parser;
 
-    ImageData* image_data;
-
     uint32_t scan_index_start;
     uint32_t scan_index_end;
 };
 void* JpegParser_convert_colorspace_pthread(struct JpegParser_convert_colorspace_argset* args){
-    JpegParser_convert_colorspace(args->parser,args->image_data,args->scan_index_start,args->scan_index_end);
+    JpegParser_convert_colorspace(args->parser,args->scan_index_start,args->scan_index_end);
     return NULL;
 }
 
 ImageParseResult Image_read_jpeg(const char* filepath,ImageData* image_data){
-
     printf("starting decode\n");
     FILE* file=fopen(filepath, "rb");
     if (!file) {
@@ -1626,6 +1632,7 @@ ImageParseResult Image_read_jpeg(const char* filepath,ImageData* image_data){
 
     JpegParser parser;
     JpegParser_init_empty(&parser);
+    parser.image_data=image_data;
 
     discard fseek(file,0,SEEK_END);
     long ftell_res=ftell(file);
@@ -1666,7 +1673,6 @@ ImageParseResult Image_read_jpeg(const char* filepath,ImageData* image_data){
                     const uint32_t num_scans_per_thread=parser.image_components[0].num_scans/num_threads;
                     for(uint32_t i=0;i<num_threads;i++){
                         thread_args[i].parser=&parser;
-                        thread_args[i].image_data=image_data;
                         thread_args[i].scan_index_start=i*num_scans_per_thread;
                         thread_args[i].scan_index_end=(i+1)*num_scans_per_thread;
 
@@ -1692,7 +1698,7 @@ ImageParseResult Image_read_jpeg(const char* filepath,ImageData* image_data){
                     free(thread_args);
                     free(threads);
                 }else{
-                    JpegParser_convert_colorspace(&parser,image_data,0,parser.image_components[0].num_scans);
+                    JpegParser_convert_colorspace(&parser,0,parser.image_components[0].num_scans);
                 }
             }
             break;
@@ -1707,18 +1713,19 @@ ImageParseResult Image_read_jpeg(const char* filepath,ImageData* image_data){
     // -- crop to real size
 
     if(parser.X!=parser.real_X || parser.Y!=parser.real_Y){
-        uint8_t* real_data=aligned_alloc(64,parser.real_X*parser.real_Y*4);
+        uint8_t* const old_data=image_data->data;
+        uint8_t* const real_data=aligned_alloc(64,parser.real_X*parser.real_Y*4);
 
         for (uint32_t y=0; y<parser.real_Y; y++) {
             for(uint32_t x=0; x<parser.real_X; x++) {
-                real_data[(y*parser.real_X+x)*4+0]=image_data->data[(y*parser.X+x)*4+0];
-                real_data[(y*parser.real_X+x)*4+1]=image_data->data[(y*parser.X+x)*4+1];
-                real_data[(y*parser.real_X+x)*4+2]=image_data->data[(y*parser.X+x)*4+2];
-                real_data[(y*parser.real_X+x)*4+3]=image_data->data[(y*parser.X+x)*4+3];
+                real_data[(y*parser.real_X+x)*4+0]=old_data[(y*parser.X+x)*4+0];
+                real_data[(y*parser.real_X+x)*4+1]=old_data[(y*parser.X+x)*4+1];
+                real_data[(y*parser.real_X+x)*4+2]=old_data[(y*parser.X+x)*4+2];
+                real_data[(y*parser.real_X+x)*4+3]=old_data[(y*parser.X+x)*4+3];
             }
         }
 
-        free(image_data->data);
+        free(old_data);
 
         image_data->height=parser.real_Y;
         image_data->width=parser.real_X;
