@@ -18,7 +18,6 @@ ifeq ($(MODE), debug)
 	CDEF += -DDEBUG
 	COMPILE_FLAGS += -g
 
-	# not available on (arm64) macos
 	ifeq ($(PLATFORM), linux)
 		COMPILE_FLAGS += -fsanitize=address
 	endif
@@ -28,6 +27,9 @@ else ifeq ($(MODE), debugrelease)
 	CDEF += -DDEBUG -DRELEASE
 	COMPILE_FLAGS += -fno-omit-frame-pointer -fno-inline
 	COMPILE_FLAGS += -g
+	ifeq ($(PLATFORM), linux)
+		COMPILE_FLAGS += -fsanitize=address
+	endif
 	OPT_FLAGS := -O2 -ffast-math
 else ifeq ($(MODE), release)
 	CDEF += -DRELEASE
@@ -40,6 +42,7 @@ endif
 ifeq ($(PLATFORM), linux)
 	LINKS += -lxcb -lxcb-util -lm
 	CDEF += -DVK_USE_PLATFORM_XCB_KHR
+	COMPILE_FLAGS += -mssse3
 
 	BUILD_OBJS += main_linux.c.o
 else ifeq ($(PLATFORM), macos)
@@ -68,7 +71,7 @@ shaders/frag.spv: shaders/shader.frag
 	glslangValidator shaders/shader.frag -V -o shaders/frag.spv
 
 build: $(BUILD_OBJS) shaders/vert.spv shaders/frag.spv
-	$(CC) $(OPT_FLAGS) $(CSTD) $(CDEF) $(CINCLUDE) $(LINKS) -o main $(BUILD_OBJS)
+	$(CC) $(OPT_FLAGS) $(CSTD) $(CDEF) $(CINCLUDE) $(LINKS) $(COMPILE_FLAGS) -o main $(BUILD_OBJS)
 
 run: build
 	./main

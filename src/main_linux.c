@@ -35,20 +35,30 @@ void App_set_window_title(Application* app, PlatformWindow* window, const char* 
     xcb_atom_t net_wm_name=Platform_xcb_intern_atom(app->platform_handle,"_NET_WM_NAME");
     xcb_atom_t net_wm_visible_name=Platform_xcb_intern_atom(app->platform_handle,"_NET_WM_VISIBLE_NAME");
 
-    xcb_change_property_checked(app->platform_handle->connection, 
+    xcb_void_cookie_t change_property_cookie=xcb_change_property_checked(app->platform_handle->connection, 
         XCB_PROP_MODE_REPLACE, 
         window->window, 
         net_wm_name, 
         Platform_xcb_intern_atom(app->platform_handle,"UTF8_STRING"), 
         8, (uint32_t)strlen(title), title
     );
-    xcb_change_property_checked(app->platform_handle->connection, 
+    xcb_generic_error_t* change_property_error=xcb_request_check(app->platform_handle->connection, change_property_cookie);
+    if(change_property_error!=NULL){
+        fprintf(stderr,"failed to set property because %s\n",xcb_event_get_error_label(change_property_error->error_code));
+        exit(XCB_CHANGE_PROPERTY_FAILURE);
+    }
+    change_property_cookie=xcb_change_property_checked(app->platform_handle->connection, 
         XCB_PROP_MODE_REPLACE, 
         window->window, 
         net_wm_visible_name, 
         Platform_xcb_intern_atom(app->platform_handle,"UTF8_STRING"), 
         8, (uint32_t)strlen(title), title
     );
+    change_property_error=xcb_request_check(app->platform_handle->connection, change_property_cookie);
+    if(change_property_error!=NULL){
+        fprintf(stderr,"failed to set property because %s\n",xcb_event_get_error_label(change_property_error->error_code));
+        exit(XCB_CHANGE_PROPERTY_FAILURE);
+    }
 }
 VkSurfaceKHR App_create_window_vk_surface(Application* app,PlatformWindow* platform_window){
     VkXcbSurfaceCreateInfoKHR surface_create_info={
@@ -122,6 +132,7 @@ void Platform_destroy(PlatformHandle* platform){
         free(platform->open_windows);
     }
     xcb_disconnect(platform->connection);
+    free(platform);
 }
 
 PlatformWindow* App_create_window(Application* application){
@@ -156,12 +167,13 @@ PlatformWindow* App_create_window(Application* application){
         value_mask,
         value_list
     );
-    xcb_flush(application->platform_handle->connection);
     xcb_generic_error_t* window_create_error=xcb_request_check(application->platform_handle->connection, window_create_reply);
     if(window_create_error!=NULL && window_create_error->error_code!=0){
         fprintf(stderr,"failed to create window %d\n",window_create_error->error_code);
         exit(XCB_WINDOW_CREATE_FAILURE);
     }
+
+    xcb_flush(application->platform_handle->connection);
 
     window->delete_window_atom=Platform_xcb_intern_atom(application->platform_handle, "WM_DELETE_WINDOW");
     xcb_atom_t wm_protocols_atom=Platform_xcb_intern_atom(application->platform_handle, "WM_PROTOCOLS");
