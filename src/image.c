@@ -7,11 +7,24 @@
 #include <pthread.h>
 #include <stdatomic.h>
 
+#ifdef VK_USE_PLATFORM_METAL_EXT
+#include <arm_neon.h>
+#elif VK_USE_PLATFORM_XCB_KHR
+#include <xmmintrin.h>
+#include <emmintrin.h>
+#endif
+
 #include <time.h>
 
 #include "app/app.h"
 #include "app/error.h"
 #include "app/huffman.h"
+
+#define println(...) {\
+    printf("%s : %d | ",__FILE__,__LINE__);\
+    printf(__VA_ARGS__);\
+    printf("\n");\
+}
 
 typedef void*(*pthread_callback)(void*);
 
@@ -50,7 +63,7 @@ static inline int32_t min_i32(const int32_t a,const int32_t b){
 }
 #define min(a,b) (_Generic((a), int32_t: min_i32, uint32_t: min_u32, float:fminf, double:fmin)(a,b))
 
-[[clang::always_inline,gnu::flatten,gnu::hot]]
+[[clang::always_inline,gnu::flatten,gnu::hot,maybe_unused]]
 static inline float clamp_f32(const float v_min,const float v_max,const float v){
     return fmaxf(v_min, fminf(v_max, v));
 }
@@ -58,6 +71,7 @@ static inline float clamp_f32(const float v_min,const float v_max,const float v)
 static inline int32_t clamp_i32(const int32_t v_min,const int32_t v_max, const int32_t v){
     return max(v_min, min(v_max, v));
 }
+#define clamp(v_min,v_max,v) (_Generic((v), float: clamp_f32, int32_t: clamp_i32)(v_min,v_max,v))
 
 [[clang::always_inline,gnu::flatten,gnu::hot]]
 static inline int32_t twos_complement_32(uint32_t magnitude, int32_t value){
@@ -193,8 +207,15 @@ const char* Image_jpeg_segment_type_name(JpegSegmentType segment_type){
 }
 
 typedef int16_t MCU_EL;
+//#define FIXED_PRECISION_ARITHMETIC
+#ifdef FIXED_PRECISION_ARITHMETIC
+    #define PRECISION 8
+    typedef int32_t OUT_EL; // 16bits are kinda enough, but some images then peak on individual pixels (i.e. random pixels are white)
+#else
+    typedef float OUT_EL;
+#endif
 
-typedef uint8_t QUANT;
+typedef OUT_EL QUANT;
 typedef QUANT QuantizationTable[64];
 
 static const uint8_t ZIGZAG[64]={
@@ -232,12 +253,14 @@ typedef struct ImageComponent{
      * @brief 
      * 
      */
-    float* out_block_downsampled;
+    OUT_EL* out_block_downsampled;
+
+    uint32_t* conversion_indices;
 }ImageComponent;
 
 [[gnu::flatten,gnu::hot]]
 static inline void decode_dc(
-    MCU_EL block_mem [[gnu::aligned(64)]] [64],
+    MCU_EL block_mem [64],
 
     const HuffmanCodingTable* dc_table,
     MCU_EL* diff_dc,
@@ -445,7 +468,7 @@ static inline void decode_block_with_sbh(
  * @return float 
  */
 [[gnu::pure,gnu::const,gnu::hot]]
-static inline float coeff(const int u){
+static inline float coeff(const uint32_t u){
     if(u==0){
         return 1.0f/(float)M_SQRT2;
     }else{
@@ -453,16 +476,15 @@ static inline float coeff(const int u){
     }
 }
 
-#define IDCT_MASK_ELEMENT_TYPE float
 typedef struct IDCTMaskSet {
-    IDCT_MASK_ELEMENT_TYPE idct_element_masks[64][64];
+    OUT_EL idct_element_masks[64][64];
 } IDCTMaskSet;
 static inline void IDCTMaskSet_generate(IDCTMaskSet* mask_set){
-    for(int mask_index = 0;mask_index<64;mask_index++){
-        for(int ix = 0;ix<8;ix++){
-            for(int iy = 0;iy<8;iy++){
-                int mask_u=mask_index%8;
-                int mask_v=mask_index/8;
+    for(uint32_t mask_index = 0;mask_index<64;mask_index++){
+        for(uint32_t ix = 0;ix<8;ix++){
+            for(uint32_t iy = 0;iy<8;iy++){
+                uint32_t mask_u=mask_index%8;
+                uint32_t mask_v=mask_index/8;
 
                 float x_cos_arg = ((2.0f * (float)(iy) + 1.0f) * (float)(mask_u) * (float)M_PI) / 16.0f;
                 float y_cos_arg = ((2.0f * (float)(ix) + 1.0f) * (float)(mask_v) * (float)M_PI) / 16.0f;
@@ -470,9 +492,13 @@ static inline void IDCTMaskSet_generate(IDCTMaskSet* mask_set){
                 float x_val = cosf(x_cos_arg) * coeff(mask_u);
                 float y_val = cosf(y_cos_arg) * coeff(mask_v);
                 // the divide by 4 comes from the spec, from the algorithm to reverse the application of the IDCT
-                float value = (x_val * y_val)/4;
+                #ifdef FIXED_PRECISION_ARITHMETIC
+                OUT_EL value = (OUT_EL)(((x_val * y_val)/4)*(1<<PRECISION));
+                #else
+                OUT_EL value = (x_val * y_val)/4;
+                #endif
 
-                int mask_pixel_index=8*ix+iy;
+                uint32_t mask_pixel_index=8*ix+iy;
                 mask_set->idct_element_masks[mask_index][mask_pixel_index]=value;
             }
         }
@@ -553,14 +579,14 @@ static void JpegParser_process_channel(JpegParser* parser,int c,uint32_t scan_id
 
     // -- reverse idct and quantization table application
 
-    float* out_block_downsampled=parser->image_components[c].out_block_downsampled;
+    OUT_EL* out_block_downsampled=parser->image_components[c].out_block_downsampled;
 
     const uint32_t num_blocks_in_scan=parser->image_components[c].num_blocks_in_scan;
 
-    IDCT_MASK_ELEMENT_TYPE idct_mask_set[64][64];
+    OUT_EL idct_mask_set[64][64];
     memcpy(idct_mask_set,parser->idct_mask_set.idct_element_masks,sizeof(idct_mask_set));
 
-    const IDCT_MASK_ELEMENT_TYPE idct_m0_v0=idct_mask_set[0][0];
+    const OUT_EL idct_m0_v0=idct_mask_set[0][0];
 
     const uint32_t num_mcu_cols=parser->image_components[1].num_blocks_in_scan;
 
@@ -586,13 +612,14 @@ static void JpegParser_process_channel(JpegParser* parser,int c,uint32_t scan_id
                     const MCU_EL* in_block=&scan_mem[block_id*64];
 
                     const uint32_t _block_id=(scan_id*num_blocks_in_scan+block_id);
-                    float* out_block=&out_block_downsampled[_block_id*64];
+
+                    OUT_EL out_block[64];
 
                     // use first idct mask index to initialize storage
                     {
-                        const float cosine_mask_strength=(float)(in_block[0]*component_quant_table[0]);
+                        const OUT_EL cosine_mask_strength=(OUT_EL)(in_block[0]*component_quant_table[0]);
 
-                        const float idct_m0_value=idct_m0_v0*cosine_mask_strength;
+                        const OUT_EL idct_m0_value=idct_m0_v0*cosine_mask_strength;
                         
                         for(uint32_t pixel_index = 0;pixel_index<64;pixel_index++){
                             out_block[pixel_index]=idct_m0_value;
@@ -605,13 +632,16 @@ static void JpegParser_process_channel(JpegParser* parser,int c,uint32_t scan_id
                             continue;
                         }
 
-                        const float cosine_mask_strength=(float)(in_block[corrected_cosine_index]*component_quant_table[cosine_index]);
-                        const float* const idct_mask=idct_mask_set[cosine_index];
+                        const OUT_EL cosine_mask_strength=in_block[corrected_cosine_index]*component_quant_table[cosine_index];
+                        const OUT_EL* const idct_mask=idct_mask_set[cosine_index];
                         
+                        #pragma unroll
                         for(uint32_t pixel_index = 0;pixel_index<64;pixel_index++){
                             out_block[pixel_index]+=idct_mask[pixel_index]*cosine_mask_strength;
                         }
                     }
+
+                    memcpy(out_block_downsampled+_block_id*64,out_block,sizeof(OUT_EL)*64);
                 }
             }
         }
@@ -655,12 +685,6 @@ void* ProcessIncomingScans_pthread(struct SomeData* somedata){
     }
 
     return NULL;
-}
-
-#define println(...) {\
-    printf("%s : %d | ",__FILE__,__LINE__);\
-    printf(__VA_ARGS__);\
-    printf("\n");\
 }
 
 struct ScanComponent{
@@ -1114,9 +1138,38 @@ void JpegParser_parse_file(JpegParser* parser,ImageData* image_data,const bool p
                         parser->image_components[i].num_scans=component_num_scans;
                         parser->image_components[i].num_blocks_in_scan=component_num_scan_elements/64;
 
-                        parser->image_components[i].out_block_downsampled=aligned_alloc(64,ROUND_UP(sizeof(IDCT_MASK_ELEMENT_TYPE)*component_data_size,64));
+                        parser->image_components[i].out_block_downsampled=aligned_alloc(64,ROUND_UP(sizeof(OUT_EL)*component_data_size,64));
 
                         parser->image_components[i].total_num_blocks=parser->image_components[i].vert_samples*parser->image_components[i].horz_samples/64;
+                    }
+
+                    uint32_t num_pixels_per_scan=parser->max_component_vert_sample_factor*8*parser->X;
+
+                    for (uint32_t i=0; i<parser->Nf; i++) {
+                        parser->image_components[i].conversion_indices=malloc(sizeof(uint32_t)*num_pixels_per_scan);
+                        uint32_t* conversion_indices=parser->image_components[i].conversion_indices;
+
+                        uint32_t ci=0;
+
+                        for(uint32_t img_y=0;img_y<parser->max_component_vert_sample_factor*8;img_y++){
+                            for (uint32_t img_x=0;img_x<parser->X;img_x++) {
+                                uint32_t adjusted_img_y=img_y*parser->image_components[i].vert_sample_factor/parser->max_component_vert_sample_factor;
+                                uint32_t adjusted_img_x=img_x*parser->image_components[i].horz_sample_factor/parser->max_component_horz_sample_factor;
+
+                                uint32_t index=
+                                     (adjusted_img_y/8)*parser->image_components[i].horz_samples*8
+                                    +(adjusted_img_x/8)*64
+                                    +(adjusted_img_y%8)*8
+                                    +adjusted_img_x%8;
+
+                                conversion_indices[ci++]=index;
+                            }
+                        }
+
+                        if(ci!=num_pixels_per_scan){
+                            println("this is a bug. %d != %d",ci,num_pixels_per_scan);
+                            exit(FATAL_UNEXPECTED_ERROR);
+                        }
                     }
 
                     const uint32_t total_num_pixels_in_image=parser->X*parser->Y;
@@ -1346,104 +1399,10 @@ void JpegParser_parse_file(JpegParser* parser,ImageData* image_data,const bool p
 }
 
 [[gnu::hot,gnu::flatten,gnu::nonnull(1)]]
-static inline void convert_colors_112222(
+static inline void scan_ycbcr_to_rgb(
     const JpegParser* const parser,
 
-    const uint32_t mcu_col,
-    const uint32_t mcu_row,
-
-    const uint32_t scan_offset,
-    const uint32_t mcu_offset
-){
-    static const uint32_t row_scale[3]={1,2,2};
-    static const uint32_t col_scale[3]={1,2,2};
-
-    uint8_t* const image_data_data=parser->image_data->data;
-
-    const ImageComponent image_components[3]={
-        parser->image_components[0],
-        parser->image_components[1],
-        parser->image_components[2]
-    };
-
-    const float* const y=image_components[0].out_block_downsampled;
-    const float* const cr=image_components[1].out_block_downsampled;
-    const float* const cb=image_components[2].out_block_downsampled;
-
-    for(uint32_t mcu_row_sample=0;mcu_row_sample<2;mcu_row_sample++){
-        const uint32_t mcu_row_offset=mcu_row_sample*8*parser->X;
-        for(uint32_t mcu_col_sample=0;mcu_col_sample<2;mcu_col_sample++){
-            const uint32_t mcu_col_offset=mcu_col_sample*8;
-
-            const uint32_t base_img_x=(mcu_col*2+mcu_col_sample)*8;
-            const uint32_t base_img_y=(mcu_row*2+mcu_row_sample)*8;
-
-            uint32_t base_component_offsets[2]={0,0};
-            uint32_t component_offsets[2]={0,0};
-
-            for(uint32_t y_i=0;y_i<8;y_i++){
-                const uint32_t y_offset=y_i*parser->X;
-
-                const uint32_t component_y_cbcr=(base_img_y+y_i)/row_scale[1];
-
-                base_component_offsets[0]=base_img_y*image_components[0].horz_samples+y_i*8;
-                base_component_offsets[1]=
-                    (component_y_cbcr&(UINT32_MAX<<3))*image_components[1].horz_samples
-                    +(component_y_cbcr&0x7)*8
-                ;
-
-                for (uint32_t x_i=0; x_i<8; x_i++) {
-                    // -- re-order from block-orientation to final image orientation
-
-                    const uint32_t component_x_cbcr=(base_img_x+x_i)/col_scale[1];
-
-                    component_offsets[0]=base_component_offsets[0]+base_img_x*8+x_i;
-                    component_offsets[1]=base_component_offsets[1]+
-                        (component_x_cbcr&(UINT32_MAX<<3))*8 // partial row added by current mcu within scan
-                        +(component_x_cbcr&0x7)// partial row added by offset into current block
-                    ;
-
-                    const float Y=y[component_offsets[0]];
-                    const float Cr=cr[component_offsets[1]];
-                    const float Cb=cb[component_offsets[1]];
-
-                    const uint32_t i=
-                        scan_offset
-                        +mcu_offset
-                        +mcu_row_offset
-                        +mcu_col_offset
-                        +y_offset
-                        +x_i;
-
-                    // -- convert ycbcr to rgb
-
-                    const float R = Cr * 1.402f + Y;
-                    const float B = Cb * 1.772f + Y;
-                    const float G = (Y - 0.114f * B - 0.299f * R ) * 1.703f;
-
-                    // -- deinterlace and convert to uint8
-
-                    image_data_data[(i)* 4 + 0] = (uint8_t)clamp_f32(0.0f,255.0f,R+128.0f);
-                    image_data_data[(i)* 4 + 1] = (uint8_t)clamp_f32(0.0f,255.0f,G+128.0f);
-                    image_data_data[(i)* 4 + 2] = (uint8_t)clamp_f32(0.0f,255.0f,B+128.0f);
-                    image_data_data[(i)* 4 + 3] = UINT8_MAX;
-                }
-            }
-        }
-    }
-}
-[[gnu::hot,gnu::flatten,gnu::nonnull(1)]]
-static inline void convert_colors_generic(
-    const JpegParser* const parser,
-
-    const uint32_t mcu_col,
-    const uint32_t mcu_row,
-
-    const uint32_t scan_offset,
-    const uint32_t mcu_offset,
-
-    const uint32_t row_scale[3],
-    const uint32_t col_scale[3]
+    const uint32_t mcu_row
 ){
     const ImageComponent image_components[3]={
         parser->image_components[0],
@@ -1451,163 +1410,133 @@ static inline void convert_colors_generic(
         parser->image_components[2]
     };
 
-    const float* const y=image_components[0].out_block_downsampled;
-    const float* const cr=image_components[1].out_block_downsampled;
-    const float* const cb=image_components[2].out_block_downsampled;
+    uint32_t pixels_in_scan=image_components[0].horz_samples*8*image_components[0].vert_sample_factor;
+    uint32_t scan_offset=mcu_row*pixels_in_scan;
 
-    uint8_t* const image_data_data=parser->image_data->data;
+    uint8_t* const image_data_data=parser->image_data->data+scan_offset*4;
 
-    for(uint32_t mcu_row_sample=0;mcu_row_sample<parser->max_component_vert_sample_factor;mcu_row_sample++){
-        const uint32_t mcu_row_offset=mcu_row_sample*8*parser->X;
-        for(uint32_t mcu_col_sample=0;mcu_col_sample<parser->max_component_horz_sample_factor;mcu_col_sample++){
-            const uint32_t mcu_col_offset=mcu_col_sample*8;
+    const uint32_t rescale_factor[3]={
+        parser->max_component_horz_sample_factor*parser->max_component_vert_sample_factor/(image_components[0].horz_sample_factor*image_components[0].vert_sample_factor),
+        parser->max_component_horz_sample_factor*parser->max_component_vert_sample_factor/(image_components[1].horz_sample_factor*image_components[1].vert_sample_factor),
+        parser->max_component_horz_sample_factor*parser->max_component_vert_sample_factor/(image_components[2].horz_sample_factor*image_components[2].vert_sample_factor)
+    };
 
-            const uint32_t base_img_x=(mcu_col*parser->max_component_horz_sample_factor+mcu_col_sample)*8;
-            const uint32_t base_img_y=(mcu_row*parser->max_component_vert_sample_factor+mcu_row_sample)*8;
+    const OUT_EL* const y[[gnu::aligned(16)]]=image_components[0].out_block_downsampled+scan_offset/rescale_factor[0];
+    const OUT_EL* const cr[[gnu::aligned(16)]]=image_components[1].out_block_downsampled+scan_offset/rescale_factor[1];
+    const OUT_EL* const cb[[gnu::aligned(16)]]=image_components[2].out_block_downsampled+scan_offset/rescale_factor[2];
 
-            uint32_t base_component_offsets[3]={0,0,0};
-            uint32_t component_offsets[3]={0,0,0};
+    for (uint32_t i=0; i<pixels_in_scan; i++) {
+        // -- re-order from block-orientation to final image orientation
 
-            for(uint32_t y_i=0;y_i<8;y_i++){
-                const uint32_t y_offset=y_i*parser->X;
+        #ifdef FIXED_PRECISION_ARITHMETIC
+            const OUT_EL Y=y[image_components[0].conversion_indices[i]]>>PRECISION;
+            const OUT_EL Cr=(cr[image_components[1].conversion_indices[i]]-128)>>PRECISION;
+            const OUT_EL Cb=(cb[image_components[2].conversion_indices[i]]-128)>>PRECISION;
 
-                const uint32_t img_y=base_img_y+y_i;
+            // -- convert ycbcr to rgb
 
-                uint32_t component_y[3]={
-                    img_y/row_scale[0],
-                    img_y/row_scale[1],
-                    img_y/row_scale[2],
+            const OUT_EL R = Y + ((            45 * Cr ) >> 5 );
+            const OUT_EL B = Y + (( 113 * Cb           ) >> 6 );
+            const OUT_EL G = Y - ((  11 * Cb + 23 * Cr ) >> 5 );
+
+            // -- deinterlace and convert to uint8
+
+            image_data_data[i* 4 + 0] = (uint8_t)clamp(0,255,R+128);
+            image_data_data[i* 4 + 1] = (uint8_t)clamp(0,255,G+128);
+            image_data_data[i* 4 + 2] = (uint8_t)clamp(0,255,B+128);
+            image_data_data[i* 4 + 3] = UINT8_MAX;
+        #else
+            #ifdef VK_USE_PLATFORM_METAL_EXT
+                const float32x4_t y_simd=vld1q_f32(&y[image_components[0].conversion_indices[i]]);
+                const float32x4_t cr_simd=vld1q_f32(&cr[image_components[1].conversion_indices[i]]);
+                const float32x4_t cb_simd=vld1q_f32(&cb[image_components[2].conversion_indices[i]]);
+
+                // -- convert ycbcr to rgb
+
+                register float32x4_t r_simd=y_simd+1.402f*cr_simd;
+                register float32x4_t b_simd=y_simd+1.772f*cb_simd;
+                register float32x4_t g_simd=y_simd-(0.343f * cb_simd + 0.718f * cr_simd );
+
+                register float32x4_t v_simd;
+
+                v_simd=vdupq_n_f32(128.0);
+                r_simd+=v_simd;
+                g_simd+=v_simd;
+                b_simd+=v_simd;
+                
+                v_simd=vdupq_n_f32(0.0);
+                r_simd=vmaxq_f32(r_simd, v_simd);
+                g_simd=vmaxq_f32(g_simd, v_simd);
+                b_simd=vmaxq_f32(b_simd, v_simd);
+                
+                v_simd=vdupq_n_f32(255.0);
+                r_simd=vminq_f32(r_simd, v_simd);
+                g_simd=vminq_f32(g_simd, v_simd);
+                b_simd=vminq_f32(b_simd, v_simd);
+
+                const int32x4_t r_s32=vcvtq_s32_f32(r_simd);
+                const uint16x4_t r_u16=vqmovun_s32(r_s32);
+                const int32x4_t g_s32=vcvtq_s32_f32(g_simd);
+                const uint16x4_t g_u16=vqmovun_s32(g_s32);
+                const int32x4_t b_s32=vcvtq_s32_f32(b_simd);
+                const uint16x4_t b_u16=vqmovun_s32(b_s32);
+
+                const uint16x4_t a_u16=vdup_n_u16(255);
+
+                const uint16x8_t rg_u16=vcombine_u16(r_u16,g_u16);
+                const uint16x8_t ba_u16=vcombine_u16(b_u16,a_u16);
+
+                const uint8x8_t rg_u8=vqmovn_u16(ba_u16);
+                const uint8x8_t ba_u8=vqmovn_u16(rg_u16);
+
+                uint8x16_t rgba_u8=vcombine_u8(ba_u8,rg_u8);
+
+                static const uint8_t indices [[gnu::aligned(16)]] [16] = {
+                    0, 4, 8, 12, 
+                    1, 5, 9, 13, 
+                    2, 6, 10, 14, 
+                    3, 7, 11, 15
                 };
+                const uint8x16_t indices_vector = vld1q_u8(indices);
 
-                for(int i=0;i<3;i++){
-                    const uint32_t row_offset_roundedtomultipleof8=component_y[i]&(UINT32_MAX<<3);
-                    const uint32_t row_offset_remainder=component_y[i]&0x7;
+                rgba_u8=vqtbl1q_u8(rgba_u8, indices_vector);
 
-                    base_component_offsets[i]=
-                        row_offset_roundedtomultipleof8*image_components[i].horz_samples
-                        +row_offset_remainder*8
-                    ;
-                }
+                vst1q_u8(image_data_data+i*4,rgba_u8);
 
-                for (uint32_t x_i=0; x_i<8; x_i++) {
-                    // -- re-order from block-orientation to final image orientation
-                    const uint32_t img_x=base_img_x+x_i;
+                i+=3;
 
-                    const uint32_t component_x[3]={
-                        img_x/col_scale[0],
-                        img_x/col_scale[1],
-                        img_x/col_scale[2],
-                    };
+                // -- deinterlace and convert to uint8
 
-                    for(int i=0;i<3;i++){
-                        const uint32_t col_offset_roundedtomultipleof8=component_x[i]&(UINT32_MAX<<3);
-                        const uint32_t col_offset_remainder=component_x[i]&0x7;
+            #else
+                const OUT_EL Y=y[image_components[0].conversion_indices[i]];
+                const OUT_EL Cr=cr[image_components[1].conversion_indices[i]];
+                const OUT_EL Cb=cb[image_components[2].conversion_indices[i]];
 
-                        component_offsets[i]=base_component_offsets[i]+
-                            col_offset_roundedtomultipleof8*8 // partial row added by current mcu within scan
-                            +col_offset_remainder// partial row added by offset into current block
-                        ;
-                    }
+                // -- convert ycbcr to rgb
 
-                    float Y=y[component_offsets[0]];
-                    float Cr=cr[component_offsets[1]];                    
-                    float Cb=cb[component_offsets[2]];
+                const OUT_EL R = Y +                1.402f * Cr;
+                const OUT_EL B = Y +  1.772f * Cb;
+                const OUT_EL G = Y - (0.343f * Cb + 0.718f * Cr );
 
-                    uint32_t i=
-                        scan_offset
-                        +mcu_offset
-                        +mcu_row_offset
-                        +mcu_col_offset
-                        +y_offset
-                        +x_i;
+                // -- deinterlace and convert to uint8
 
-                    // -- convert ycbcr to rgb
+                image_data_data[i* 4 + 0] = (uint8_t)clamp_f32(0.0f,255.0f,R+128.0f);
+                image_data_data[i* 4 + 1] = (uint8_t)clamp_f32(0.0f,255.0f,G+128.0f);
+                image_data_data[i* 4 + 2] = (uint8_t)clamp_f32(0.0f,255.0f,B+128.0f);
+                image_data_data[i* 4 + 3] = UINT8_MAX;
+            #endif
+        #endif
 
-                    const float R = Cr * 1.402f + Y;
-                    const float B = Cb * 1.772f + Y;
-                    const float G = (Y - 0.114f * B - 0.299f * R ) * 1.703f;
-
-                    // -- deinterlace and convert to uint8
-
-                    image_data_data[(i)* 4 + 0] = (uint8_t)clamp_f32(0.0f,255.0f,R+128.0f);
-                    image_data_data[(i)* 4 + 1] = (uint8_t)clamp_f32(0.0f,255.0f,G+128.0f);
-                    image_data_data[(i)* 4 + 2] = (uint8_t)clamp_f32(0.0f,255.0f,B+128.0f);
-                    image_data_data[(i)* 4 + 3] = UINT8_MAX;
-                }
-            }
-        }
     }
 }
 
 [[gnu::flatten,gnu::hot,gnu::nonnull(1)]]
 void JpegParser_convert_colorspace(JpegParser* parser,uint32_t scan_index_start,uint32_t scan_index_end){
-    ImageComponent image_components[3]={
-        parser->image_components[0],
-        parser->image_components[1],
-        parser->image_components[2]
-    };
-
-    uint32_t row_scale[3]={
-        parser->max_component_vert_sample_factor/image_components[0].vert_sample_factor,
-        parser->max_component_vert_sample_factor/image_components[1].vert_sample_factor,
-        parser->max_component_vert_sample_factor/image_components[2].vert_sample_factor
-    };
-    uint32_t col_scale[3]={
-        parser->max_component_horz_sample_factor/image_components[0].horz_sample_factor,
-        parser->max_component_horz_sample_factor/image_components[1].horz_sample_factor,
-        parser->max_component_horz_sample_factor/image_components[2].horz_sample_factor
-    };
-
-    uint32_t scale_label=
-        row_scale[0]<<5*4
-        | col_scale[0]<<4*4
-        | row_scale[1]<<3*4
-        | col_scale[1]<<2*4
-        | row_scale[2]<<1*4
-        | col_scale[2]
-    ;
-    if (scale_label!=0x112222) {
-        println("warning! : conversion label %x hits slow path",scale_label);
-    }
-
-    const uint32_t pixels_per_scan[3]={
-        image_components[0].num_blocks_in_scan*64,
-        image_components[1].num_blocks_in_scan*64,
-        image_components[2].num_blocks_in_scan*64,
-    };
-
-    uint32_t num_mcu_cols=image_components[0].num_blocks_in_scan/(image_components[0].vert_sample_factor*image_components[0].horz_sample_factor);
-
     for (uint32_t s=scan_index_start; s<scan_index_end; s++) {
-        uint32_t mcu_row=s;
-        uint32_t scan_offset=s*pixels_per_scan[0];
-        for (uint32_t mcu_col=0; mcu_col<num_mcu_cols; mcu_col++) {
-            uint32_t mcu_offset=mcu_col*parser->max_component_horz_sample_factor*8;
-
-            switch(scale_label){
-                case 0x112222:
-                    convert_colors_112222(
-                        parser, 
-
-                        mcu_col, 
-                        mcu_row, 
-                        scan_offset, 
-                        mcu_offset
-                    );
-                    break;
-                default:
-                    convert_colors_generic(
-                        parser,
-
-                        mcu_col, 
-                        mcu_row, 
-                        scan_offset, 
-                        mcu_offset, 
-                        row_scale, 
-                        col_scale
-                    );
-            }
-        }
+        scan_ycbcr_to_rgb(
+            parser,
+            s
+        );
     }
 }
 
@@ -1623,7 +1552,7 @@ void* JpegParser_convert_colorspace_pthread(struct JpegParser_convert_colorspace
 }
 
 ImageParseResult Image_read_jpeg(const char* filepath,ImageData* image_data){
-    printf("starting decode\n");
+    println("starting decode");
     FILE* file=fopen(filepath, "rb");
     if (!file) {
         fprintf(stderr, "file '%s' not found\n",filepath);
@@ -1744,7 +1673,7 @@ ImageParseResult Image_read_jpeg(const char* filepath,ImageData* image_data){
     }
 
     for(int c=0;c<3;c++){
-        free(parser.image_components[c].out_block_downsampled);
+        //free(parser.image_components[c].out_block_downsampled);
         for(uint32_t s=0;s<parser.image_components[c].num_scans;s++){
             free(parser.image_components[c].scan_memory[s]);
         }

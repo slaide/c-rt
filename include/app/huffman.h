@@ -8,6 +8,7 @@
 #define mask_u32(n) ((1ul<<(uint32_t)(n))-1ul)
 #define mask_u64(n) ((1ull<<(uint64_t)(n))-1ull)
 
+[[maybe_unused]]
 static uint64_t MASKS_U64[64]={
     mask_u64(0),
     mask_u64(1),
@@ -74,6 +75,7 @@ static uint64_t MASKS_U64[64]={
     mask_u64(62),
     mask_u64(63),
 };
+[[maybe_unused]]
 static uint32_t MASKS_U32[32]={
     mask_u32(0),
     mask_u32(1),
@@ -191,7 +193,7 @@ static inline void BitStream_advance(BitStream* const stream,const uint8_t n_bit
  * this function is called automatically (internally) when required
  * @param stream 
  */
-[[clang::always_inline,gnu::flatten]]
+[[gnu::hot]]
 static inline void BitStream_fill_buffer(BitStream* const stream){
     uint64_t num_bytes_missing=7-stream->buffer_bits_filled/8;
 
@@ -239,7 +241,7 @@ static inline void BitStream_advance_unsafe(BitStream* const stream,const uint8_
     stream->buffer&=get_mask_u64(stream->buffer_bits_filled);
 }
 
-[[clang::always_inline,gnu::flatten]]
+[[clang::always_inline,gnu::flatten,maybe_unused]]
 static inline void BitStream_advance(BitStream* const stream,const uint8_t n_bits){
     if (n_bits>stream->buffer_bits_filled) {
         fprintf(stderr, "bitstream advance by %d bits invalid with %" PRIu64 " current buffer length\n",n_bits,stream->buffer_bits_filled);
@@ -249,7 +251,7 @@ static inline void BitStream_advance(BitStream* const stream,const uint8_t n_bit
     BitStream_advance_unsafe(stream, n_bits);
 }
 
-[[clang::always_inline,gnu::flatten]]
+[[clang::always_inline,gnu::flatten,maybe_unused]]
 static inline uint8_t HuffmanCodingTable_lookup(
     const HuffmanCodingTable* const table,
     BitStream* stream
@@ -262,7 +264,7 @@ static inline uint8_t HuffmanCodingTable_lookup(
     return leaf.value;
 }
 
-[[clang::always_inline,gnu::flatten]]
+[[clang::always_inline,gnu::flatten,maybe_unused]]
 static inline uint64_t BitStream_get_bits_advance(BitStream* const stream,const uint8_t n_bits){
     uint64_t res=BitStream_get_bits(stream, n_bits);
     BitStream_advance_unsafe(stream, n_bits);

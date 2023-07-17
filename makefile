@@ -44,6 +44,7 @@ ifeq ($(PLATFORM), linux)
 	BUILD_OBJS += main_linux.c.o
 else ifeq ($(PLATFORM), macos)
 	LINKS += -framework Appkit -framework Metal -framework MetalKit -framework QuartzCore
+	LINKS += -L/opt/vulkansdk/macOS/lib
 	CDEF += -DVK_USE_PLATFORM_METAL_EXT
 	CINCLUDE += -I/opt/vulkansdk/macOS/include
 
