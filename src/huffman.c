@@ -40,7 +40,11 @@ void uint64_to_str(uint64_t v,char s[64]){
  * @param len 
  * @return int 
  */
-inline int32_t reverse_bits(int32_t bits,int32_t len){
+[[maybe_unused]]
+static inline int32_t reverse_bits(
+    const int32_t bits,
+    const int32_t len
+){
     int32_t ret=0;
     for (int32_t i=0; i<len; i++) {
         int32_t nth_bit=(bits&(1<<i))>>i;
@@ -53,7 +57,7 @@ inline int32_t reverse_bits(int32_t bits,int32_t len){
 #define MAX_HUFFMAN_TABLE_ENTRIES 260
 
 void HuffmanCodingTable_new(
-    HuffmanCodingTable* table,
+    HuffmanCodingTable* const restrict table,
 
     const uint8_t num_values_of_length[MAX_HUFFMAN_TABLE_CODE_LENGTH],
 

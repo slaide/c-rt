@@ -40,7 +40,7 @@ $(error Invalid build mode: $(MODE) (valid options are { release | debug }))
 endif
 
 ifeq ($(PLATFORM), linux)
-	LINKS += -lxcb -lxcb-util -lm
+	LINKS += -lxcb -lxcb-util -lm -ljemalloc
 	CDEF += -DVK_USE_PLATFORM_XCB_KHR
 	COMPILE_FLAGS += -mssse3
 

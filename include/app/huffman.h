@@ -140,7 +140,7 @@ struct ParseLeaf{
  * @param values 
  */
 void HuffmanCodingTable_new(
-    HuffmanCodingTable* table,
+    HuffmanCodingTable* const restrict table,
 
     const uint8_t num_values_of_length[16],
 
@@ -186,7 +186,7 @@ static inline void BitStream_advance_unsafe(BitStream* stream,uint8_t n_bits);*/
  * @param n_bits 
  */
 [[clang::always_inline,gnu::flatten]]
-static inline void BitStream_advance(BitStream* const stream,const uint8_t n_bits);
+static inline void BitStream_advance(BitStream* const restrict stream,const uint8_t n_bits);
 
 /**
  * @brief fill internal bit buffer (used for fast lookup)
@@ -194,7 +194,9 @@ static inline void BitStream_advance(BitStream* const stream,const uint8_t n_bit
  * @param stream 
  */
 [[gnu::hot]]
-static inline void BitStream_fill_buffer(BitStream* const stream){
+static inline void BitStream_fill_buffer(
+    BitStream* const restrict stream
+){
     uint64_t num_bytes_missing=7-stream->buffer_bits_filled/8;
 
     stream->buffer=stream->buffer<<(8*num_bytes_missing);
@@ -214,20 +216,29 @@ static inline void BitStream_fill_buffer(BitStream* const stream){
  * @param n_bits 
  */
 [[clang::always_inline,gnu::flatten]]
-static inline void BitStream_ensure_filled(BitStream* stream,uint8_t n_bits) {
+static inline void BitStream_ensure_filled(
+    BitStream* const restrict stream,
+    const uint8_t n_bits
+){
     if(stream->buffer_bits_filled<n_bits){
         BitStream_fill_buffer(stream);
     }
 }
 
 [[clang::always_inline,gnu::flatten]]
-static inline uint64_t BitStream_get_bits_unsafe(BitStream* stream,uint8_t n_bits){
+static inline uint64_t BitStream_get_bits_unsafe(
+    const BitStream* const restrict stream,
+    uint8_t n_bits
+){
     uint64_t ret=stream->buffer>>(stream->buffer_bits_filled-n_bits);
     return ret;
 }
 
 [[clang::always_inline,gnu::flatten]]
-static inline uint64_t BitStream_get_bits(BitStream* const stream,const uint8_t n_bits){
+static inline uint64_t BitStream_get_bits(
+    BitStream* const restrict stream,
+    const uint8_t n_bits
+){
     BitStream_ensure_filled(stream, n_bits);
 
     uint64_t ret=BitStream_get_bits_unsafe(stream, n_bits);
@@ -236,13 +247,19 @@ static inline uint64_t BitStream_get_bits(BitStream* const stream,const uint8_t 
 }
 
 [[clang::always_inline,gnu::flatten]]
-static inline void BitStream_advance_unsafe(BitStream* const stream,const uint8_t n_bits) {
+static inline void BitStream_advance_unsafe(
+    BitStream* const restrict stream,
+    const uint8_t n_bits
+){
     stream->buffer_bits_filled-=n_bits;
     stream->buffer&=get_mask_u64(stream->buffer_bits_filled);
 }
 
 [[clang::always_inline,gnu::flatten,maybe_unused]]
-static inline void BitStream_advance(BitStream* const stream,const uint8_t n_bits){
+static inline void BitStream_advance(
+    BitStream* const restrict stream,
+    const uint8_t n_bits
+){
     if (n_bits>stream->buffer_bits_filled) {
         fprintf(stderr, "bitstream advance by %d bits invalid with %" PRIu64 " current buffer length\n",n_bits,stream->buffer_bits_filled);
         exit(-50);
@@ -253,8 +270,8 @@ static inline void BitStream_advance(BitStream* const stream,const uint8_t n_bit
 
 [[clang::always_inline,gnu::flatten,maybe_unused]]
 static inline uint8_t HuffmanCodingTable_lookup(
-    const HuffmanCodingTable* const table,
-    BitStream* stream
+    const HuffmanCodingTable* const restrict table,
+    BitStream* const restrict stream
 ){
     uint64_t bits=BitStream_get_bits(stream,table->max_code_length_bits);
 
@@ -265,7 +282,10 @@ static inline uint8_t HuffmanCodingTable_lookup(
 }
 
 [[clang::always_inline,gnu::flatten,maybe_unused]]
-static inline uint64_t BitStream_get_bits_advance(BitStream* const stream,const uint8_t n_bits){
+static inline uint64_t BitStream_get_bits_advance(
+    BitStream* const restrict stream,
+    const uint8_t n_bits
+){
     uint64_t res=BitStream_get_bits(stream, n_bits);
     BitStream_advance_unsafe(stream, n_bits);
 
