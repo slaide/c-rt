@@ -202,9 +202,14 @@ static inline void BitStream_fill_buffer(
     stream->buffer=stream->buffer<<(8*num_bytes_missing);
     for(uint64_t i=0;i<num_bytes_missing;i++){
         uint64_t index=stream->next_data_index+i;
-        uint64_t shift_by=(num_bytes_missing-1-i)*8;
         uint64_t next_byte=stream->data[index];
+
+        uint64_t shift_by=(num_bytes_missing-1-i)*8;
         stream->buffer |= next_byte << shift_by;
+
+        if(stream->data[index]==0xFF && stream->data[index+1]==0){
+            stream->next_data_index++;
+        }
     }
     stream->buffer_bits_filled+=num_bytes_missing*8;
     stream->next_data_index+=num_bytes_missing;

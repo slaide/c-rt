@@ -938,11 +938,6 @@ void JpegParser_parse_file(
     static const uint32_t CHANNEL_COMPLETE=2016+64; // sum(0..<64) + 64
     uint32_t channel_completeness[3]={0,0,0};
 
-    // these fields are only used within a sos segment, but the storage can be re-used for later sos segments. since each sos segment reads some part of the file, subsequent sos segments cannot require more storage than the first one, i.e. storage requirement does not increase over time either
-    uint32_t stuffed_byte_index_capacity=1024;
-    uint32_t* stuffed_byte_indices=malloc(sizeof(uint32_t)*stuffed_byte_index_capacity);
-    uint8_t* const de_zeroed_file_contents=malloc(parser->file_size);
-
     enum EncodingMethod{
         Baseline,
         Progressive,
@@ -1242,31 +1237,9 @@ void JpegParser_parse_file(
 
                     MCU_EL differential_dc[3]={0,0,0};
 
-                    uint32_t stuffed_byte_index_count=0;
-
-                    uint32_t out_index=0;
-                    for (uint32_t i=0; i<(parser->file_size-parser->current_byte_position-1); i++) {
-                        const uint8_t current_byte=parser->file_contents[parser->current_byte_position+i];
-                        const uint8_t next_byte=parser->file_contents[parser->current_byte_position+i+1];
-
-                        de_zeroed_file_contents[out_index]=current_byte;
-
-                        if ((current_byte==0xFF) && (next_byte==0)) {
-                            stuffed_byte_indices[stuffed_byte_index_count++]=out_index;
-
-                            if (stuffed_byte_index_count==stuffed_byte_index_capacity) {
-                                stuffed_byte_index_capacity*=2;
-                                stuffed_byte_indices=realloc(stuffed_byte_indices, 4*stuffed_byte_index_capacity);
-                            }
-
-                            i++;
-                        }
-                        out_index++;
-                    }
-
                     BitStream _bit_stream;
                     BitStream* const restrict stream=&_bit_stream;
-                    BitStream_new(stream, de_zeroed_file_contents);
+                    BitStream_new(stream, &parser->file_contents[parser->current_byte_position]);
 
                     const uint32_t mcu_cols=parser->image_components[0].horz_samples/parser->image_components[0].horz_sample_factor/8;
                     const uint32_t mcu_rows=parser->image_components[0].vert_samples/parser->image_components[0].vert_sample_factor/8;
@@ -1391,15 +1364,7 @@ void JpegParser_parse_file(
 
                     const uint32_t bytes_read_from_stream=(uint32_t)(stream->next_data_index-stream->buffer_bits_filled/8);
 
-                    uint32_t stuffed_byte_count_skipped=0;
-                    for (uint32_t i=0; i<stuffed_byte_index_count; i++) {
-                        if (bytes_read_from_stream>=stuffed_byte_indices[i]) {
-                            stuffed_byte_count_skipped+=1;
-                        }else {
-                            break;
-                        }
-                    }
-                    parser->current_byte_position+=bytes_read_from_stream+stuffed_byte_count_skipped;
+                    parser->current_byte_position+=bytes_read_from_stream;
                 }
 
                 break;
@@ -1409,9 +1374,6 @@ void JpegParser_parse_file(
                 exit(-40);
         }
     }
-
-    free(stuffed_byte_indices);
-    free(de_zeroed_file_contents);
 
     println("parsing done at %f",current_time()-parser->start_time);
 
