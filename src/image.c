@@ -1,4 +1,3 @@
-#include <mmintrin.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -15,10 +14,10 @@
 #ifdef VK_USE_PLATFORM_METAL_EXT
 #include <arm_neon.h>
 #elif VK_USE_PLATFORM_XCB_KHR
-#include <emmintrin.h>
-#include <xmmintrin.h>
-#include <immintrin.h> // avx2
+#include <immintrin.h>
 #endif
+
+#define FIXED_PRECISION_ARITHMETIC
 
 #include <time.h>
 
@@ -213,10 +212,9 @@ const char* Image_jpeg_segment_type_name(JpegSegmentType segment_type){
 }
 
 typedef int16_t MCU_EL;
-//#define FIXED_PRECISION_ARITHMETIC
 #ifdef FIXED_PRECISION_ARITHMETIC
     #define PRECISION 8
-    typedef int32_t OUT_EL; // 16bits are kinda enough, but some images then peak on individual pixels (i.e. random pixels are white)
+    typedef int16_t OUT_EL; // 16bits are kinda enough, but some images then peak on individual pixels (i.e. random pixels are white)
 #else
     typedef float OUT_EL;
 #endif
@@ -1391,8 +1389,9 @@ void JpegParser_parse_file(
 }
 
 #ifdef FIXED_PRECISION_ARITHMETIC
-[[gnu::hot,gnu::flatten,gnu::nonnull(1)]]
-static inline void scan_ycbcr_to_rgb(
+
+[[gnu::hot,gnu::flatten,gnu::nonnull(1),maybe_unused]]
+static inline void scan_ycbcr_to_rgb_sse(
     const JpegParser* const restrict parser,
     const uint32_t mcu_row
 ){
@@ -1417,156 +1416,115 @@ static inline void scan_ycbcr_to_rgb(
     const OUT_EL* const cr[[gnu::aligned(16)]]=image_components[1].out_block_downsampled+scan_offset/rescale_factor[1];
     const OUT_EL* const cb[[gnu::aligned(16)]]=image_components[2].out_block_downsampled+scan_offset/rescale_factor[2];
 
+    for (uint32_t i=0; i<pixels_in_scan; i+=8) {
+        // -- re-order from block-orientation to final image orientation
+
+        const int16_t* y_ptr = &y[image_components[0].conversion_indices[i]];
+        const int16_t* cr_ptr = &cr[image_components[1].conversion_indices[i]];
+        const int16_t* cb_ptr = &cb[image_components[2].conversion_indices[i]];
+
+        // Load 8 Y, Cr, and Cb values
+        __m128i y_values = _mm_loadu_si128((__m128i*)y_ptr);
+        __m128i cr_values = _mm_loadu_si128((__m128i*)cr_ptr);
+        cr_values=_mm_unpacklo_epi16(cr_values,cr_values);
+        __m128i cb_values = _mm_loadu_si128((__m128i*)cb_ptr);
+        cb_values=_mm_unpacklo_epi16(cb_values,cb_values);
+
+        // Shift and subtract constants
+        y_values = _mm_srai_epi16(y_values, PRECISION);
+        cr_values = _mm_srai_epi16(cr_values, PRECISION);
+        cb_values = _mm_srai_epi16(cb_values, PRECISION);
+
+        // Constants for RGB conversion
+        const __m128i const_45 = _mm_set1_epi16(45);
+        const __m128i const_113 = _mm_set1_epi16(113);
+        const __m128i const_11 = _mm_set1_epi16(11);
+        const __m128i const_23 = _mm_set1_epi16(23);
+
+        // Calculate R, G, and B values
+        __m128i R = _mm_add_epi16(y_values, _mm_srai_epi16(_mm_mullo_epi16(const_45, cr_values), 5));
+        __m128i B = _mm_add_epi16(y_values, _mm_srai_epi16(_mm_mullo_epi16(const_113, cb_values), 6));
+        __m128i G = _mm_sub_epi16(y_values, _mm_srai_epi16(_mm_add_epi16(_mm_mullo_epi16(const_11, cb_values), _mm_mullo_epi16(const_23, cr_values)), 5));
+        __m128i A = _mm_set1_epi16(UINT8_MAX);
+
+        // Add offset and store as uint8_t values
+        const __m128i offset = _mm_set1_epi16(128);
+        R=_mm_add_epi16(R, offset);
+        G=_mm_add_epi16(G, offset);
+        B=_mm_add_epi16(B, offset);
+
+        const __m128i r_u8 = _mm_packus_epi16(R,R);
+        const __m128i g_u8 = _mm_packus_epi16(G,G);
+        const __m128i b_u8 = _mm_packus_epi16(B,B);
+        const __m128i a_u8 = _mm_packus_epi16(A,A);
+
+        const __m128i rb_u8=_mm_unpacklo_epi8(r_u8,b_u8);
+        const __m128i ga_u8=_mm_unpacklo_epi8(g_u8,a_u8);
+
+        const __m128i o1=_mm_unpacklo_epi8(rb_u8,ga_u8);
+        const __m128i o2=_mm_unpackhi_epi8(rb_u8,ga_u8);
+
+        // Store as uint8_t values
+        uint8_t* output_ptr = &image_data_data[i * 4];
+        _mm_storeu_si128((__m128i*)output_ptr, o1);
+        output_ptr = &image_data_data[(i+4) * 4];
+        _mm_storeu_si128((__m128i*)output_ptr, o2);
+
+    }
+}
+
+[[gnu::hot,gnu::flatten,gnu::nonnull(1)]]
+static inline void scan_ycbcr_to_rgb(
+    const JpegParser* const restrict parser,
+    const uint32_t mcu_row
+){
+    if(parser->component_label==0x221111){
+        #ifdef VK_USE_PLATFORM_XCB_KHR
+            scan_ycbcr_to_rgb_sse(parser, mcu_row);
+            return;
+        #endif
+    }
+
+    const ImageComponent image_components[3]={
+        parser->image_components[0],
+        parser->image_components[1],
+        parser->image_components[2]
+    };
+
+    uint32_t pixels_in_scan=image_components[0].horz_samples*8*image_components[0].vert_sample_factor;
+    uint32_t scan_offset=mcu_row*pixels_in_scan;
+
+    uint8_t* const image_data_data=parser->image_data->data+scan_offset*4;
+
+    const uint32_t rescale_factor[3]={
+        parser->max_component_horz_sample_factor*parser->max_component_vert_sample_factor/(image_components[0].horz_sample_factor*image_components[0].vert_sample_factor),
+        parser->max_component_horz_sample_factor*parser->max_component_vert_sample_factor/(image_components[1].horz_sample_factor*image_components[1].vert_sample_factor),
+        parser->max_component_horz_sample_factor*parser->max_component_vert_sample_factor/(image_components[2].horz_sample_factor*image_components[2].vert_sample_factor)
+    };
+
+    const OUT_EL* const y[[gnu::aligned(16)]]=image_components[0].out_block_downsampled+scan_offset/rescale_factor[0];
+    const OUT_EL* const cr[[gnu::aligned(16)]]=image_components[1].out_block_downsampled+scan_offset/rescale_factor[1];
+    const OUT_EL* const cb[[gnu::aligned(16)]]=image_components[2].out_block_downsampled+scan_offset/rescale_factor[2];
+
     for (uint32_t i=0; i<pixels_in_scan; i++) {
         // -- re-order from block-orientation to final image orientation
 
-        #ifdef FIXED_PRECISION_ARITHMETIC
-            const OUT_EL Y=y[image_components[0].conversion_indices[i]]>>PRECISION;
-            const OUT_EL Cr=(cr[image_components[1].conversion_indices[i]]-128)>>PRECISION;
-            const OUT_EL Cb=(cb[image_components[2].conversion_indices[i]]-128)>>PRECISION;
+        const OUT_EL Y=y[image_components[0].conversion_indices[i]]>>PRECISION;
+        const OUT_EL Cr=(cr[image_components[1].conversion_indices[i]]-128)>>PRECISION;
+        const OUT_EL Cb=(cb[image_components[2].conversion_indices[i]]-128)>>PRECISION;
 
-            // -- convert ycbcr to rgb
+        // -- convert ycbcr to rgb
 
-            const OUT_EL R = Y + ((            45 * Cr ) >> 5 );
-            const OUT_EL B = Y + (( 113 * Cb           ) >> 6 );
-            const OUT_EL G = Y - ((  11 * Cb + 23 * Cr ) >> 5 );
+        const OUT_EL R = Y + ((            45 * Cr ) >> 5 );
+        const OUT_EL B = Y + (( 113 * Cb           ) >> 6 );
+        const OUT_EL G = Y - ((  11 * Cb + 23 * Cr ) >> 5 );
 
-            // -- deinterlace and convert to uint8
+        // -- deinterlace and convert to uint8
 
-            image_data_data[i* 4 + 0] = (uint8_t)clamp(0,255,R+128);
-            image_data_data[i* 4 + 1] = (uint8_t)clamp(0,255,G+128);
-            image_data_data[i* 4 + 2] = (uint8_t)clamp(0,255,B+128);
-            image_data_data[i* 4 + 3] = UINT8_MAX;
-        #else
-            #ifdef VK_USE_PLATFORM_METAL_EXT
-                const float32x4_t y_simd=vld1q_f32(&y[image_components[0].conversion_indices[i]]);
-                const float32x4_t cr_simd=vld1q_f32(&cr[image_components[1].conversion_indices[i]]);
-                const float32x4_t cb_simd=vld1q_f32(&cb[image_components[2].conversion_indices[i]]);
-
-                // -- convert ycbcr to rgb
-
-                register float32x4_t r_simd=y_simd+1.402f*cr_simd;
-                register float32x4_t b_simd=y_simd+1.772f*cb_simd;
-                register float32x4_t g_simd=y_simd-(0.343f * cb_simd + 0.718f * cr_simd );
-
-                register float32x4_t v_simd;
-
-                v_simd=vdupq_n_f32(128.0);
-                r_simd+=v_simd;
-                g_simd+=v_simd;
-                b_simd+=v_simd;
-                
-                v_simd=vdupq_n_f32(0.0);
-                r_simd=vmaxq_f32(r_simd, v_simd);
-                g_simd=vmaxq_f32(g_simd, v_simd);
-                b_simd=vmaxq_f32(b_simd, v_simd);
-                
-                v_simd=vdupq_n_f32(255.0);
-                r_simd=vminq_f32(r_simd, v_simd);
-                g_simd=vminq_f32(g_simd, v_simd);
-                b_simd=vminq_f32(b_simd, v_simd);
-
-                const int32x4_t r_s32=vcvtq_s32_f32(r_simd);
-                const uint16x4_t r_u16=vqmovun_s32(r_s32);
-                const int32x4_t g_s32=vcvtq_s32_f32(g_simd);
-                const uint16x4_t g_u16=vqmovun_s32(g_s32);
-                const int32x4_t b_s32=vcvtq_s32_f32(b_simd);
-                const uint16x4_t b_u16=vqmovun_s32(b_s32);
-
-                const uint16x4_t a_u16=vdup_n_u16(255);
-
-                const uint16x8_t rg_u16=vcombine_u16(r_u16,g_u16);
-                const uint16x8_t ba_u16=vcombine_u16(b_u16,a_u16);
-
-                const uint8x8_t rg_u8=vqmovn_u16(ba_u16);
-                const uint8x8_t ba_u8=vqmovn_u16(rg_u16);
-
-                uint8x16_t rgba_u8=vcombine_u8(ba_u8,rg_u8);
-
-                // -- deinterlace and convert to uint8
-
-                static const uint8_t indices [[gnu::aligned(16)]] [16] = {
-                    0, 4, 8, 12, 
-                    1, 5, 9, 13, 
-                    2, 6, 10, 14, 
-                    3, 7, 11, 15
-                };
-                const uint8x16_t indices_vector = vld1q_u8(indices);
-
-                rgba_u8=vqtbl1q_u8(rgba_u8, indices_vector);
-
-                vst1q_u8(image_data_data+i*4,rgba_u8);
-
-                i+=3;
-
-            #elif defined(VK_USE_PLATFORM_XCB_KHR)
-                __m128 y_simd=_mm_loadu_ps(&y[image_components[0].conversion_indices[i]]);
-                __m128 cr_simd=_mm_loadu_ps(&cr[image_components[1].conversion_indices[i]]);
-                cr_simd=_mm_shuffle_epi32(cr_simd,16+64);
-                __m128 cb_simd=_mm_loadu_ps(&cb[image_components[2].conversion_indices[i]]);
-                cb_simd=_mm_shuffle_epi32(cb_simd,16+64);
-
-                // -- convert ycbcr to rgb
-
-                register __m128 r_simd=y_simd+1.402f*cr_simd;
-                register __m128 b_simd=y_simd+1.772f*cb_simd;
-                register __m128 g_simd=y_simd-(0.343f * cb_simd + 0.718f * cr_simd );
-
-                register __m128 v_simd;
-
-                v_simd=_mm_set1_ps(128.0);
-                r_simd+=v_simd;
-                g_simd+=v_simd;
-                b_simd+=v_simd;
-
-                // conversion from i32->i16->u8 is clamping, i.e. clamp to [0;255] is implicit
-
-                const __m128i r_s32=_mm_cvtps_epi32(r_simd);
-                const __m128i g_s32=_mm_cvtps_epi32(g_simd);
-                const __m128i b_s32=_mm_cvtps_epi32(b_simd);
-                const __m128i a_s32=_mm_set1_epi32(255);
-
-                const __m128i rg_u16=_mm_packs_epi32(r_s32,g_s32);
-                const __m128i ba_u16=_mm_packs_epi32(b_s32,a_s32);
-
-                __m128i rgba_u8=_mm_packus_epi16(rg_u16,ba_u16);
-
-                // -- deinterlace and convert to uint8
-
-                static const uint8_t indices [[gnu::aligned(16)]] [16] = {
-                    0, 4, 8, 12, 
-                    1, 5, 9, 13, 
-                    2, 6, 10, 14, 
-                    3, 7, 11, 15
-                };
-                const __m128i indices_vector = _mm_load_ps((void*)indices);
-
-                rgba_u8=_mm_shuffle_epi8(rgba_u8, indices_vector);
-
-                _mm_storeu_si128((void*)(image_data_data+i*4),rgba_u8);
-
-                i+=3;
-
-            #else
-                const OUT_EL Y=y[image_components[0].conversion_indices[i]];
-                const OUT_EL Cr=cr[image_components[1].conversion_indices[i]];
-                const OUT_EL Cb=cb[image_components[2].conversion_indices[i]];
-
-                // -- convert ycbcr to rgb
-
-                const OUT_EL R = Y +                1.402f * Cr;
-                const OUT_EL B = Y +  1.772f * Cb;
-                const OUT_EL G = Y - (0.343f * Cb + 0.718f * Cr );
-
-                // -- deinterlace and convert to uint8
-
-                image_data_data[i* 4 + 0] = (uint8_t)clamp_f32(0.0f,255.0f,R+128.0f);
-                image_data_data[i* 4 + 1] = (uint8_t)clamp_f32(0.0f,255.0f,G+128.0f);
-                image_data_data[i* 4 + 2] = (uint8_t)clamp_f32(0.0f,255.0f,B+128.0f);
-                image_data_data[i* 4 + 3] = UINT8_MAX;
-            #endif
-        #endif
-
+        image_data_data[i* 4 + 0] = (uint8_t)clamp(0,255,R+128);
+        image_data_data[i* 4 + 1] = (uint8_t)clamp(0,255,G+128);
+        image_data_data[i* 4 + 2] = (uint8_t)clamp(0,255,B+128);
+        image_data_data[i* 4 + 3] = UINT8_MAX;
     }
 }
 
@@ -1883,11 +1841,8 @@ ImageParseResult Image_read_jpeg(
                         thread_args[i].parser=&parser;
                         thread_args[i].scan_index_start=i*num_scans_per_thread;
                         thread_args[i].scan_index_end=(i+1)*num_scans_per_thread;
-
-                        if(i==(num_threads-1)){
-                            thread_args[i].scan_index_end=parser.image_components[0].num_scans;
-                        }
                     }
+                    thread_args[num_threads-1].scan_index_end=parser.image_components[0].num_scans;
 
                     for(uint32_t i=0;i<num_threads;i++){
                         if(pthread_create(&threads[i], NULL, (pthread_callback)JpegParser_convert_colorspace_pthread, &thread_args[i])!=0){

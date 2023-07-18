@@ -42,7 +42,8 @@ endif
 ifeq ($(PLATFORM), linux)
 	LINKS += -lxcb -lxcb-util -lm -ljemalloc
 	CDEF += -DVK_USE_PLATFORM_XCB_KHR
-	COMPILE_FLAGS += -mssse3
+	COMPILE_FLAGS += -mssse3 # required for hand-written simd code
+	COMPILE_FLAGS += -mavx2 # additional speedup from compiler optimizations
 
 	BUILD_OBJS += main_linux.c.o
 else ifeq ($(PLATFORM), macos)
