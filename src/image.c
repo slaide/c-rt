@@ -23,6 +23,14 @@
 #include "app/error.h"
 #include "app/huffman.h"
 
+typedef int16_t MCU_EL;
+#ifdef FIXED_PRECISION_ARITHMETIC
+    #define PRECISION 7
+    typedef int16_t OUT_EL; // 16bits are kinda enough, but some images then peak on individual pixels (i.e. random pixels are white)
+#else
+    typedef float OUT_EL;
+#endif
+
 #define println(...) {\
     printf("%s : %d | ",__FILE__,__LINE__);\
     printf(__VA_ARGS__);\
@@ -208,14 +216,6 @@ const char* Image_jpeg_segment_type_name(JpegSegmentType segment_type){
 
     return NULL;
 }
-
-typedef int16_t MCU_EL;
-#ifdef FIXED_PRECISION_ARITHMETIC
-    #define PRECISION 8
-    typedef int16_t OUT_EL; // 16bits are kinda enough, but some images then peak on individual pixels (i.e. random pixels are white)
-#else
-    typedef float OUT_EL;
-#endif
 
 typedef OUT_EL QUANT;
 typedef QUANT QuantizationTable[64];
@@ -614,12 +614,17 @@ static void JpegParser_process_channel(
 
     const OUT_EL idct_m0_v0=idct_mask_set[0][0];
 
+    // local cache, with expanded size to allow simd instructions reading past the real content
+    MCU_EL in_block[80];
+    #pragma unroll
+    for(int i=64;i<80;i++) in_block[i]=0;
+
     for (uint32_t scan_id=scan_id_start; scan_id<scan_id_end; scan_id++) {
         const MCU_EL* const restrict scan_mem=parser->image_components[c].scan_memory[scan_id];
 
         for (uint32_t block_id=0; block_id<num_blocks_in_scan; block_id++) {
 
-            const MCU_EL* const restrict in_block=scan_mem+block_id*64;
+            memcpy(in_block,scan_mem+block_id*64,64*sizeof(MCU_EL));
 
             const uint32_t block_pixel_range_start=(scan_id*num_blocks_in_scan+block_id);
 
@@ -630,18 +635,48 @@ static void JpegParser_process_channel(
                 const OUT_EL cosine_mask_strength=(OUT_EL)(in_block[0]*component_quant_table[0]);
 
                 const OUT_EL idct_m0_value=idct_m0_v0*cosine_mask_strength;
-                
-                for(uint32_t pixel_index = 0;pixel_index<64;pixel_index++){
-                    out_block[pixel_index]=idct_m0_value;
-                }
+
+                #ifdef FIXED_PRECISION_ARITHMETIC
+                    #ifdef VK_USE_PLATFORM_XCB_KHR
+                        __m128i idct_m0_value_simd=_mm_set1_epi16(idct_m0_value);
+                        
+                        for(uint32_t pixel_index = 0;pixel_index<64;pixel_index+=8){
+                            _mm_store_si128((void*)(out_block+pixel_index), idct_m0_value_simd);
+                        }
+                    #endif
+                #else
+                    for(uint32_t pixel_index = 0;pixel_index<64;pixel_index++){
+                        out_block[pixel_index]=idct_m0_value;
+                    }
+                #endif
             }
 
-            for(uint32_t cosine_index = 1;cosine_index<64;cosine_index++){
-                const uint32_t corrected_cosine_index=cosine_index;
-                const MCU_EL pre_quantized_mask_strength=in_block[corrected_cosine_index];
-                if(pre_quantized_mask_strength == 0) {
-                    continue;
-                }
+            for(uint32_t cosine_index = 1;cosine_index<64;){
+                #ifdef VK_USE_PLATFORM_XCB_KHR
+                    const __m128i mask_strengths=_mm_loadu_si128((void*)(&in_block[cosine_index]));
+                    const __m128i elements_zero_result=_mm_cmpeq_epi16(mask_strengths, _mm_set1_epi16(0));
+                    uint32_t elements_nonzero=0xFFFF-(uint32_t)_mm_movemask_epi8(elements_zero_result);
+
+                    const uint32_t num_cosines_remaining=64-cosine_index;
+                    const uint32_t num_cosines_remaining_in_current_iteration=min_u32(8,num_cosines_remaining);
+
+                    const uint32_t all_elements_mask=mask_u32(num_cosines_remaining_in_current_iteration*2);
+                    elements_nonzero&=all_elements_mask;
+
+                    if(elements_nonzero==0){
+                        cosine_index+=8;
+                        continue;
+                    }
+
+                    cosine_index+=(uint32_t)(_mm_tzcnt_32((uint32_t)elements_nonzero))/2;
+                #else
+                    if(in_block[cosine_index] == 0) {
+                        cosine_index++;
+                        continue;
+                    }
+                #endif
+
+                const MCU_EL pre_quantized_mask_strength=in_block[cosine_index];
 
                 const OUT_EL cosine_mask_strength=pre_quantized_mask_strength*component_quant_table[cosine_index];
                 const OUT_EL* const restrict idct_mask=idct_mask_set[cosine_index];
@@ -649,6 +684,8 @@ static void JpegParser_process_channel(
                 for(uint32_t pixel_index = 0;pixel_index<64;pixel_index++){
                     out_block[pixel_index]+=idct_mask[pixel_index]*cosine_mask_strength;
                 }
+
+                cosine_index++;
             }
 
             memcpy(out_block_downsampled+block_pixel_range_start*64,out_block,sizeof(OUT_EL)*64);
@@ -1188,7 +1225,7 @@ void JpegParser_parse_file(
                         }
 
                         if(ci!=num_pixels_per_scan){
-                            println("this is a bug. %d != %d",ci,num_pixels_per_scan);
+                            fprintf(stderr,"this is a bug. %d != %d",ci,num_pixels_per_scan);
                             exit(FATAL_UNEXPECTED_ERROR);
                         }
                     }
@@ -1199,11 +1236,13 @@ void JpegParser_parse_file(
 
                     parser->current_byte_position=segment_end_position;
                 }
-                println("ending sof at %f",current_time()-parser->start_time);
+                #ifdef DEBUG
+                    println("SOF done at %f",current_time()-parser->start_time);
+                #endif
+
                 break;
 
             case SOS:
-                println("starting sos at %f",current_time()-parser->start_time);
                 {
                     GET_U16(segment_size);
 
@@ -1284,7 +1323,9 @@ void JpegParser_parse_file(
                         scan_components[c].num_horz_blocks=scan_components[c].horz_samples/8;
                     }
 
-                    //println("scan info: %d succ low %d high %d start %d end %d",num_scan_components,successive_approximation_bit_low,successive_approximation_bit_high,spectral_selection_start,spectral_selection_end);
+                    #ifdef DEBUG
+                        println("scan info: %d succ low %d high %d start %d end %d",num_scan_components,successive_approximation_bit_low,successive_approximation_bit_high,spectral_selection_start,spectral_selection_end);
+                    #endif
 
                     if(parallel && (successive_approximation_bit_low==0)){
                         for (uint32_t c=0; c<num_scan_components; c++) {
@@ -1371,7 +1412,9 @@ void JpegParser_parse_file(
         }
     }
 
-    println("parsing done at %f",current_time()-parser->start_time);
+    #ifdef DEBUG
+        println("parsing done at %f",current_time()-parser->start_time);
+    #endif
 
     if(parallel)
         for(uint8_t t=0;t<3;t++)
@@ -1383,7 +1426,9 @@ void JpegParser_parse_file(
         }
     }
 
-    println("processing done at %f",current_time()-parser->start_time);
+    #ifdef DEBUG
+        println("processing done at %f",current_time()-parser->start_time);
+    #endif
 }
 
 #ifdef FIXED_PRECISION_ARITHMETIC
@@ -1885,7 +1930,10 @@ ImageParseResult Image_read_jpeg(
     const char* const filepath,
     ImageData* const restrict image_data
 ){
-    println("starting decode");
+    #ifdef DEBUG
+        println("starting decode");
+    #endif
+
     FILE* const file=fopen(filepath, "rb");
     if (!file) {
         fprintf(stderr, "file '%s' not found\n",filepath);
@@ -1910,7 +1958,7 @@ ImageParseResult Image_read_jpeg(
     
     fclose(file);
 
-    const uint32_t num_threads=4;
+    const uint32_t num_threads=1;
 
     JpegParser_parse_file(&parser, image_data, num_threads>1);
 
@@ -1963,7 +2011,9 @@ ImageParseResult Image_read_jpeg(
             exit(-65);
     }
 
-    println("colorspace done at %f",current_time()-parser.start_time);
+    #ifdef DEBUG
+        println("colorspace done at %f",current_time()-parser.start_time);
+    #endif
 
     // -- crop to real size
 
@@ -1986,7 +2036,9 @@ ImageParseResult Image_read_jpeg(
         image_data->width=parser.real_X;
         image_data->data=real_data;
 
-        println("cropped to final size at %f",current_time()-parser.start_time);
+        #ifdef DEBUG
+            println("cropped to final size at %f",current_time()-parser.start_time);
+        #endif
     }
 
     // -- parsing done. free all resources
@@ -2001,10 +2053,8 @@ ImageParseResult Image_read_jpeg(
     for(int c=0;c<3;c++){
         free(parser.image_components[c].conversion_indices);
         free(parser.image_components[c].out_block_downsampled);
-        //for(uint32_t s=0;s<parser.image_components[c].num_scans;s++){
-        for(uint32_t s=0;s<1;s++){
-            free(parser.image_components[c].scan_memory[s]);
-        }
+        // free batch allocated scan memory
+        free(parser.image_components[c].scan_memory[0]);
         free(parser.image_components[c].scan_memory);
     }
 

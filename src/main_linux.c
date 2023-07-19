@@ -104,7 +104,11 @@ int App_get_input_event(Application* app,InputEvent* input_event){
             }
             break;
         default:
-            printf("got event %s\n",xcb_event_get_label(event_type));
+            #ifdef DEBUG
+                printf("got unhandled event %s\n",xcb_event_get_label(event_type));
+            #else
+                ;
+            #endif
     }
 
     free(xcb_event);

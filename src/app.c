@@ -1248,7 +1248,7 @@ void App_run(Application* app){
     Mesh* quadmesh=NULL;
 
     ImageData image_data_jpeg;
-    const char* file_path="../swift-rt/Resources/cat.jpg";
+    const char* file_path="complex_pattern.jpg";
     for(int i=0;i<5;i++){
         if(i>0){
             free(image_data_jpeg.data);

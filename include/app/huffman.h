@@ -5,8 +5,10 @@
 #include <strings.h>
 #include <inttypes.h>
 
-#define mask_u32(n) ((1ul<<(uint32_t)(n))-1ul)
-#define mask_u64(n) ((1ull<<(uint64_t)(n))-1ull)
+#define UINT32_1 ((uint32_t)1)
+#define UINT64_1 ((uint64_t)1)
+#define mask_u32(n) (((UINT32_1)<<(uint32_t)(n))-UINT32_1)
+#define mask_u64(n) (((UINT64_1)<<(uint64_t)(n))-UINT64_1)
 
 [[maybe_unused]]
 static uint64_t MASKS_U64[64]={
