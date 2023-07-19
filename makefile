@@ -7,7 +7,7 @@ default: run
 CC = clang
 OBJCC = clang
 CSTD = -std=gnu2x
-LINKS = -lvulkan -pthread
+LINKS = -lvulkan -pthread -ljemalloc
 COMPILE_FLAGS = -Wall -Werror -Wpedantic -Wextra -Wno-sequence-point -Wconversion
 CINCLUDE = -Iinclude
 CDEF = 
@@ -27,9 +27,11 @@ else ifeq ($(MODE), debugrelease)
 	CDEF += -DDEBUG -DRELEASE
 	COMPILE_FLAGS += -fno-omit-frame-pointer -fno-inline
 	COMPILE_FLAGS += -g
+
 	ifeq ($(PLATFORM), linux)
 		COMPILE_FLAGS += -fsanitize=address
 	endif
+	
 	OPT_FLAGS := -O2 -ffast-math
 else ifeq ($(MODE), release)
 	CDEF += -DRELEASE
@@ -40,7 +42,7 @@ $(error Invalid build mode: $(MODE) (valid options are { release | debug }))
 endif
 
 ifeq ($(PLATFORM), linux)
-	LINKS += -lxcb -lxcb-util -lm -ljemalloc
+	LINKS += -lxcb -lxcb-util -lm
 	CDEF += -DVK_USE_PLATFORM_XCB_KHR
 	COMPILE_FLAGS += -mssse3 # required for hand-written simd code
 	COMPILE_FLAGS += -mavx2 # additional speedup from compiler optimizations
@@ -48,7 +50,15 @@ ifeq ($(PLATFORM), linux)
 	BUILD_OBJS += main_linux.c.o
 else ifeq ($(PLATFORM), macos)
 	LINKS += -framework Appkit -framework Metal -framework MetalKit -framework QuartzCore
+
+	# default MoltenVK installation path
+	CINCLUDE += -I/opt/vulkansdk/macOS/include
 	LINKS += -L/opt/vulkansdk/macOS/lib
+
+	# default installation path for the homebrew-supplied jemalloc
+	CINCLUDE += -I/opt/homebrew/Cellar/jemalloc/5.3.0/include
+	LINKS += -L/opt/homebrew/Cellar/jemalloc/5.3.0/lib
+
 	CDEF += -DVK_USE_PLATFORM_METAL_EXT
 	CINCLUDE += -I/opt/vulkansdk/macOS/include
 

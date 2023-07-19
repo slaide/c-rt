@@ -7,9 +7,7 @@
 #include <pthread.h>
 #include <stdatomic.h>
 
-#ifdef VK_USE_PLATFORM_XCB_KHR
-    #include<jemalloc/jemalloc.h>
-#endif
+#include <jemalloc/jemalloc.h>
 
 #ifdef VK_USE_PLATFORM_METAL_EXT
     #include <arm_neon.h>
@@ -1912,7 +1910,7 @@ ImageParseResult Image_read_jpeg(
     
     fclose(file);
 
-    const uint32_t num_threads=1;
+    const uint32_t num_threads=4;
 
     JpegParser_parse_file(&parser, image_data, num_threads>1);
 
