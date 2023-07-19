@@ -1,5 +1,6 @@
 MODE ?= debug
 PLATFORM ?= linux
+USEAVX ?= NO
 
 .PHONY: default
 default: run
@@ -29,7 +30,7 @@ else ifeq ($(MODE), debugrelease)
 	COMPILE_FLAGS += -g
 
 	ifeq ($(PLATFORM), linux)
-		COMPILE_FLAGS += -fsanitize=address
+		# COMPILE_FLAGS += -fsanitize=address
 	endif
 	
 	OPT_FLAGS := -O2 -ffast-math
@@ -45,7 +46,10 @@ ifeq ($(PLATFORM), linux)
 	LINKS += -lxcb -lxcb-util -lm
 	CDEF += -DVK_USE_PLATFORM_XCB_KHR
 	COMPILE_FLAGS += -mssse3 # required for hand-written simd code
-	COMPILE_FLAGS += -mavx2 # additional speedup from compiler optimizations
+
+	ifeq ($(USEAVX),YES)
+		COMPILE_FLAGS += -mavx2 # for some additional speed-up with O3
+	endif
 
 	BUILD_OBJS += main_linux.c.o
 else ifeq ($(PLATFORM), macos)
