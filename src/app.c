@@ -675,7 +675,6 @@ void App_destroy_shader(Shader* shader){
 ///
 /// this struct owns all memory, unless indicated otherwise
 Application* App_new(PlatformHandle* platform){
-    printf("started creating app\n");
     Application* app=malloc(sizeof(Application));
 
     app->vk_allocator=NULL;
@@ -775,9 +774,9 @@ Application* App_new(PlatformHandle* platform){
         VkPhysicalDeviceProperties physical_device_properties;
         vkGetPhysicalDeviceProperties(physical_device,&physical_device_properties);
 
-        printf("got device %s of type %s\n",physical_device_properties.deviceName,device_type_name(physical_device_properties.deviceType));
-
-        //vkGetPhysicalDeviceSurfaceFormatsKHR(VkPhysicalDevice physicalDevice, VkSurfaceKHR surface, uint32_t *pSurfaceFormatCount, VkSurfaceFormatKHR *pSurfaceFormats)
+        #ifdef DEBUG
+            printf("vulkan device present: %s of type %s\n",physical_device_properties.deviceName,device_type_name(physical_device_properties.deviceType));
+        #endif
 
         uint32_t num_queue_families;
         vkGetPhysicalDeviceQueueFamilyProperties(physical_device, &num_queue_families,NULL);
@@ -798,10 +797,11 @@ Application* App_new(PlatformHandle* platform){
 
             if(surface_presentation_supported==VK_TRUE){
                 present_queue_family_index=queue_family_index;
-                printf("does support presentation\n");
-            }else{
-                printf("does not support presentation\n");
             }
+
+            #ifdef DEBUG
+                printf("does %s support presentation\n",(surface_presentation_supported==VK_TRUE)?"":"not");
+            #endif
 
             // prefer a queue that supports both
             if(graphics_queue_family_index==present_queue_family_index && present_queue_family_index!=UINT32_MAX){
@@ -1249,7 +1249,12 @@ void App_run(Application* app){
 
     ImageData image_data_jpeg;
     const char* file_path="complex_pattern.jpg";
-    for(int i=0;i<5;i++){
+    #ifdef DEBUG
+        static const int num_iterations=5;
+    #else
+        static const int num_iterations=1;
+    #endif
+    for(int i=0;i<num_iterations;i++){
         if(i>0){
             free(image_data_jpeg.data);
         }
