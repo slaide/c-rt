@@ -115,6 +115,9 @@ CVReturn display_link_callback(
         myplatform->app=self;
         Application* main_app=App_new(myplatform);
 
+        main_app->cli_num_args=0;
+        main_app->cli_args=NULL;
+
         CVDisplayLinkRef display_link;
         CVDisplayLinkCreateWithActiveCGDisplays(&display_link);
         CVDisplayLinkSetOutputCallback(display_link, display_link_callback, main_app);

@@ -1249,6 +1249,11 @@ void App_run(Application* app){
 
     ImageData image_data_jpeg;
     const char* file_path="complex_pattern.jpg";
+
+    if(app->cli_num_args>1){
+        file_path=app->cli_args[1];
+    }
+
     #ifdef DEBUG
         static const int num_iterations=5;
     #else

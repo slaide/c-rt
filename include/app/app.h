@@ -121,6 +121,9 @@ typedef struct Shader{
  * @brief main application handle
  */
 typedef struct Application{
+    int cli_num_args;
+    char** cli_args;
+    
     PlatformHandle* platform_handle;
     PlatformWindow* platform_window;
 

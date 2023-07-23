@@ -222,12 +222,17 @@ void App_destroy_window(Application *app, PlatformWindow *window){
 }
 
 int main(int argc, char**argv){
-    for(int i=0;i<argc;i++){
-        printf("got arg: %s\n",argv[i]);
-    }
+    #ifdef DEBUG
+        for(int i=0;i<argc;i++){
+            printf("cli arg [%d] : %s\n",i,argv[i]);
+        }
+    #endif
 
     PlatformHandle* platform=Platform_new();
     Application *app=App_new(platform);
+
+    app->cli_num_args=argc;
+    app->cli_args=argv;
 
     App_set_window_title(app,app->platform_window,"my window");
 
