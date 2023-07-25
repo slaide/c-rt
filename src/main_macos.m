@@ -1,6 +1,3 @@
-#include "vulkan/vulkan_core.h"
-#include <CoreVideo/CoreVideo.h>
-#include <Foundation/Foundation.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <memory.h>
@@ -72,7 +69,7 @@ struct PlatformWindow{
             case NSEventTypeMouseExited:
 
             case NSEventTypeScrollWheel:
-            
+
                 [event retain];
                 [self.eventList addObject:event];
                 break;
@@ -172,13 +169,15 @@ CVReturn display_link_callback(
 
 @end
 
-PlatformWindow* App_create_window(Application* app){
-    discard app;
-
+PlatformWindow* App_create_window(
+    Application* app,
+    uint16_t width,
+    uint16_t height
+){
     PlatformWindow* window=malloc(sizeof(PlatformWindow));
     window->window=[
         [MyWindow alloc]
-        initWithContentRect: NSMakeRect(0.0, 0.0, 640.0, 480.0)
+        initWithContentRect: NSMakeRect(0.0, 0.0, (CGFloat)width, (CGFloat)height)
         styleMask: NSWindowStyleMaskClosable | NSWindowStyleMaskTitled
     ];
     [window->window center];

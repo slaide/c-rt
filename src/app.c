@@ -112,21 +112,22 @@ const char* device_type_name(VkPhysicalDeviceType device_type){
     }
 }
 
+static const float V=0.95f;
 VertexData mesh[4]={
     {
-        -0.7f, -0.7f, 0.0f, 1.0f,
+        -V, -V, 0.0f, 1.0f,
         0.0f, 0.0f
     },
     {
-        -0.7f, 0.7f, 0.0f, 1.0f,
+        -V, V, 0.0f, 1.0f,
         0.0f, 1.0f
     },
     {
-        0.7f, -0.7f, 0.0f, 1.0f,
+        V, -V, 0.0f, 1.0f,
         1.0f, 0.0f
     },
     {
-        0.7f, 0.7f, 0.0f, 1.0f,
+        V, V, 0.0f, 1.0f,
         1.0f, 1.0f
     }
 };
@@ -560,19 +561,9 @@ Shader* App_create_shader(
         .pNext=NULL,
         .flags=0,
         .viewportCount=1,
-        .pViewports=(VkViewport[1]){{
-            .x=0,
-            .y=0,
-            .width=640,
-            .height=480,
-            .minDepth=0.0,
-            .maxDepth=1.0
-        }},
+        .pViewports=NULL,
         .scissorCount=1,
-        .pScissors=(VkRect2D[1]){{
-            .offset={.x=0,.y=0},
-            .extent={.height=480,.width=640},
-        }}
+        .pScissors=NULL
     };
     VkPipelineRasterizationStateCreateInfo rasterization_state={
         .sType=VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
@@ -624,7 +615,7 @@ Shader* App_create_shader(
         .sType=VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
         .pNext=NULL,
         .flags=0,
-        .dynamicStateCount=0,
+        .dynamicStateCount=2,
         .pDynamicStates=(VkDynamicState[2]){
             VK_DYNAMIC_STATE_VIEWPORT,
             VK_DYNAMIC_STATE_SCISSOR
@@ -772,7 +763,7 @@ Application* App_new(PlatformHandle* platform){
         exit(VULKAN_CREATE_INSTANCE_FAILURE);
     }
 
-    app->platform_window=App_create_window(app);
+    app->platform_window=App_create_window(app,500,500);
 
     app->window_surface=App_create_window_vk_surface(app,app->platform_window);
 
@@ -815,10 +806,6 @@ Application* App_new(PlatformHandle* platform){
             if(surface_presentation_supported==VK_TRUE){
                 present_queue_family_index=queue_family_index;
             }
-
-            #ifdef DEBUG
-                printf("does %s support presentation\n",(surface_presentation_supported==VK_TRUE)?"":"not");
-            #endif
 
             // prefer a queue that supports both
             if(graphics_queue_family_index==present_queue_family_index && present_queue_family_index!=UINT32_MAX){
@@ -1215,6 +1202,9 @@ double timespecDiff(struct timespec start, struct timespec end) {
 void App_run(Application* app){
     VkResult res;
 
+    const uint16_t window_width=500;
+    const uint16_t window_height=500;
+
     VkSemaphoreCreateInfo semaphore_create_info={
         .sType=VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
         .pNext=NULL,
@@ -1310,17 +1300,28 @@ void App_run(Application* app){
         &camera_data
     );
 
-    float image_scale=1.0;
-    VkBuffer image_scale_buffer=VK_NULL_HANDLE;
-    VkDeviceMemory image_scale_memory=VK_NULL_HANDLE;
+    struct ImageViewData{
+        float scale;
+        float aspect_ratio;
+    };
+
+    float image_aspect_ratio=(float)image_data->width/(float)image_data->height;
+    printf("image aspect ratio %f\n",image_aspect_ratio);
+
+    struct ImageViewData image_view_data={
+        .scale=1.0,
+        .aspect_ratio=image_aspect_ratio
+    };
+    VkBuffer image_view_data_buffer=VK_NULL_HANDLE;
+    VkDeviceMemory image_view_data_memory=VK_NULL_HANDLE;
     App_upload_data(
         app, 
         VK_NULL_HANDLE, 
         VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-        &image_scale_buffer, 
-        &image_scale_memory, 
-        sizeof(image_scale), 
-        &image_scale
+        &image_view_data_buffer, 
+        &image_view_data_memory, 
+        sizeof(image_view_data), 
+        &image_view_data
     );
 
     VkWriteDescriptorSet write_descriptor_set={
@@ -1334,15 +1335,14 @@ void App_run(Application* app){
         .pImageInfo=NULL,
         .pBufferInfo=(VkDescriptorBufferInfo[1]){
             {
-                .buffer=image_scale_buffer,
+                .buffer=image_view_data_buffer,
                 .offset=0,
-                .range=sizeof(image_scale),
+                .range=sizeof(struct ImageViewData),
             }
         },
         .pTexelBufferView=NULL
     };
     vkUpdateDescriptorSets(app->device, 1, &write_descriptor_set, 0, NULL);
-
     int frame=0;
     bool window_should_close=false;
     while(1){
@@ -1359,19 +1359,19 @@ void App_run(Application* app){
                 case INPUT_EVENT_TYPE_SCROLL:{
                         static const float scale_factor=1.05f;
                         if (event.scroll.scroll_y>0.0f) {
-                            image_scale*=scale_factor;
+                            image_view_data.scale*=scale_factor;
                         }else if (event.scroll.scroll_y<0.0f) {
-                            image_scale/=scale_factor;
+                            image_view_data.scale/=scale_factor;
                         }
 
                         App_upload_data(
                             app, 
                             VK_NULL_HANDLE, 
                             VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-                            &image_scale_buffer, 
-                            &image_scale_memory, 
-                            sizeof(image_scale), 
-                            &image_scale
+                            &image_view_data_buffer, 
+                            &image_view_data_memory, 
+                            sizeof(image_view_data), 
+                            &image_view_data
                         );
                     }
 
@@ -1439,7 +1439,7 @@ void App_run(Application* app){
             .framebuffer=app->swapchain_framebuffers[next_swapchain_image_index],
             .renderArea={
                 .offset={.x=0,.y=0},
-                .extent={.width=640,.height=480}
+                .extent={.width=window_width,.height=window_height}
             },
             .clearValueCount=1,
             .pClearValues=(VkClearValue[1]){{
@@ -1447,6 +1447,21 @@ void App_run(Application* app){
             }}
         };
         vkCmdBeginRenderPass(command_buffer, &render_pass_begin_info, VK_SUBPASS_CONTENTS_INLINE);
+
+        vkCmdSetViewport(
+            command_buffer, 0, 1, 
+            (VkViewport[1]){{
+                .x=0,.y=0,
+                .width=window_width,
+                .height=window_height,
+                .minDepth=0.0,
+                .maxDepth=1.0
+            }}
+        );
+        vkCmdSetScissor(command_buffer, 0, 1, (VkRect2D[1]){{
+            .offset={.x=0,.y=0},
+            .extent={.width=window_width,.height=window_height},
+        }});
 
         vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, app->shader->pipeline);
         vkCmdBindVertexBuffers(command_buffer, 0, 1, (VkBuffer[1]){quadmesh->buffer}, (VkDeviceSize[1]){0});
@@ -1532,10 +1547,9 @@ void App_run(Application* app){
         discard frame;
     }
 
+    vkDestroyBuffer(app->device,image_view_data_buffer,app->vk_allocator);
+    vkFreeMemory(app->device,image_view_data_memory,app->vk_allocator);
 
-    vkDestroyBuffer(app->device,image_scale_buffer,app->vk_allocator);
-    vkFreeMemory(app->device,image_scale_memory,app->vk_allocator);
-    
     vkDestroyBuffer(app->device,camera_buffer,app->vk_allocator);
     vkFreeMemory(app->device,camera_buffer_memory,app->vk_allocator);
 

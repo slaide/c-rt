@@ -139,7 +139,11 @@ void Platform_destroy(PlatformHandle* platform){
     free(platform);
 }
 
-PlatformWindow* App_create_window(Application* application){
+PlatformWindow* App_create_window(
+    Application* app,
+    uint16_t width,
+    uint16_t height
+){
     const xcb_setup_t* setup=xcb_get_setup(application->platform_handle->connection);
     xcb_screen_iterator_t screens=xcb_setup_roots_iterator(setup);
 
@@ -164,7 +168,7 @@ PlatformWindow* App_create_window(Application* application){
         window->window, 
         screens.data->root, 
         0,0, 
-        640,480, 
+        width,height, 
         10, 
         XCB_WINDOW_CLASS_INPUT_OUTPUT, 
         screens.data->root_visual, 

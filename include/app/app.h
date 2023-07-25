@@ -216,7 +216,11 @@ Texture* App_create_texture(Application* app, ImageData* image_data);
  * @param app 
  * @return PlatformWindow* 
  */
-PlatformWindow* App_create_window(Application* app);
+PlatformWindow* App_create_window(
+    Application* app,
+    uint16_t width,
+    uint16_t height
+);
 /**
  * @brief create a vulkan surface for the specified window
  * 
