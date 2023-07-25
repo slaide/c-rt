@@ -59,9 +59,9 @@ else ifeq ($(PLATFORM), macos)
 	CINCLUDE += -I/opt/vulkansdk/macOS/include
 	LINKS += -L/opt/vulkansdk/macOS/lib
 
-	# default installation path for the homebrew-supplied jemalloc
-	CINCLUDE += -I/opt/homebrew/Cellar/jemalloc/5.3.0/include
-	LINKS += -L/opt/homebrew/Cellar/jemalloc/5.3.0/lib
+	# default homebrew paths
+	CINCLUDE += -I/opt/homebrew/include
+	LINKS += -L/opt/homebrew/lib
 
 	CDEF += -DVK_USE_PLATFORM_METAL_EXT
 	CINCLUDE += -I/opt/vulkansdk/macOS/include
