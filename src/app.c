@@ -1,6 +1,7 @@
 #include "app/app.h"
 #include "app/error.h"
 #include "vulkan/vulkan_core.h"
+#include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -679,6 +680,144 @@ void App_destroy_shader(Shader* shader){
     free(shader);
 }
 
+/**
+ * @brief create swapchain
+ * re-creates swapchain if an old one exists.
+ * if app->render_pass exists, swapchain image views and framebuffers will be recreated
+ * @param app 
+ * @return VkSwapchainCreateInfoKHR 
+ */
+VkSwapchainCreateInfoKHR App_create_swapchain(Application* app){
+    VkResult res;
+
+    uint32_t num_surface_formats;
+    vkGetPhysicalDeviceSurfaceFormatsKHR(app->physical_device, app->window_surface, &num_surface_formats, NULL);
+    VkSurfaceFormatKHR *surface_formats=malloc(num_surface_formats*sizeof(VkSurfaceFormatKHR));
+    vkGetPhysicalDeviceSurfaceFormatsKHR(app->physical_device, app->window_surface, &num_surface_formats, surface_formats);
+    app->swapchain_format=surface_formats[0];
+    free(surface_formats);
+    // get surface present mode
+
+    VkSurfaceCapabilitiesKHR surface_capabilities;
+    res=vkGetPhysicalDeviceSurfaceCapabilitiesKHR(app->physical_device,app->window_surface,&surface_capabilities);
+    if(res!=VK_SUCCESS){
+        fprintf(stderr,"vkGetPhysicalDeviceSurfaceCapabilitiesKHR failed with %d\n",res);
+        exit(VULKAN_GET_PHYSICAL_DEVICE_SURFACE_CAPABILITIES_KHR_FAILURE);
+    }
+
+    uint32_t num_present_modes;
+    vkGetPhysicalDeviceSurfacePresentModesKHR(app->physical_device, app->window_surface, &num_present_modes, NULL);
+    VkPresentModeKHR* present_modes=malloc(num_present_modes*sizeof(VkPresentModeKHR));
+    vkGetPhysicalDeviceSurfacePresentModesKHR(app->physical_device, app->window_surface, &num_present_modes, present_modes);
+    VkPresentModeKHR swapchain_present_mode=present_modes[0];
+    free(present_modes);
+
+    uint32_t swapchain_image_count=1;
+    if(surface_capabilities.minImageCount>0){
+        swapchain_image_count=surface_capabilities.minImageCount;
+    }
+
+    VkSwapchainKHR old_swapchain=app->swapchain;
+    VkSwapchainCreateInfoKHR swapchain_create_info={
+        .sType=VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
+        .pNext=NULL,
+        .flags=0,
+        .surface=app->window_surface,
+        .minImageCount=swapchain_image_count,
+        .imageFormat=app->swapchain_format.format,
+        .imageColorSpace=app->swapchain_format.colorSpace,
+        .imageExtent=surface_capabilities.currentExtent,
+        .imageArrayLayers=1,
+        .imageUsage=VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+        .imageSharingMode=VK_SHARING_MODE_EXCLUSIVE,
+        .queueFamilyIndexCount=0,
+        .pQueueFamilyIndices=NULL,
+        .preTransform=surface_capabilities.currentTransform,
+        .compositeAlpha=VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
+        .presentMode=swapchain_present_mode,
+        .clipped=VK_TRUE,
+        .oldSwapchain=old_swapchain
+    };
+    vkCreateSwapchainKHR(app->device, &swapchain_create_info, app->vk_allocator, &app->swapchain);
+    if(old_swapchain!=VK_NULL_HANDLE){
+        vkDestroySwapchainKHR(app->device, old_swapchain, app->vk_allocator);
+    }
+
+    if (app->swapchain_images!=NULL) {
+        free(app->swapchain_images);
+    }
+
+    vkGetSwapchainImagesKHR(app->device, app->swapchain, &app->num_swapchain_images, NULL);
+    app->swapchain_images=malloc(app->num_swapchain_images*sizeof(VkImage));
+    vkGetSwapchainImagesKHR(app->device, app->swapchain, &app->num_swapchain_images, app->swapchain_images);
+
+    if(app->render_pass!=VK_NULL_HANDLE){
+        if (app->swapchain_framebuffers!=NULL) {
+            for(uint32_t i=0;i<app->num_swapchain_images;i++){
+                vkDestroyFramebuffer(app->device, app->swapchain_framebuffers[i], app->vk_allocator);
+            }
+            free(app->swapchain_framebuffers);
+        }
+        if (app->swapchain_image_views!=NULL) {
+            for(uint32_t i=0;i<app->num_swapchain_images;i++){
+                vkDestroyImageView(app->device, app->swapchain_image_views[i], app->vk_allocator);
+            }
+            free(app->swapchain_image_views);
+        }
+
+        app->swapchain_image_views=malloc(app->num_swapchain_images*sizeof(VkImageView));
+        app->swapchain_framebuffers=malloc(app->num_swapchain_images*sizeof(VkFramebuffer));
+
+        VkImageViewCreateInfo image_view_create_info={
+            .sType=VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+            .pNext=NULL,
+            .flags=0,
+            .image=VK_NULL_HANDLE,
+            .viewType=VK_IMAGE_VIEW_TYPE_2D,
+            .format=app->swapchain_format.format,
+            .components={
+                .r=VK_COMPONENT_SWIZZLE_IDENTITY,
+                .g=VK_COMPONENT_SWIZZLE_IDENTITY,
+                .b=VK_COMPONENT_SWIZZLE_IDENTITY,
+                .a=VK_COMPONENT_SWIZZLE_IDENTITY,
+            },
+            .subresourceRange={
+                .aspectMask=VK_IMAGE_ASPECT_COLOR_BIT,
+                .baseMipLevel=0,
+                .levelCount=1,
+                .baseArrayLayer=0,
+                .layerCount=1
+            }
+        };
+        VkFramebufferCreateInfo framebuffer_create_info={
+            .sType=VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
+            .pNext=NULL,
+            .flags=0,
+            .renderPass=app->render_pass,
+            .attachmentCount=1,
+            .pAttachments=NULL,
+            .width=swapchain_create_info.imageExtent.width,
+            .height=swapchain_create_info.imageExtent.height,
+            .layers=1
+        };
+        for(uint32_t i=0;i<app->num_swapchain_images;i++){
+            image_view_create_info.image=app->swapchain_images[i];
+            res=vkCreateImageView(app->device, &image_view_create_info, app->vk_allocator, &app->swapchain_image_views[i]);
+            if(res!=VK_SUCCESS){
+                fprintf(stderr,"failed to create image view for swapchain image %d\n",i);
+            }
+
+            framebuffer_create_info.pAttachments=&app->swapchain_image_views[i];
+            res=vkCreateFramebuffer(app->device,&framebuffer_create_info,app->vk_allocator,&app->swapchain_framebuffers[i]);
+            if(res!=VK_SUCCESS){
+                fprintf(stderr,"failed to create framebuffer for swapchain image %d\n",i);
+            }
+        }
+    }
+
+    return swapchain_create_info;
+}
+
 /// create a new app
 ///
 /// this struct owns all memory, unless indicated otherwise
@@ -882,7 +1021,7 @@ Application* App_new(PlatformHandle* platform){
     };
 
     uint32_t num_device_layers=1;
-    const char *device_layers[1]={
+    const char *device_layers[]={
         "VK_LAYER_KHRONOS_validation"
     };
     uint32_t num_device_extensions=1;
@@ -921,61 +1060,15 @@ Application* App_new(PlatformHandle* platform){
     vkGetDeviceQueue(app->device, graphics_queue_family_index, 0, &app->graphics_queue);
     vkGetDeviceQueue(app->device, present_queue_family_index, 0, &app->present_queue);
 
-    uint32_t num_surface_formats;
-    vkGetPhysicalDeviceSurfaceFormatsKHR(app->physical_device, app->window_surface, &num_surface_formats, NULL);
-    VkSurfaceFormatKHR *surface_formats=malloc(num_surface_formats*sizeof(VkSurfaceFormatKHR));
-    vkGetPhysicalDeviceSurfaceFormatsKHR(app->physical_device, app->window_surface, &num_surface_formats, surface_formats);
-    app->swapchain_format=surface_formats[0];
-    free(surface_formats);
-    // get surface present mode
+    app->swapchain_images=NULL;
+    app->swapchain_image_views=NULL;
+    app->swapchain_framebuffers=NULL;
+    app->swapchain=VK_NULL_HANDLE;
+    app->render_pass=VK_NULL_HANDLE;
+    VkSwapchainCreateInfoKHR swapchain_create_info=App_create_swapchain(app);
 
-    VkSurfaceCapabilitiesKHR surface_capabilities;
-    res=vkGetPhysicalDeviceSurfaceCapabilitiesKHR(app->physical_device,app->window_surface,&surface_capabilities);
-    if(res!=VK_SUCCESS){
-        fprintf(stderr,"vkGetPhysicalDeviceSurfaceCapabilitiesKHR failed with %d\n",res);
-        exit(VULKAN_GET_PHYSICAL_DEVICE_SURFACE_CAPABILITIES_KHR_FAILURE);
-    }
-
-    uint32_t num_present_modes;
-    vkGetPhysicalDeviceSurfacePresentModesKHR(app->physical_device, app->window_surface, &num_present_modes, NULL);
-    VkPresentModeKHR* present_modes=malloc(num_present_modes*sizeof(VkPresentModeKHR));
-    vkGetPhysicalDeviceSurfacePresentModesKHR(app->physical_device, app->window_surface, &num_present_modes, present_modes);
-    VkPresentModeKHR swapchain_present_mode=present_modes[0];
-    free(present_modes);
-
-    uint32_t swapchain_image_count=1;
-    if(surface_capabilities.minImageCount>0){
-        swapchain_image_count=surface_capabilities.minImageCount;
-    }
-
-    VkSwapchainCreateInfoKHR swapchain_create_info={
-        .sType=VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
-        .pNext=NULL,
-        .flags=0,
-        .surface=app->window_surface,
-        .minImageCount=swapchain_image_count,
-        .imageFormat=app->swapchain_format.format,
-        .imageColorSpace=app->swapchain_format.colorSpace,
-        .imageExtent=surface_capabilities.currentExtent,
-        .imageArrayLayers=1,
-        .imageUsage=VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
-        .imageSharingMode=VK_SHARING_MODE_EXCLUSIVE,
-        .queueFamilyIndexCount=0,
-        .pQueueFamilyIndices=NULL,
-        .preTransform=surface_capabilities.currentTransform,
-        .compositeAlpha=VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
-        .presentMode=swapchain_present_mode,
-        .clipped=VK_TRUE,
-        .oldSwapchain=VK_NULL_HANDLE
-    };
-    vkCreateSwapchainKHR(app->device, &swapchain_create_info, app->vk_allocator, &app->swapchain);
-
-    vkGetSwapchainImagesKHR(app->device, app->swapchain, &app->num_swapchain_images, NULL);
-    app->swapchain_images=malloc(app->num_swapchain_images*sizeof(VkImage));
-    vkGetSwapchainImagesKHR(app->device, app->swapchain, &app->num_swapchain_images, app->swapchain_images);
-
-    app->swapchain_image_views=malloc(app->num_swapchain_images*sizeof(VkImageView));
-    app->swapchain_framebuffers=malloc(app->num_swapchain_images*sizeof(VkFramebuffer));
+    PlatformWindow_set_render_area_width(app->platform_window,(uint16_t)swapchain_create_info.imageExtent.width);
+    PlatformWindow_set_render_area_height(app->platform_window,(uint16_t)swapchain_create_info.imageExtent.height);
 
     uint32_t num_render_pass_attachments=1;
     VkAttachmentDescription render_pass_attachments[1]={
@@ -1045,51 +1138,7 @@ Application* App_new(PlatformHandle* platform){
         exit(VULKAN_CREATE_RENDER_PASS_FAILURE);
     }
 
-    VkImageViewCreateInfo image_view_create_info={
-        .sType=VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-        .pNext=NULL,
-        .flags=0,
-        .image=VK_NULL_HANDLE,
-        .viewType=VK_IMAGE_VIEW_TYPE_2D,
-        .format=app->swapchain_format.format,
-        .components={
-            .r=VK_COMPONENT_SWIZZLE_IDENTITY,
-            .g=VK_COMPONENT_SWIZZLE_IDENTITY,
-            .b=VK_COMPONENT_SWIZZLE_IDENTITY,
-            .a=VK_COMPONENT_SWIZZLE_IDENTITY,
-        },
-        .subresourceRange={
-            .aspectMask=VK_IMAGE_ASPECT_COLOR_BIT,
-            .baseMipLevel=0,
-            .levelCount=1,
-            .baseArrayLayer=0,
-            .layerCount=1
-        }
-    };
-    VkFramebufferCreateInfo framebuffer_create_info={
-        .sType=VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
-        .pNext=NULL,
-        .flags=0,
-        .renderPass=app->render_pass,
-        .attachmentCount=1,
-        .pAttachments=NULL,
-        .width=surface_capabilities.currentExtent.width,
-        .height=surface_capabilities.currentExtent.height,
-        .layers=1
-    };
-    for(uint32_t i=0;i<app->num_swapchain_images;i++){
-        image_view_create_info.image=app->swapchain_images[i];
-        res=vkCreateImageView(app->device, &image_view_create_info, app->vk_allocator, &app->swapchain_image_views[i]);
-        if(res!=VK_SUCCESS){
-            fprintf(stderr,"failed to create image view for swapchain image %d\n",i);
-        }
-
-        framebuffer_create_info.pAttachments=&app->swapchain_image_views[i];
-        res=vkCreateFramebuffer(app->device,&framebuffer_create_info,app->vk_allocator,&app->swapchain_framebuffers[i]);
-        if(res!=VK_SUCCESS){
-            fprintf(stderr,"failed to create framebuffer for swapchain image %d\n",i);
-        }
-    }
+    App_create_swapchain(app);
 
     app->shader=App_create_shader(app,0,render_pass_create_info.subpassCount);
 
@@ -1202,9 +1251,6 @@ double timespecDiff(struct timespec start, struct timespec end) {
 void App_run(Application* app){
     VkResult res;
 
-    const uint16_t window_width=500;
-    const uint16_t window_height=500;
-
     VkSemaphoreCreateInfo semaphore_create_info={
         .sType=VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
         .pNext=NULL,
@@ -1306,7 +1352,6 @@ void App_run(Application* app){
     };
 
     float image_aspect_ratio=(float)image_data->width/(float)image_data->height;
-    printf("image aspect ratio %f\n",image_aspect_ratio);
 
     struct ImageViewData image_view_data={
         .scale=1.0,
@@ -1343,6 +1388,7 @@ void App_run(Application* app){
         .pTexelBufferView=NULL
     };
     vkUpdateDescriptorSets(app->device, 1, &write_descriptor_set, 0, NULL);
+    
     int frame=0;
     bool window_should_close=false;
     while(1){
@@ -1350,9 +1396,22 @@ void App_run(Application* app){
             break;
         }
 
+        const uint16_t window_height=PlatformWindow_get_render_area_height(app->platform_window);
+        const uint16_t window_width=PlatformWindow_get_render_area_width(app->platform_window);
+
+        bool window_has_been_resized=false;
         InputEvent event;
         while(App_get_input_event(app,&event)){
             switch(event.generic.input_event_type){
+                case INPUT_EVENT_TYPE_WINDOW_RESIZED:{
+                        window_has_been_resized=true;
+
+                        VkSwapchainCreateInfoKHR swapchain_create_info=App_create_swapchain(app);
+
+                        PlatformWindow_set_render_area_width(app->platform_window,(uint16_t)swapchain_create_info.imageExtent.width);
+                        PlatformWindow_set_render_area_height(app->platform_window,(uint16_t)swapchain_create_info.imageExtent.height);
+                    }
+                    break;
                 case INPUT_EVENT_TYPE_WINDOW_CLOSE:
                     window_should_close=true;
                     break;
@@ -1381,13 +1440,22 @@ void App_run(Application* app){
             }
         }
 
+        if (window_has_been_resized) {
+            continue;
+        }
+
         app->staging_buffer_size_remaining=app->staging_buffer_size;
 
         uint32_t next_swapchain_image_index;
         res=vkAcquireNextImageKHR(app->device, app->swapchain, UINT64_MAX, image_available_semaphore, VK_NULL_HANDLE, &next_swapchain_image_index);
-        if(res!=VK_SUCCESS){
-            fprintf(stderr,"failed to acquire next swapchain image\n");
-            exit(VULKAN_ACQUIRE_NEXT_IMAGE_KHR_FAILURE);
+        switch(res){
+            case VK_SUCCESS:
+            case VK_SUBOPTIMAL_KHR:
+                break;
+
+            default:
+                fprintf(stderr,"failed to acquire next swapchain image because %s\n",vkRes2str(res));
+                exit(VULKAN_ACQUIRE_NEXT_IMAGE_KHR_FAILURE);
         }
 
         VkCommandBufferBeginInfo command_buffer_begin_info={
@@ -1530,9 +1598,14 @@ void App_run(Application* app){
             NULL
         };
         res=vkQueuePresentKHR(app->present_queue, &swapchain_present_info);
-        if(res!=VK_SUCCESS){
-            fprintf(stderr,"failed to present swapchain image\n");
-            exit(VULKAN_QUEUE_PRESENT_KHR_FAILURE);
+        switch(res){
+            case VK_SUCCESS:
+            case VK_SUBOPTIMAL_KHR:
+                break;
+
+            default:
+                fprintf(stderr,"failed to present swapchain image because %s\n",vkRes2str(res));
+                exit(VULKAN_ACQUIRE_NEXT_IMAGE_KHR_FAILURE);
         }
 
         vkDeviceWaitIdle(app->device);

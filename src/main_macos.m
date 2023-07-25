@@ -1,4 +1,6 @@
+#include <Foundation/Foundation.h>
 #include <stdbool.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <memory.h>
 #include <objc/objc.h>
@@ -35,7 +37,30 @@
 
 struct PlatformWindow{
     MyWindow* window;
+
+    uint16_t window_width;
+    uint16_t window_height;
+    uint16_t render_area_width;
+    uint16_t render_area_height;
 };
+uint16_t PlatformWindow_get_window_height(PlatformWindow* platform_window){
+    return  platform_window->window_height;
+}
+uint16_t PlatformWindow_get_window_width(PlatformWindow* platform_window){
+    return  platform_window->window_width;
+}
+uint16_t PlatformWindow_get_render_area_height(PlatformWindow* platform_window){
+    return  platform_window->render_area_height;
+}
+uint16_t PlatformWindow_get_render_area_width(PlatformWindow* platform_window){
+    return  platform_window->render_area_width;
+}
+void PlatformWindow_set_render_area_height(PlatformWindow* platform_window,uint16_t new_render_area_height){
+    platform_window->render_area_height=new_render_area_height;
+}
+void PlatformWindow_set_render_area_width(PlatformWindow* platform_window,uint16_t new_render_area_width){
+    platform_window->render_area_width=new_render_area_width;
+}
 
 @implementation MyWindow
     - (instancetype)initWithContentRect:(NSRect)contentRect styleMask:(NSWindowStyleMask)style{
@@ -67,6 +92,9 @@ struct PlatformWindow{
             case NSEventTypeMouseMoved:
             case NSEventTypeMouseEntered:
             case NSEventTypeMouseExited:
+
+            case NSEventTypeMagnify:
+            case NSEventTypeRotate:
 
             case NSEventTypeScrollWheel:
 
@@ -128,12 +156,18 @@ CVReturn display_link_callback(
 }
 
 @interface WindowCloseEvent : NSObject
-
     @property (nonatomic, strong) NSWindow *window;
-
 @end
 @implementation WindowCloseEvent
+@end
 
+@interface WindowResizeEvent : NSObject
+    @property (nonatomic, strong) NSWindow *window;
+
+    @property(assign,nonatomic) uint16_t new_width;
+    @property(assign,nonatomic) uint16_t new_height;
+@end
+@implementation WindowResizeEvent
 @end
 
 @implementation MyAppDelegate
@@ -163,8 +197,21 @@ CVReturn display_link_callback(
         NSWindow *closingWindow = notification.object;
 
         WindowCloseEvent* windowCloseEvent=[WindowCloseEvent alloc];
+
         windowCloseEvent.window=closingWindow;
+
         [self.eventList addObject:windowCloseEvent];
+    }
+    - (void)windowDidResize:(NSNotification *)notification {
+        NSWindow *resizedWindow = [notification object];
+
+        WindowResizeEvent* windowResizeEvent=[WindowResizeEvent alloc];
+
+        windowResizeEvent.window=resizedWindow;
+        windowResizeEvent.new_height=(uint16_t)resizedWindow.frame.size.height;
+        windowResizeEvent.new_width=(uint16_t)resizedWindow.frame.size.width;
+
+        [self.eventList addObject:windowResizeEvent];
     }
 
 @end
@@ -175,10 +222,12 @@ PlatformWindow* App_create_window(
     uint16_t height
 ){
     PlatformWindow* window=malloc(sizeof(PlatformWindow));
+    window->window_height=height;
+    window->window_width=width;
     window->window=[
         [MyWindow alloc]
         initWithContentRect: NSMakeRect(0.0, 0.0, (CGFloat)width, (CGFloat)height)
-        styleMask: NSWindowStyleMaskClosable | NSWindowStyleMaskTitled
+        styleMask: NSWindowStyleMaskClosable | NSWindowStyleMaskTitled | NSWindowStyleMaskResizable
     ];
     [window->window center];
     [window->window setTitle:@"my window title"];
@@ -251,9 +300,25 @@ int App_get_input_event(Application *app, InputEvent *event){
         id nextEvent=[app->platform_handle->app.eventList firstObject];
         [app->platform_handle->app.eventList removeObjectAtIndex:0];
 
-        if ([nextEvent isKindOfClass:[WindowCloseEvent class]]) {
+        if ([nextEvent isKindOfClass:[WindowResizeEvent class]]) {
+            event->generic.input_event_type=INPUT_EVENT_TYPE_WINDOW_RESIZED;
+
+            WindowResizeEvent* resize_event=nextEvent;
+            event->windowresized.new_height=resize_event.new_height;
+            event->windowresized.new_width=resize_event.new_width;
+
+            event->windowresized.old_width=app->platform_window->window_width;
+            event->windowresized.old_height=app->platform_window->window_height;
+
+            app->platform_window->window_width=resize_event.new_width;
+            app->platform_window->window_height=resize_event.new_height;
+
+            [nextEvent release];
+        }else if ([nextEvent isKindOfClass:[WindowCloseEvent class]]) {
             event->generic.input_event_type=INPUT_EVENT_TYPE_WINDOW_CLOSE;
             [nextEvent release];
+        }else{
+            NSLog(@"got input event of unknown type %@",nextEvent);
         }
 
         return INPUT_EVENT_PRESENT;

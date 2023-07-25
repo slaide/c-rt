@@ -1,57 +1,5 @@
 #pragma once
 
-/**
- * @file app.h
- * @author your name (you@domain.com)
- * @brief 
- * @version 0.1
- * @date 2023-06-27
- * 
- * @copyright Copyright (c) 2023
- *
- * \mainpage vk-compute project
- *
- * \section what is this?
- * this is a project for a post-grad course.
- * the goal is to write an application in c that can run vulkan compute shaders on linux and macos.
- * 
- */
-
-#define ROUND_UP(VALUE,MULTIPLE_OF) (((VALUE) + ((MULTIPLE_OF)-1)) / (MULTIPLE_OF)) * (MULTIPLE_OF)
-#define MASK(LENGTH) ((1<<(LENGTH))-1)
-
-typedef enum InputEventType{
-    INPUT_EVENT_TYPE_KEY_PRESS,
-    INPUT_EVENT_TYPE_WINDOW_CLOSE,
-    INPUT_EVENT_TYPE_SCROLL,
-
-    INPUT_EVENT_TYPE_UNIMPLEMENTED,
-}InputEventType;
-
-typedef struct InputEventKeyPress{
-    int input_event_type;
-
-    int key;
-}InputEventKeyPress;
-typedef struct InputEventScroll{
-    int input_event_type;
-
-    float scroll_x;
-    float scroll_y;
-}InputEventScroll;
-typedef struct InputEventGeneric{
-    int input_event_type;
-}InputEventGeneric;
-typedef struct InputEventWindowClose{
-    int input_event_type;
-}InputEventWindowClose;
-typedef union InputEvent{
-    InputEventGeneric generic;
-    InputEventKeyPress keypress;
-    InputEventScroll scroll;
-    InputEventWindowClose windowclose;
-}InputEvent;
-
 #include <stdint.h>
 #include <stdio.h>
 #include <memory.h>
@@ -69,11 +17,70 @@ typedef union InputEvent{
  */
 #define discard (void)
 
+#define ROUND_UP(VALUE,MULTIPLE_OF) (((VALUE) + ((MULTIPLE_OF)-1)) / (MULTIPLE_OF)) * (MULTIPLE_OF)
+#define MASK(LENGTH) ((1<<(LENGTH))-1)
+
+typedef enum InputEventType{
+    INPUT_EVENT_TYPE_KEY_PRESS,
+    INPUT_EVENT_TYPE_SCROLL,
+
+    INPUT_EVENT_TYPE_WINDOW_RESIZED,
+    INPUT_EVENT_TYPE_WINDOW_CLOSE,
+
+    INPUT_EVENT_TYPE_UNIMPLEMENTED,
+}InputEventType;
+
+typedef struct InputEventKeyPress{
+    int input_event_type;
+
+    int key;
+}InputEventKeyPress;
+typedef struct InputEventScroll{
+    int input_event_type;
+
+    float scroll_x;
+    float scroll_y;
+}InputEventScroll;
+
+typedef struct InputEventWindowResized{
+    int input_event_type;
+
+    uint16_t old_width;
+    uint16_t old_height;
+
+    uint16_t new_width;
+    uint16_t new_height;
+}InputEventWindowResized; 
+typedef struct InputEventWindowClose{
+    int input_event_type;
+}InputEventWindowClose;
+
+typedef struct InputEventGeneric{
+    int input_event_type;
+}InputEventGeneric;
+
+typedef union InputEvent{
+    InputEventKeyPress keypress;
+    InputEventScroll scroll;
+
+    InputEventWindowResized windowresized;
+    InputEventWindowClose windowclose;
+    
+    InputEventGeneric generic;
+}InputEvent;
+
 /**
  * @brief platform specific window handle
  * 
  */
 typedef struct PlatformWindow PlatformWindow;
+
+uint16_t PlatformWindow_get_window_height(PlatformWindow* platform_window);
+uint16_t PlatformWindow_get_window_width(PlatformWindow* platform_window);
+uint16_t PlatformWindow_get_render_area_height(PlatformWindow* platform_window);
+uint16_t PlatformWindow_get_render_area_width(PlatformWindow* platform_window);
+void PlatformWindow_set_render_area_height(PlatformWindow* platform_window,uint16_t new_render_area_height);
+void PlatformWindow_set_render_area_width(PlatformWindow* platform_window,uint16_t new_render_area_width);
 /**
  * @brief platform specific handle to internal system resources used as abstraction layer for system interaction of the application
  * 

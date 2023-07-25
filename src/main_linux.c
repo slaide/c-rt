@@ -1,3 +1,4 @@
+#include <stdint.h>
 #include <stdio.h>
 
 #include <stdlib.h>
@@ -16,7 +17,30 @@ struct PlatformHandle{
 struct PlatformWindow{
     xcb_window_t window;
     xcb_atom_t delete_window_atom;
+
+    uint16_t window_width;
+    uint16_t window_height;
+    uint16_t render_area_width;
+    uint16_t render_area_height;
 };
+uint16_t PlatformWindow_get_window_height(PlatformWindow* platform_window){
+    return  platform_window->window_height;
+}
+uint16_t PlatformWindow_get_window_width(PlatformWindow* platform_window){
+    return  platform_window->window_width;
+}
+uint16_t PlatformWindow_get_render_area_height(PlatformWindow* platform_window){
+    return  platform_window->render_area_height;
+}
+uint16_t PlatformWindow_get_render_area_width(PlatformWindow* platform_window){
+    return  platform_window->render_area_width;
+}
+void PlatformWindow_set_render_area_height(PlatformWindow* platform_window,uint16_t new_render_area_height){
+    platform_window->render_area_height=new_render_area_height;
+}
+void PlatformWindow_set_render_area_width(PlatformWindow* platform_window,uint16_t new_render_area_width){
+    platform_window->render_area_width=new_render_area_width;
+}
 
 xcb_atom_t Platform_xcb_intern_atom(PlatformHandle* platform,const char* atom_name){
     xcb_intern_atom_cookie_t atom_cookie=xcb_intern_atom(platform->connection, 0, (uint16_t)strlen(atom_name), atom_name);
@@ -148,6 +172,9 @@ PlatformWindow* App_create_window(
     xcb_screen_iterator_t screens=xcb_setup_roots_iterator(setup);
 
     PlatformWindow* window=malloc(sizeof(PlatformWindow));
+    window->height=height;
+    window->width=width;
+    
     window->window=xcb_generate_id(application->platform_handle->connection);
     xcb_flush(application->platform_handle->connection);
 
