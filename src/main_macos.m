@@ -68,6 +68,9 @@ struct PlatformWindow{
     @property(nonatomic) CVDisplayLinkRef display_link;
     @property (nonatomic, strong) NSMutableArray *eventList;
 
+    @property(assign, nonatomic) int cli_argc;
+    @property(assign, nonatomic) char** cli_argv;
+
 @end
 
 struct PlatformHandle{
@@ -117,6 +120,9 @@ CVReturn display_link_callback(
 
         main_app->cli_num_args=0;
         main_app->cli_args=NULL;
+
+        main_app->cli_num_args=self.cli_argc;
+        main_app->cli_args=self.cli_argv;
 
         CVDisplayLinkRef display_link;
         CVDisplayLinkCreateWithActiveCGDisplays(&display_link);
@@ -208,15 +214,15 @@ int App_get_input_event(Application *app, InputEvent *event){
 }
 
 int main(int argc, char *argv[]){
-    discard argc;
-    discard argv;
-
     NSApplication *app=[NSApplication sharedApplication];
     [app setActivationPolicy:NSApplicationActivationPolicyRegular];
     [app activateIgnoringOtherApps:YES];
 
     MyAppDelegate *myDelegate=[[MyAppDelegate alloc] init];
     [app setDelegate:myDelegate];
+
+    myDelegate.cli_argc=argc;
+    myDelegate.cli_argv=argv;
 
     [app run];
 }
