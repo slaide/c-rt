@@ -33,7 +33,7 @@ else ifeq ($(MODE), debugrelease)
 		# COMPILE_FLAGS += -fsanitize=address
 	endif
 	
-	OPT_FLAGS := -O2 -ffast-math
+	OPT_FLAGS := -O3 -ffast-math
 else ifeq ($(MODE), release)
 	CDEF += -DRELEASE
 	OPT_FLAGS := -O3 -ffast-math 
