@@ -444,19 +444,27 @@ Shader* App_create_shader(
     shader->fragment_shader=App_create_shader_module(app, "shaders/frag.spv");
     shader->vertex_shader=App_create_shader_module(app, "shaders/vert.spv");
 
-    VkDescriptorSetLayoutBinding set_binding={
-        .binding=0,
-        .descriptorType=VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-        .descriptorCount=1,
-        .stageFlags=VK_SHADER_STAGE_FRAGMENT_BIT,
-        .pImmutableSamplers=NULL
-    };
     VkDescriptorSetLayoutCreateInfo descriptor_set_layout={
         .sType=VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
         .pNext=NULL,
         .flags=0,
-        .bindingCount=1,
-        .pBindings=&set_binding
+        .bindingCount=2,
+        .pBindings=(VkDescriptorSetLayoutBinding[2]){
+            {
+                .binding=0,
+                .descriptorType=VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+                .descriptorCount=1,
+                .stageFlags=VK_SHADER_STAGE_FRAGMENT_BIT,
+                .pImmutableSamplers=NULL
+            },
+            {
+                .binding=1,
+                .descriptorType=VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+                .descriptorCount=1,
+                .stageFlags=VK_SHADER_STAGE_VERTEX_BIT,
+                .pImmutableSamplers=NULL
+            }
+        }
     };
     VkResult res=vkCreateDescriptorSetLayout(app->device, &descriptor_set_layout, app->vk_allocator, &shader->set_layout);
     if(res!=VK_SUCCESS){
@@ -464,16 +472,22 @@ Shader* App_create_shader(
         exit(VULKAN_CREATE_DESCRIPTOR_SET_LAYOUT_FAILURE);
     }
 
-    VkDescriptorPoolSize pool_sizes[1]={{
-        .descriptorCount=1,
-        .type=VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER
-    }};
+    VkDescriptorPoolSize pool_sizes[2]={
+        {
+            .descriptorCount=1,
+            .type=VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER
+        },
+        {
+            .descriptorCount=1,
+            .type=VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER
+        }
+    };
     VkDescriptorPoolCreateInfo descriptor_pool_create_info={
         .sType=VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
         .pNext=NULL,
         .flags=0,
         .maxSets=1,
-        .poolSizeCount=1,
+        .poolSizeCount=2,
         .pPoolSizes=pool_sizes
     };
     res=vkCreateDescriptorPool(app->device, &descriptor_pool_create_info, app->vk_allocator, &shader->descriptor_pool);
@@ -611,7 +625,10 @@ Shader* App_create_shader(
         .pNext=NULL,
         .flags=0,
         .dynamicStateCount=0,
-        .pDynamicStates=NULL
+        .pDynamicStates=(VkDynamicState[2]){
+            VK_DYNAMIC_STATE_VIEWPORT,
+            VK_DYNAMIC_STATE_SCISSOR
+        }
     };
 
     VkGraphicsPipelineCreateInfo graphics_pipeline_create_info={
@@ -1280,20 +1297,51 @@ void App_run(Application* app){
         int height;
     };
     struct CameraData camera_data;
-    VkBuffer camera_buffer;
-    VkDeviceMemory camera_buffer_memory;
+    VkBuffer camera_buffer=VK_NULL_HANDLE;
+    VkDeviceMemory camera_buffer_memory=VK_NULL_HANDLE;
 
     App_upload_data(
         app,
-
         VK_NULL_HANDLE,
-
+        VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
         &camera_buffer,
         &camera_buffer_memory,
-
         sizeof(struct CameraData),
         &camera_data
     );
+
+    float image_scale=1.0;
+    VkBuffer image_scale_buffer=VK_NULL_HANDLE;
+    VkDeviceMemory image_scale_memory=VK_NULL_HANDLE;
+    App_upload_data(
+        app, 
+        VK_NULL_HANDLE, 
+        VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+        &image_scale_buffer, 
+        &image_scale_memory, 
+        sizeof(image_scale), 
+        &image_scale
+    );
+
+    VkWriteDescriptorSet write_descriptor_set={
+        .sType=VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+        .pNext=NULL,
+        .dstSet=app->shader->descriptor_set,
+        .dstBinding=1,
+        .dstArrayElement=0,
+        .descriptorCount=1,
+        .descriptorType=VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+        .pImageInfo=NULL,
+        .pBufferInfo=(VkDescriptorBufferInfo[1]){
+            {
+                .buffer=image_scale_buffer,
+                .offset=0,
+                .range=sizeof(image_scale),
+            }
+        },
+        .pTexelBufferView=NULL
+    };
+    vkUpdateDescriptorSets(app->device, 1, &write_descriptor_set, 0, NULL);
 
     int frame=0;
     bool window_should_close=false;
@@ -1308,6 +1356,26 @@ void App_run(Application* app){
                 case INPUT_EVENT_TYPE_WINDOW_CLOSE:
                     window_should_close=true;
                     break;
+                case INPUT_EVENT_TYPE_SCROLL:{
+                        static const float scale_factor=1.05f;
+                        if (event.scroll.scroll_y>0.0f) {
+                            image_scale*=scale_factor;
+                        }else if (event.scroll.scroll_y<0.0f) {
+                            image_scale/=scale_factor;
+                        }
+
+                        App_upload_data(
+                            app, 
+                            VK_NULL_HANDLE, 
+                            VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                            &image_scale_buffer, 
+                            &image_scale_memory, 
+                            sizeof(image_scale), 
+                            &image_scale
+                        );
+                    }
+
+                    break;
                 default:
                     ;
             }
@@ -1316,7 +1384,7 @@ void App_run(Application* app){
         app->staging_buffer_size_remaining=app->staging_buffer_size;
 
         uint32_t next_swapchain_image_index;
-        res=vkAcquireNextImageKHR(app->device, app->swapchain, 0xffffffffffffffff, image_available_semaphore, VK_NULL_HANDLE, &next_swapchain_image_index);
+        res=vkAcquireNextImageKHR(app->device, app->swapchain, UINT64_MAX, image_available_semaphore, VK_NULL_HANDLE, &next_swapchain_image_index);
         if(res!=VK_SUCCESS){
             fprintf(stderr,"failed to acquire next swapchain image\n");
             exit(VULKAN_ACQUIRE_NEXT_IMAGE_KHR_FAILURE);
@@ -1465,6 +1533,9 @@ void App_run(Application* app){
     }
 
 
+    vkDestroyBuffer(app->device,image_scale_buffer,app->vk_allocator);
+    vkFreeMemory(app->device,image_scale_memory,app->vk_allocator);
+    
     vkDestroyBuffer(app->device,camera_buffer,app->vk_allocator);
     vkFreeMemory(app->device,camera_buffer_memory,app->vk_allocator);
 

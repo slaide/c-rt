@@ -23,14 +23,22 @@
 typedef enum InputEventType{
     INPUT_EVENT_TYPE_KEY_PRESS,
     INPUT_EVENT_TYPE_WINDOW_CLOSE,
+    INPUT_EVENT_TYPE_SCROLL,
 
     INPUT_EVENT_TYPE_UNIMPLEMENTED,
 }InputEventType;
+
 typedef struct InputEventKeyPress{
     int input_event_type;
 
     int key;
 }InputEventKeyPress;
+typedef struct InputEventScroll{
+    int input_event_type;
+
+    float scroll_x;
+    float scroll_y;
+}InputEventScroll;
 typedef struct InputEventGeneric{
     int input_event_type;
 }InputEventGeneric;
@@ -40,6 +48,7 @@ typedef struct InputEventWindowClose{
 typedef union InputEvent{
     InputEventGeneric generic;
     InputEventKeyPress keypress;
+    InputEventScroll scroll;
     InputEventWindowClose windowclose;
 }InputEvent;
 
@@ -277,11 +286,24 @@ typedef enum ImageParseResult{
 
 ImageParseResult Image_read_jpeg(const char* filepath,ImageData* image_data);
 
+/**
+ * @brief upload data to gpu
+ * allocates device memory, if memory handle is VK_NULL_HANDLE
+ * creates buffer, if buffer handle is VK_NULL_HANDLE
+ * and copies data to target memory (directly into target memory, i.e. target memory is host visible)
+ * @param app 
+ * @param recording_command_buffer 
+ * @param buffer 
+ * @param buffer_memory 
+ * @param data_size_bytes 
+ * @param data 
+ */
 void App_upload_data(
     Application* app,
 
     VkCommandBuffer recording_command_buffer,
 
+    VkBufferUsageFlagBits buffer_usage_flags,
     VkBuffer* buffer,
     VkDeviceMemory* buffer_memory,
 

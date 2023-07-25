@@ -96,6 +96,7 @@ void App_upload_data(
 
     VkCommandBuffer recording_command_buffer,
 
+    VkBufferUsageFlagBits buffer_usage_flags,
     VkBuffer* buffer,
     VkDeviceMemory* buffer_memory,
 
@@ -104,67 +105,75 @@ void App_upload_data(
 ){
     VkDeviceSize memory_size=data_size_bytes;
 
-    VkBufferCreateInfo buffer_create_info={
-        .sType=VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-        .pNext=NULL,
-        .flags=0,
-        .size=memory_size,
-        .usage=VK_BUFFER_USAGE_TRANSFER_DST_BIT|VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-        .sharingMode=VK_SHARING_MODE_EXCLUSIVE,
-        .queueFamilyIndexCount=0,
-        .pQueueFamilyIndices=NULL
-    };
-    VkResult res=vkCreateBuffer(
-        app->device, 
-        &buffer_create_info, 
-        app->vk_allocator, 
-        buffer
-    );
-    if(res!=VK_SUCCESS){
-        fprintf(stderr,"failed to create buffer\n");
-        exit(VULKAN_CREATE_BUFFER_FAILURE);
-    }
-
-    VkMemoryRequirements buffer_memory_requirements;
-    vkGetBufferMemoryRequirements(app->device, *buffer, &buffer_memory_requirements);
-
-    VkPhysicalDeviceMemoryProperties memory_properties;
-    vkGetPhysicalDeviceMemoryProperties(app->physical_device, &memory_properties);
-
-    uint32_t memory_type_index=UINT32_MAX;
-    for(uint32_t i=0;i<memory_properties.memoryTypeCount;i++){
-        if(
-            (1<<i)&buffer_memory_requirements.memoryTypeBits
-            && memory_properties.memoryTypes[i].propertyFlags&VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
-        ){
-            memory_type_index=i;
-            break;
+    bool buffer_initially_null=*buffer == VK_NULL_HANDLE;
+    bool memory_initially_null=*buffer_memory == VK_NULL_HANDLE;
+    if (buffer_initially_null) {
+        VkBufferCreateInfo buffer_create_info={
+            .sType=VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+            .pNext=NULL,
+            .flags=0,
+            .size=memory_size,
+            .usage=VK_BUFFER_USAGE_TRANSFER_DST_BIT|buffer_usage_flags,
+            .sharingMode=VK_SHARING_MODE_EXCLUSIVE,
+            .queueFamilyIndexCount=0,
+            .pQueueFamilyIndices=NULL
+        };
+        VkResult res=vkCreateBuffer(
+            app->device, 
+            &buffer_create_info, 
+            app->vk_allocator, 
+            buffer
+        );
+        if(res!=VK_SUCCESS){
+            fprintf(stderr,"failed to create buffer\n");
+            exit(VULKAN_CREATE_BUFFER_FAILURE);
         }
     }
-    if(memory_type_index==UINT32_MAX){exit(FATAL_UNEXPECTED_ERROR);}
 
-    VkMemoryAllocateInfo memory_allocate_info={
-        .sType=VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
-        .pNext=NULL,
-        .allocationSize=buffer_memory_requirements.size,
-        .memoryTypeIndex=memory_type_index
-    };
-    res=vkAllocateMemory(app->device, &memory_allocate_info, app->vk_allocator, buffer_memory);
-    if(res!=VK_SUCCESS){
-        fprintf(stderr,"failed to allocate memory\n");
-        exit(VULKAN_ALLOCATE_MEMORY_FAILURE);
+    if(memory_initially_null){
+        VkMemoryRequirements buffer_memory_requirements;
+        vkGetBufferMemoryRequirements(app->device, *buffer, &buffer_memory_requirements);
+
+        VkPhysicalDeviceMemoryProperties memory_properties;
+        vkGetPhysicalDeviceMemoryProperties(app->physical_device, &memory_properties);
+
+        uint32_t memory_type_index=UINT32_MAX;
+        for(uint32_t i=0;i<memory_properties.memoryTypeCount;i++){
+            if(
+                (1<<i)&buffer_memory_requirements.memoryTypeBits
+                && memory_properties.memoryTypes[i].propertyFlags&VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
+            ){
+                memory_type_index=i;
+                break;
+            }
+        }
+        if(memory_type_index==UINT32_MAX){exit(FATAL_UNEXPECTED_ERROR);}
+
+        VkMemoryAllocateInfo memory_allocate_info={
+            .sType=VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+            .pNext=NULL,
+            .allocationSize=buffer_memory_requirements.size,
+            .memoryTypeIndex=memory_type_index
+        };
+        VkResult res=vkAllocateMemory(app->device, &memory_allocate_info, app->vk_allocator, buffer_memory);
+        if(res!=VK_SUCCESS){
+            fprintf(stderr,"failed to allocate memory\n");
+            exit(VULKAN_ALLOCATE_MEMORY_FAILURE);
+        }
     }
 
-    res=vkBindBufferMemory(app->device, *buffer, *buffer_memory, 0);
-    if(res!=VK_SUCCESS){
-        fprintf(stderr,"failed to bind buffer memory\n");
-        exit(VULKAN_BIND_BUFFER_MEMORY_FAILURE);
+    if (buffer_initially_null || memory_initially_null) {
+        VkResult res=vkBindBufferMemory(app->device, *buffer, *buffer_memory, 0);
+        if(res!=VK_SUCCESS){
+            fprintf(stderr,"failed to bind buffer memory\n");
+            exit(VULKAN_BIND_BUFFER_MEMORY_FAILURE);
+        }
     }
 
     // map device memory
     VertexData* mapped_gpu_memory;
-    vkMapMemory(app->device, *buffer_memory, 0, buffer_memory_requirements.size, 0, (void**)&mapped_gpu_memory);
-    // copy mesh data
+    vkMapMemory(app->device, *buffer_memory, 0, memory_size, 0, (void**)&mapped_gpu_memory);
+    // copy data
     memcpy(mapped_gpu_memory, data, data_size_bytes);
     // flush memory to gpu
     VkMappedMemoryRange mapped_memory_range={
@@ -172,7 +181,7 @@ void App_upload_data(
         .pNext=NULL,
         .memory=*buffer_memory,
         .offset=0,
-        .size=buffer_memory_requirements.size
+        .size=memory_size
     };
     vkFlushMappedMemoryRanges(app->device, 1, &mapped_memory_range);
     vkUnmapMemory(app->device, *buffer_memory);

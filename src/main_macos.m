@@ -32,6 +32,7 @@
 @end
 
 @interface MyWindow: NSWindow
+    @property(nonatomic, strong) NSMutableArray *eventList;
     - (instancetype)initWithContentRect:(NSRect)contentRect styleMask:(NSWindowStyleMask)style;
 @end
 
@@ -51,11 +52,38 @@ struct PlatformWindow{
     
         self.contentView=[[MyView alloc] init];
 
+        self.eventList=[NSMutableArray array];
+
         return self;
     }
 
     - (void)sendEvent:(NSEvent *)event {
-        //NSLog(@"Received event: %@", event);
+        switch (event.type) {
+            case NSEventTypeLeftMouseDown:
+            case NSEventTypeLeftMouseUp:
+            case NSEventTypeLeftMouseDragged:
+
+            case NSEventTypeRightMouseDown:
+            case NSEventTypeRightMouseUp:
+            case NSEventTypeRightMouseDragged:
+
+            case NSEventTypeMouseMoved:
+            case NSEventTypeMouseEntered:
+            case NSEventTypeMouseExited:
+
+            case NSEventTypeScrollWheel:
+            
+                [event retain];
+                [self.eventList addObject:event];
+                break;
+
+            case NSEventTypeAppKitDefined:
+            case NSEventTypePressure:
+                break;
+
+            default:
+                NSLog(@"unhandled event %@", event);
+        }
 
         // Pass the event to the superclass for default handling
         [super sendEvent:event];
@@ -192,9 +220,34 @@ void App_set_window_title(Application* app, PlatformWindow* window, const char* 
 }
 
 int App_get_input_event(Application *app, InputEvent *event){
-    discard app;
-    discard event;
+    if (app->platform_window->window.eventList.count>0) {
+        NSEvent* ns_event=[app->platform_window->window.eventList firstObject];
+        [app->platform_window->window.eventList removeObjectAtIndex:0];
 
+        switch (ns_event.type) {
+            case NSEventTypeLeftMouseDown:
+            case NSEventTypeLeftMouseUp:
+            case NSEventTypeLeftMouseDragged:
+            case NSEventTypeRightMouseDown:
+            case NSEventTypeRightMouseUp:
+            case NSEventTypeRightMouseDragged:
+            case NSEventTypeMouseMoved:
+                break;
+            case NSEventTypeScrollWheel:
+                event->scroll.input_event_type=INPUT_EVENT_TYPE_SCROLL;
+
+                event->scroll.scroll_x=(float)ns_event.scrollingDeltaX;
+                event->scroll.scroll_y=(float)ns_event.scrollingDeltaY;
+                break;
+
+            default:
+                break;
+        }
+
+        [ns_event release];
+
+        return INPUT_EVENT_PRESENT;
+    }
     if (app->platform_handle->app.eventList.count>0) {
         id nextEvent=[app->platform_handle->app.eventList firstObject];
         [app->platform_handle->app.eventList removeObjectAtIndex:0];
