@@ -636,39 +636,52 @@ static void JpegParser_process_channel(
 
                 const OUT_EL idct_m0_value=idct_m0_v0*cosine_mask_strength;
 
-                #ifdef FIXED_PRECISION_ARITHMETIC
-                    #ifdef VK_USE_PLATFORM_XCB_KHR
-                        __m128i idct_m0_value_simd=_mm_set1_epi16(idct_m0_value);
-                        
-                        for(uint32_t pixel_index = 0;pixel_index<64;pixel_index+=8){
-                            _mm_store_si128((void*)(out_block+pixel_index), idct_m0_value_simd);
-                        }
-                    #endif
-                #else
-                    for(uint32_t pixel_index = 0;pixel_index<64;pixel_index++){
-                        out_block[pixel_index]=idct_m0_value;
-                    }
-                #endif
+                for(uint32_t pixel_index = 0;pixel_index<64;pixel_index++){
+                    out_block[pixel_index]=idct_m0_value;
+                }
             }
 
             for(uint32_t cosine_index = 1;cosine_index<64;){
-                #ifdef VK_USE_PLATFORM_XCB_KHR
-                    const __m128i mask_strengths=_mm_loadu_si128((void*)(&in_block[cosine_index]));
-                    const __m128i elements_zero_result=_mm_cmpeq_epi16(mask_strengths, _mm_set1_epi16(0));
-                    uint32_t elements_nonzero=0xFFFF-(uint32_t)_mm_movemask_epi8(elements_zero_result);
+                #ifdef FIXED_PRECISION_ARITHMETIC
+                    #ifdef VK_USE_PLATFORM_XCB_KHR
+                        const __m128i mask_strengths=_mm_loadu_si128((void*)(&in_block[cosine_index]));
+                        const __m128i elements_zero_result=_mm_cmpeq_epi16(mask_strengths, _mm_set1_epi16(0));
+                        uint32_t elements_nonzero=0xFFFF-(uint32_t)_mm_movemask_epi8(elements_zero_result);
 
-                    const uint32_t num_cosines_remaining=64-cosine_index;
-                    const uint32_t num_cosines_remaining_in_current_iteration=min_u32(8,num_cosines_remaining);
+                        const uint32_t num_cosines_remaining=64-cosine_index;
+                        const uint32_t num_cosines_remaining_in_current_iteration=min_u32(8,num_cosines_remaining);
 
-                    const uint32_t all_elements_mask=mask_u32(num_cosines_remaining_in_current_iteration*2);
-                    elements_nonzero&=all_elements_mask;
+                        const uint32_t all_elements_mask=mask_u32(num_cosines_remaining_in_current_iteration*2);
+                        elements_nonzero&=all_elements_mask;
 
-                    if(elements_nonzero==0){
-                        cosine_index+=8;
-                        continue;
-                    }
+                        if(elements_nonzero==0){
+                            cosine_index+=8;
+                            continue;
+                        }
 
-                    cosine_index+=(uint32_t)(_mm_tzcnt_32((uint32_t)elements_nonzero))/2;
+                        cosine_index+=(uint32_t)(_mm_tzcnt_32((uint32_t)elements_nonzero))/2;
+                    #elifdef VK_USE_PLATFORM_METAL_EXT
+                        const int16x8_t mask_strengths=vld1q_s16((void*)(&in_block[cosine_index]));
+                        const int16x8_t elements_zero_result=vceqq_s16(mask_strengths, vdupq_n_s16(0));
+                        uint64_t elements_nonzero=0;
+                        vst1_s8((void*)&elements_nonzero,vqmovn_s16(elements_zero_result));
+                        elements_nonzero=UINT64_MAX-elements_nonzero;
+
+                        //printf("mask %16llx\n",elements_nonzero);
+
+                        const uint32_t num_cosines_remaining=64-cosine_index;
+                        const uint32_t num_cosines_remaining_in_current_iteration=min_u32(8,num_cosines_remaining);
+
+                        const uint64_t all_elements_mask=mask_u64((num_cosines_remaining_in_current_iteration-1)*8+1);
+                        elements_nonzero&=all_elements_mask;
+
+                        if(elements_nonzero==0){
+                            cosine_index+=8;
+                            continue;
+                        }
+
+                        while (in_block[cosine_index]==0 && cosine_index<63) cosine_index++;
+                    #endif
                 #else
                     if(in_block[cosine_index] == 0) {
                         cosine_index++;
@@ -1353,7 +1366,7 @@ void JpegParser_parse_file(
 
                         if(encoding_method==Baseline){
                             if(successive_approximation_bit_high!=0){
-                                fprintf(stderr,"bug in %s : %d.\n",__FILE__,__LINE__);
+                                println("this is a bug.");
                                 exit(FATAL_UNEXPECTED_ERROR);
                             }
 
@@ -1549,10 +1562,11 @@ static inline void scan_ycbcr_to_rgb_neon(
     for (uint32_t i=0; i<pixels_in_scan; i+=4) {
         // -- re-order from block-orientation to final image orientation
 
-        // TODO : bug . the 4 values starting at image_components[0 or 1 or 2].conversion_indices[i] may not be strictly increasing by 1
         int16x8_t y_simd=vld1q_s16(&y[image_components[0].conversion_indices[i]]);
         int16x8_t cr_simd=vld1q_s16(&cr[image_components[1].conversion_indices[i]]);
+        cr_simd=vzip1q_s16(cr_simd,cr_simd);
         int16x8_t cb_simd=vld1q_s16(&cb[image_components[2].conversion_indices[i]]);
+        cb_simd=vzip1q_s16(cb_simd,cb_simd);
 
         y_simd=vshrq_n_s16(y_simd,PRECISION);
         cr_simd=vshrq_n_s16(cr_simd,PRECISION);
@@ -1698,10 +1712,11 @@ static inline void scan_ycbcr_to_rgb_neon(
     for (uint32_t i=0; i<pixels_in_scan; i+=4) {
         // -- re-order from block-orientation to final image orientation
 
-        // TODO : bug . the 4 values starting at image_components[0 or 1 or 2].conversion_indices[i] may not be strictly increasing by 1
         const float32x4_t y_simd=vld1q_f32(&y[image_components[0].conversion_indices[i]]);
-        const float32x4_t cr_simd=vld1q_f32(&cr[image_components[1].conversion_indices[i]]);
-        const float32x4_t cb_simd=vld1q_f32(&cb[image_components[2].conversion_indices[i]]);
+        float32x4_t cr_simd=vld1q_f32(&cr[image_components[1].conversion_indices[i]]);
+        cr_simd=vzip1q_f32(cr_simd,cr_simd);
+        float32x4_t cb_simd=vld1q_f32(&cb[image_components[2].conversion_indices[i]]);
+        cb_simd=vzip1q_f32(cb_simd,cb_simd);
 
         // -- convert ycbcr to rgb
 
@@ -1870,6 +1885,8 @@ static inline void scan_ycbcr_to_rgb(
         const OUT_EL Y=y[image_components[0].conversion_indices[i]];
         const OUT_EL Cr=cr[image_components[1].conversion_indices[i]];
         const OUT_EL Cb=cb[image_components[2].conversion_indices[i]];
+        discard Cr;
+        discard Cb;
 
         // -- convert ycbcr to rgb
 
@@ -1894,17 +1911,18 @@ void JpegParser_convert_colorspace(
     const uint32_t scan_index_end
 ){
     #ifndef FIXED_PRECISION_ARITHMETIC
-    if (parser->component_label==0x221111){
-        #ifdef VK_USE_PLATFORM_METAL_EXT
-            for (uint32_t s=scan_index_start; s<scan_index_end; s++)
-                scan_ycbcr_to_rgb_neon(parser,s);
-            return;
-        #elifdef VK_USE_PLATFORM_XCB_KHR
-            for (uint32_t s=scan_index_start; s<scan_index_end; s++)
-                scan_ycbcr_to_rgb_sse(parser,s);
-            return;
-        #endif
-    }
+        if (parser->component_label==0x221111){
+            #ifdef VK_USE_PLATFORM_METAL_EXT
+                discard scan_ycbcr_to_rgb_neon;
+                for (uint32_t s=scan_index_start; s<scan_index_end; s++)
+                    scan_ycbcr_to_rgb_neon(parser,s);
+                return;
+            #elifdef VK_USE_PLATFORM_XCB_KHR
+                for (uint32_t s=scan_index_start; s<scan_index_end; s++)
+                    scan_ycbcr_to_rgb_sse(parser,s);
+                return;
+            #endif
+        }
     #endif
 
     for (uint32_t s=scan_index_start; s<scan_index_end; s++) {
