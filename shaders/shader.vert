@@ -22,6 +22,8 @@ void main() {
     v_Uv = i_Uv;
     gl_Position = i_Position;
 
+    gl_Position.x+=offset_x;
+    gl_Position.y+=offset_y;
     gl_Position.xy=gl_Position.xy*zoom_factor;
 
     float aspect_ratio=image_aspect_ratio/window_aspect_ratio;

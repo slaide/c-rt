@@ -1429,6 +1429,9 @@ void App_run(Application* app){
         .pTexelBufferView=NULL
     };
     vkUpdateDescriptorSets(app->device, 1, &write_descriptor_set, 0, NULL);
+
+    int32_t left_button_down_x=0;
+    int32_t left_button_down_y=0;
     
     int frame=0;
     bool window_should_close=false;
@@ -1442,8 +1445,26 @@ void App_run(Application* app){
 
         bool window_has_been_resized=false;
         InputEvent event;
+
         while(App_get_input_event(app,&event)){
             switch(event.generic.input_event_type){
+                case INPUT_EVENT_TYPE_BUTTON_PRESS:
+                    if(event.buttonpress.button==INPUT_BUTTON_LEFT){
+                        left_button_down_x=event.buttonpress.pointer_x;
+                        left_button_down_y=event.buttonpress.pointer_y;
+                    }
+                    break;
+                case INPUT_EVENT_TYPE_POINTER_MOVE:
+                    if(event.pointermove.button_pressed==INPUT_BUTTON_LEFT){
+                        image_view_data.offset_x-=((float)(left_button_down_x-event.pointermove.pointer_x))/window_width*2/image_view_data.scale;
+                        image_view_data.offset_y+=((float)(left_button_down_y-event.pointermove.pointer_y))/window_height*4/image_view_data.scale;
+
+                        left_button_down_x=event.pointermove.pointer_x;
+                        left_button_down_y=event.pointermove.pointer_y;
+
+                        GpuCpuDataReference_update(&image_view_data_ref);
+                    }
+                    break;
                 case INPUT_EVENT_TYPE_WINDOW_RESIZED:{
                         window_has_been_resized=true;
 

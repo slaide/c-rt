@@ -22,6 +22,12 @@
 
 typedef enum InputEventType{
     INPUT_EVENT_TYPE_KEY_PRESS,
+    INPUT_EVENT_TYPE_KEY_RELEASE,
+    INPUT_EVENT_TYPE_BUTTON_PRESS,
+    INPUT_EVENT_TYPE_BUTTON_RELEASE,
+
+    INPUT_EVENT_TYPE_POINTER_MOVE,
+
     INPUT_EVENT_TYPE_SCROLL,
 
     INPUT_EVENT_TYPE_WINDOW_RESIZED,
@@ -30,11 +36,55 @@ typedef enum InputEventType{
     INPUT_EVENT_TYPE_UNIMPLEMENTED,
 }InputEventType;
 
+typedef enum InputButton{
+    INPUT_BUTTON_NONE=0x0,
+
+    INPUT_BUTTON_LEFT=0x1,
+    INPUT_BUTTON_RIGHT=0x2,
+    INPUT_BUTTON_MIDDLE=0x4,
+    INPUT_BUTTON_FORWARD=0x8,
+    INPUT_BUTTON_BACK=0x10,
+
+    INPUT_BUTTON_UNKNOWN=0x1000,
+}InputButton;
+
 typedef struct InputEventKeyPress{
     int input_event_type;
-
     int key;
 }InputEventKeyPress;
+typedef struct InputEventKeyRelease{
+    int input_event_type;
+    int key;
+}InputEventKeyRelease;
+typedef struct InputEventButtonPress{
+    int input_event_type;
+
+    InputButton button;
+    /// pointer x position relative to window origin
+    int32_t pointer_x;
+    /// pointer y position relative to window origin
+    int32_t pointer_y;
+}InputEventButtonPress;
+typedef struct InputEventButtonRelease{
+    int input_event_type;
+
+    InputButton button;
+    /// pointer x position relative to window origin
+    int32_t pointer_x;
+    /// pointer y position relative to window origin
+    int32_t pointer_y;
+}InputEventButtonRelease;
+typedef struct InputEventPointerMove{
+    int input_event_type;
+
+    /// pointer x position relative to window origin
+    int32_t pointer_x;
+    /// pointer y position relative to window origin
+    int32_t pointer_y;
+
+    InputButton button_pressed;
+}InputEventPointerMove;
+/// scroll event in x/y. distance in either dimension may be zero.
 typedef struct InputEventScroll{
     int input_event_type;
 
@@ -42,6 +92,7 @@ typedef struct InputEventScroll{
     float scroll_y;
 }InputEventScroll;
 
+/// the outer size of the window has changed
 typedef struct InputEventWindowResized{
     int input_event_type;
 
@@ -61,6 +112,13 @@ typedef struct InputEventGeneric{
 
 typedef union InputEvent{
     InputEventKeyPress keypress;
+    InputEventKeyRelease keyrelease;
+
+    InputEventButtonPress buttonpress;
+    InputEventButtonRelease buttonrelease;
+
+    InputEventPointerMove pointermove;
+
     InputEventScroll scroll;
 
     InputEventWindowResized windowresized;
@@ -318,6 +376,6 @@ void App_upload_data(
     VkBuffer* buffer,
     VkDeviceMemory* buffer_memory,
 
-    uint32_t data_size_bytes,
+    VkDeviceSize data_size_bytes,
     void* data
 );

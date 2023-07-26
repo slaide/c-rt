@@ -89,6 +89,10 @@ void PlatformWindow_set_render_area_width(PlatformWindow* platform_window,uint16
             case NSEventTypeRightMouseUp:
             case NSEventTypeRightMouseDragged:
 
+            case NSEventTypeOtherMouseDown:
+            case NSEventTypeOtherMouseUp:
+            case NSEventTypeOtherMouseDragged:
+
             case NSEventTypeMouseMoved:
             case NSEventTypeMouseEntered:
             case NSEventTypeMouseExited:
@@ -96,18 +100,26 @@ void PlatformWindow_set_render_area_width(PlatformWindow* platform_window,uint16
             case NSEventTypeMagnify:
             case NSEventTypeRotate:
 
+            case NSEventTypeKeyDown:
+            case NSEventTypeKeyUp:
+
             case NSEventTypeScrollWheel:
 
                 [event retain];
                 [self.eventList addObject:event];
                 break;
 
+            case NSEventTypeFlagsChanged:
             case NSEventTypeAppKitDefined:
             case NSEventTypePressure:
                 break;
 
             default:
-                NSLog(@"unhandled event %@", event);
+                #ifdef DEBUG
+                    NSLog(@"unhandled event %@", event);
+                #else
+                    ;
+                #endif
         }
 
         // Pass the event to the superclass for default handling
@@ -186,7 +198,6 @@ CVReturn display_link_callback(
         CVDisplayLinkStart(display_link);
 
         self.display_link=display_link;
-        printf("app finished launching\n");
 
         self.eventList=[NSMutableArray array];
     }
@@ -267,6 +278,23 @@ void App_set_window_title(Application* app, PlatformWindow* window, const char* 
     [window->window setTitle:[NSString stringWithUTF8String:title]];
 }
 
+InputButton NSEventButton_to_InputButton(NSInteger ns_button){
+    switch(ns_button){
+        case 0:
+            return INPUT_BUTTON_LEFT;
+        case 1:
+            return INPUT_BUTTON_RIGHT;
+        case 2:
+            return INPUT_BUTTON_MIDDLE;
+        case 3:
+            return INPUT_BUTTON_BACK;
+        case 4:
+            return INPUT_BUTTON_FORWARD;
+        default:
+            return INPUT_BUTTON_UNKNOWN;
+    }
+}
+
 int App_get_input_event(Application *app, InputEvent *event){
     if (app->platform_window->window.eventList.count>0) {
         NSEvent* ns_event=[app->platform_window->window.eventList firstObject];
@@ -274,12 +302,36 @@ int App_get_input_event(Application *app, InputEvent *event){
 
         switch (ns_event.type) {
             case NSEventTypeLeftMouseDown:
-            case NSEventTypeLeftMouseUp:
-            case NSEventTypeLeftMouseDragged:
             case NSEventTypeRightMouseDown:
+            case NSEventTypeOtherMouseDown:
+                event->buttonpress.input_event_type=INPUT_EVENT_TYPE_BUTTON_PRESS;
+                event->buttonpress.button=NSEventButton_to_InputButton(ns_event.buttonNumber);
+                event->buttonpress.pointer_x=(int32_t)ns_event.locationInWindow.x;
+                event->buttonpress.pointer_y=(int32_t)ns_event.locationInWindow.y;
+                break;
+
+            case NSEventTypeLeftMouseUp:
             case NSEventTypeRightMouseUp:
+            case NSEventTypeOtherMouseUp:
+                event->buttonrelease.input_event_type=INPUT_EVENT_TYPE_BUTTON_RELEASE;
+                event->buttonrelease.button=NSEventButton_to_InputButton(ns_event.buttonNumber);
+                event->buttonrelease.pointer_x=(int32_t)ns_event.locationInWindow.x;
+                event->buttonrelease.pointer_y=(int32_t)ns_event.locationInWindow.y;
+                break;
+
+            case NSEventTypeLeftMouseDragged:
             case NSEventTypeRightMouseDragged:
+            case NSEventTypeOtherMouseDragged:
             case NSEventTypeMouseMoved:
+                event->pointermove.input_event_type=INPUT_EVENT_TYPE_POINTER_MOVE;
+                event->pointermove.pointer_x=(int32_t)ns_event.locationInWindow.x;
+                event->pointermove.pointer_y=(int32_t)ns_event.locationInWindow.y;
+
+                if(ns_event.pressure==0){
+                    event->pointermove.button_pressed=INPUT_BUTTON_NONE;
+                }else{
+                    event->pointermove.button_pressed=NSEventButton_to_InputButton(ns_event.buttonNumber);
+                }
                 break;
             case NSEventTypeScrollWheel:
                 event->scroll.input_event_type=INPUT_EVENT_TYPE_SCROLL;
