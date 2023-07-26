@@ -100,7 +100,7 @@ void App_upload_data(
     VkBuffer* buffer,
     VkDeviceMemory* buffer_memory,
 
-    uint32_t data_size_bytes,
+    VkDeviceSize data_size_bytes,
     void* data
 ){
     VkDeviceSize memory_size=data_size_bytes;

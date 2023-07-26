@@ -1248,6 +1248,55 @@ double timespecDiff(struct timespec start, struct timespec end) {
     return diff;
 }
 
+/// connection between some data on the cpu that is mirrored on the gpu
+typedef struct GpuCpuDataReference{
+    Application* app;
+
+    VkBufferUsageFlagBits buffer_usage_flags;
+
+    VkBuffer buffer;
+    VkDeviceMemory memory;
+
+    /// this is a weak reference - lifetime needs to be managed by the user
+    void* data;
+    VkDeviceSize size;
+}GpuCpuDataReference;
+
+void GpuCpuDataReference_update(
+    GpuCpuDataReference* ref
+){
+    App_upload_data(
+        ref->app, 
+        VK_NULL_HANDLE, 
+        ref->buffer_usage_flags, 
+        &ref->buffer, 
+        &ref->memory, 
+        ref->size, 
+        ref->data
+    );
+}
+
+GpuCpuDataReference App_GpuCpuDataReference_initialise(
+    Application* app,
+    void* data,
+    VkDeviceSize data_size,
+    VkBufferUsageFlagBits buffer_usage_flags
+){
+    GpuCpuDataReference ret={
+        .app=app,
+        .data=data,
+        .size=data_size,
+        .buffer_usage_flags=buffer_usage_flags,
+
+        .buffer=VK_NULL_HANDLE,
+        .memory=VK_NULL_HANDLE
+    };
+
+    GpuCpuDataReference_update(&ret);
+
+    return ret;
+}
+
 void App_run(Application* app){
     VkResult res;
 
@@ -1328,45 +1377,37 @@ void App_run(Application* app){
 
     Texture* sometexture=App_create_texture(app,image_data);
 
-    struct CameraData{
-        int width;
-        int height;
-    };
-    struct CameraData camera_data;
-    VkBuffer camera_buffer=VK_NULL_HANDLE;
-    VkDeviceMemory camera_buffer_memory=VK_NULL_HANDLE;
-
-    App_upload_data(
-        app,
-        VK_NULL_HANDLE,
-        VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-        &camera_buffer,
-        &camera_buffer_memory,
-        sizeof(struct CameraData),
-        &camera_data
-    );
-
     struct ImageViewData{
         float scale;
-        float aspect_ratio;
+        const float aspect_ratio;
+        float window_aspect_ratio;
+
+        float offset_x;
+        float offset_y;
     };
 
-    float image_aspect_ratio=(float)image_data->width/(float)image_data->height;
+    const float image_aspect_ratio=(float)image_data->width/(float)image_data->height;
+    float window_aspect_ratio;
+    {
+        const uint16_t window_height=PlatformWindow_get_render_area_height(app->platform_window);
+        const uint16_t window_width=PlatformWindow_get_render_area_width(app->platform_window);
+
+        window_aspect_ratio=(float)window_width/(float)window_height;
+    }
 
     struct ImageViewData image_view_data={
         .scale=1.0,
-        .aspect_ratio=image_aspect_ratio
+        .aspect_ratio=image_aspect_ratio,
+        .window_aspect_ratio=window_aspect_ratio,
+
+        .offset_x=0,
+        .offset_y=0,
     };
-    VkBuffer image_view_data_buffer=VK_NULL_HANDLE;
-    VkDeviceMemory image_view_data_memory=VK_NULL_HANDLE;
-    App_upload_data(
+    GpuCpuDataReference image_view_data_ref=App_GpuCpuDataReference_initialise(
         app, 
-        VK_NULL_HANDLE, 
-        VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-        &image_view_data_buffer, 
-        &image_view_data_memory, 
+        &image_view_data, 
         sizeof(image_view_data), 
-        &image_view_data
+        VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT
     );
 
     VkWriteDescriptorSet write_descriptor_set={
@@ -1380,7 +1421,7 @@ void App_run(Application* app){
         .pImageInfo=NULL,
         .pBufferInfo=(VkDescriptorBufferInfo[1]){
             {
-                .buffer=image_view_data_buffer,
+                .buffer=image_view_data_ref.buffer,
                 .offset=0,
                 .range=sizeof(struct ImageViewData),
             }
@@ -1410,6 +1451,13 @@ void App_run(Application* app){
 
                         PlatformWindow_set_render_area_width(app->platform_window,(uint16_t)swapchain_create_info.imageExtent.width);
                         PlatformWindow_set_render_area_height(app->platform_window,(uint16_t)swapchain_create_info.imageExtent.height);
+                    
+                        const uint16_t window_height=PlatformWindow_get_render_area_height(app->platform_window);
+                        const uint16_t window_width=PlatformWindow_get_render_area_width(app->platform_window);
+
+                        image_view_data.window_aspect_ratio=(float)window_width/(float)window_height;
+
+                        GpuCpuDataReference_update(&image_view_data_ref);
                     }
                     break;
                 case INPUT_EVENT_TYPE_WINDOW_CLOSE:
@@ -1423,15 +1471,7 @@ void App_run(Application* app){
                             image_view_data.scale/=scale_factor;
                         }
 
-                        App_upload_data(
-                            app, 
-                            VK_NULL_HANDLE, 
-                            VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-                            &image_view_data_buffer, 
-                            &image_view_data_memory, 
-                            sizeof(image_view_data), 
-                            &image_view_data
-                        );
+                        GpuCpuDataReference_update(&image_view_data_ref);
                     }
 
                     break;
@@ -1517,7 +1557,8 @@ void App_run(Application* app){
         vkCmdBeginRenderPass(command_buffer, &render_pass_begin_info, VK_SUBPASS_CONTENTS_INLINE);
 
         vkCmdSetViewport(
-            command_buffer, 0, 1, 
+            command_buffer, 
+            0, 1, 
             (VkViewport[1]){{
                 .x=0,.y=0,
                 .width=window_width,
@@ -1620,11 +1661,8 @@ void App_run(Application* app){
         discard frame;
     }
 
-    vkDestroyBuffer(app->device,image_view_data_buffer,app->vk_allocator);
-    vkFreeMemory(app->device,image_view_data_memory,app->vk_allocator);
-
-    vkDestroyBuffer(app->device,camera_buffer,app->vk_allocator);
-    vkFreeMemory(app->device,camera_buffer_memory,app->vk_allocator);
+    vkDestroyBuffer(app->device,image_view_data_ref.buffer,app->vk_allocator);
+    vkFreeMemory(app->device,image_view_data_ref.memory,app->vk_allocator);
 
     App_destroy_texture(app,sometexture);
 
