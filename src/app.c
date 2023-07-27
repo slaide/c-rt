@@ -1,6 +1,5 @@
 #include "app/app.h"
 #include "app/error.h"
-#include "vulkan/vulkan_core.h"
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -1432,6 +1431,9 @@ void App_run(Application* app){
 
     int32_t left_button_down_x=0;
     int32_t left_button_down_y=0;
+
+    struct timespec last_frame_time;
+    clock_gettime(CLOCK_MONOTONIC, &last_frame_time);
     
     int frame=0;
     bool window_should_close=false;
@@ -1672,11 +1674,18 @@ void App_run(Application* app){
 
         vkDeviceWaitIdle(app->device);
 
+        struct timespec current_frame_time;
+        clock_gettime(CLOCK_MONOTONIC, &current_frame_time);
+
+        static const uint64_t FPS=60;
         struct timespec time_to_sleep={
-            .tv_nsec=33000000,
+            .tv_nsec=1000000000/FPS,
             .tv_sec=0
         };
+        time_to_sleep.tv_nsec-=(uint32_t)(timespecDiff(last_frame_time, current_frame_time)*1000000000);
         nanosleep(&time_to_sleep, NULL);
+
+        last_frame_time=current_frame_time;
 
         frame+=1;
         discard frame;
