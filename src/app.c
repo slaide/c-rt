@@ -1457,7 +1457,7 @@ void App_run(Application* app){
                 case INPUT_EVENT_TYPE_POINTER_MOVE:
                     if(event.pointermove.button_pressed==INPUT_BUTTON_LEFT){
                         image_view_data.offset_x-=((float)(left_button_down_x-event.pointermove.pointer_x))/window_width*2/image_view_data.scale;
-                        image_view_data.offset_y+=((float)(left_button_down_y-event.pointermove.pointer_y))/window_height*4/image_view_data.scale;
+                        image_view_data.offset_y+=((float)(left_button_down_y-event.pointermove.pointer_y))/window_height*2/image_view_data.scale;
 
                         left_button_down_x=event.pointermove.pointer_x;
                         left_button_down_y=event.pointermove.pointer_y;
