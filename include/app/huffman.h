@@ -199,20 +199,21 @@ static inline void BitStream_advance(BitStream* const restrict stream,const uint
 static inline void BitStream_fill_buffer(
     BitStream* const restrict stream
 ){
-    uint64_t num_bytes_missing=7-stream->buffer_bits_filled/8;
+    const uint64_t num_bytes_missing=7-stream->buffer_bits_filled/8;
 
-    stream->buffer=stream->buffer<<(8*num_bytes_missing);
+    uint64_t new_bytes=0;
     for(uint64_t i=0;i<num_bytes_missing;i++){
-        uint64_t index=stream->next_data_index+i;
-        uint64_t next_byte=stream->data[index];
+        const uint64_t index=stream->next_data_index+i;
+        const uint64_t next_byte=stream->data[index];
 
-        uint64_t shift_by=(num_bytes_missing-1-i)*8;
-        stream->buffer |= next_byte << shift_by;
+        const uint64_t shift_by=(7-i)*8;
+        new_bytes |= next_byte << shift_by;
 
         if(stream->data[index]==0xFF && stream->data[index+1]==0){
             stream->next_data_index++;
         }
     }
+    stream->buffer|=new_bytes>>stream->buffer_bits_filled;
     stream->buffer_bits_filled+=num_bytes_missing*8;
     stream->next_data_index+=num_bytes_missing;
 }
@@ -237,7 +238,7 @@ static inline uint64_t BitStream_get_bits_unsafe(
     const BitStream* const restrict stream,
     uint8_t n_bits
 ){
-    uint64_t ret=stream->buffer>>(stream->buffer_bits_filled-n_bits);
+    uint64_t ret=stream->buffer>>(64-n_bits);
     return ret;
 }
 
@@ -259,7 +260,7 @@ static inline void BitStream_advance_unsafe(
     const uint8_t n_bits
 ){
     stream->buffer_bits_filled-=n_bits;
-    stream->buffer&=get_mask_u64(stream->buffer_bits_filled);
+    stream->buffer<<=n_bits;
 }
 
 [[clang::always_inline,gnu::flatten,maybe_unused]]

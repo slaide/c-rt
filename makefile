@@ -1,6 +1,8 @@
 MODE ?= debug
 PLATFORM ?= linux
 USEAVX ?= NO
+HIGH_PRECISION ?= NO
+DECODE_PARALLEL ?= NO
 
 .PHONY: default
 default: run
@@ -12,6 +14,13 @@ LINKS = -lvulkan -pthread -ljemalloc
 COMPILE_FLAGS = -Wall -Werror -Wpedantic -Wextra -Wno-sequence-point -Wconversion
 CINCLUDE = -Iinclude
 CDEF = 
+
+ifeq ($(HIGH_PRECISION), YES)
+	CDEF += -DUSE_FLOAT_PRECISION
+endif
+ifeq ($(DECODE_PARALLEL), YES)
+	CDEF += -DJPEG_DECODE_PARALLEL
+endif
 
 BUILD_OBJS = app.c.o app_mesh.c.o image.c.o huffman.c.o
 
@@ -85,10 +94,10 @@ shaders/vert.spv: shaders/shader.vert
 shaders/frag.spv: shaders/shader.frag
 	glslangValidator shaders/shader.frag -V -o shaders/frag.spv
 
-build: $(BUILD_OBJS) shaders/vert.spv shaders/frag.spv
+main: $(BUILD_OBJS) shaders/vert.spv shaders/frag.spv
 	$(CC) $(OPT_FLAGS) $(CSTD) $(CDEF) $(CINCLUDE) $(LINKS) $(COMPILE_FLAGS) -o main $(BUILD_OBJS)
 
-run: build
+run: main
 	./main
 
 .PHONY: profile disasm-image
@@ -107,4 +116,6 @@ doc:
 	doxygen Doxyfile
 clean:
 	$(RM) *.o main shaders/*.spv
-fresh: clean build
+fresh:
+	make clean
+	make main
