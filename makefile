@@ -3,6 +3,7 @@ PLATFORM ?= linux
 USEAVX ?= NO
 HIGH_PRECISION ?= NO
 DECODE_PARALLEL ?= NO
+JEMALLOC ?= NO
 
 .PHONY: default
 default: run
@@ -10,11 +11,15 @@ default: run
 CC = clang
 OBJCC = clang
 CSTD = -std=gnu2x
-LINKS = -lvulkan -pthread -ljemalloc
+LINKS = -lvulkan -pthread
 COMPILE_FLAGS = -Wall -Werror -Wpedantic -Wextra -Wno-sequence-point -Wconversion
 CINCLUDE = -Iinclude
 CDEF = 
 
+ifeq ($(JEMALLOC), YES)
+	CDEF += -DUSE_JEMALLOC
+	LINKS += -ljemalloc
+endif
 ifeq ($(HIGH_PRECISION), YES)
 	CDEF += -DUSE_FLOAT_PRECISION
 endif
@@ -100,7 +105,7 @@ main: $(BUILD_OBJS) shaders/vert.spv shaders/frag.spv
 run: main
 	./main
 
-.PHONY: profile disasm-image
+.PHONY: profile disasm-image count-loc
 profile:
 	make -Bj fresh MODE=debugrelease
 	valgrind --tool=cachegrind --cachegrind-out-file=cachegrind.out ./main
@@ -110,6 +115,9 @@ profile:
 disasm-image:
 	make -Bj fresh MODE=debugrelease
 	llvm-objdump -d -S image.c.o > image.asm ; less image.asm
+
+count-loc:
+	cloc . --include-lang=c,objective-c,glsl,make,c/c++\ header
 
 .PHONY: clean fresh doc
 doc:

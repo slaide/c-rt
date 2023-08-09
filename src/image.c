@@ -7,8 +7,6 @@
 #include <pthread.h>
 #include <stdatomic.h>
 
-#include <jemalloc/jemalloc.h>
-
 #ifdef VK_USE_PLATFORM_METAL_EXT
     #include <arm_neon.h>
 #elif VK_USE_PLATFORM_XCB_KHR
