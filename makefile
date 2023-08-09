@@ -1,5 +1,4 @@
 MODE ?= debug
-PLATFORM ?= linux
 USEAVX ?= NO
 HIGH_PRECISION ?= NO
 DECODE_PARALLEL ?= NO
@@ -8,12 +7,21 @@ JEMALLOC ?= NO
 .PHONY: default
 default: run
 
-CC = clang
-OBJCC = clang
-CSTD = -std=gnu2x
-LINKS = -lvulkan -pthread
-COMPILE_FLAGS = -Wall -Werror -Wpedantic -Wextra -Wno-sequence-point -Wconversion
-CINCLUDE = -Iinclude
+OS ?= $(shell uname -s)
+ifeq ($(OS),Linux)
+	PLATFORM ?= linux
+else ifeq ($(OS),Darwin)
+	PLATFORM ?= macos
+else
+$(error invalid OS $(OS))
+endif
+
+CC := clang
+OBJCC := clang
+CSTD := -std=gnu2x
+LINKS := -lvulkan -pthread
+COMPILE_FLAGS := -Wall -Werror -Wpedantic -Wextra -Wno-sequence-point -Wconversion
+CINCLUDE := -Iinclude
 CDEF = 
 
 ifeq ($(JEMALLOC), YES)
@@ -27,7 +35,7 @@ ifeq ($(DECODE_PARALLEL), YES)
 	CDEF += -DJPEG_DECODE_PARALLEL
 endif
 
-BUILD_OBJS = app.c.o app_mesh.c.o image.c.o huffman.c.o
+BUILD_OBJS := app.c.o app_mesh.c.o image.c.o huffman.c.o
 
 ifeq ($(MODE), debug)
 	CDEF += -DDEBUG
@@ -86,10 +94,10 @@ else ifeq ($(PLATFORM), macos)
 	$(OBJCC) $(COMPILE_FLAGS) $(CDEF) $(CINCLUDE) -c -o $@ $<
 
 else
-$(error Invalid platform: $(MODE) (valid options are { linux | macos }))
+$(error Invalid platform: $(PLATFORMz) (valid options are { linux | macos }))
 endif
 
-CCOMPILE = $(CC) $(OPT_FLAGS) $(CSTD) $(CDEF) $(COMPILE_FLAGS) $(CINCLUDE)
+CCOMPILE := $(CC) $(OPT_FLAGS) $(CSTD) $(CDEF) $(COMPILE_FLAGS) $(CINCLUDE)
 
 %.c.o: src/%.c
 	$(CCOMPILE) -c -o $@ $<
