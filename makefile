@@ -1,4 +1,4 @@
-MODE ?= debug
+MODE ?= debugrelease
 USEAVX ?= NO
 HIGH_PRECISION ?= NO
 DECODE_PARALLEL ?= NO
