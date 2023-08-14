@@ -85,7 +85,7 @@ ifeq ($(PLATFORM), linux)
 		COMPILE_FLAGS += -mavx2 # for some additional speed-up with O3
 	endif
 
-	C_SRC_FILES += main_linux.c.o
+	C_SRC_FILES += main_linux.c
 else ifeq ($(PLATFORM), macos)
 	LINKS += -framework Appkit -framework Metal -framework MetalKit -framework QuartzCore
 

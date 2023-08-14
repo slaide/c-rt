@@ -338,7 +338,7 @@ int main(int argc, char**argv){
     app->cli_args=argv;
 
     if (app->cli_num_args>1) {
-        App_set_window_title(app,app->platform_window,main_app->cli_args[1]);
+        App_set_window_title(app,app->platform_window,app->cli_args[1]);
     }else{
         App_set_window_title(app,app->platform_window,"unknown image");
     }
