@@ -9,12 +9,14 @@ default: run
 
 OS ?= $(shell uname -s)
 ifeq ($(OS),Linux)
-	PLATFORM ?= linux
+	DEFAULT_PLATFORM := linux
 else ifeq ($(OS),Darwin)
-	PLATFORM ?= macos
+	DEFAULT_PLATFORM := macos
 else
 $(error invalid OS $(OS))
 endif
+
+PLATFORM ?= $(DEFAULT_PLATFORM)
 
 CC := clang
 OBJCC := clang
@@ -125,7 +127,7 @@ profile:
 		callgrind_annotate $(PROFILE_CACHEGRIND_OUT_FILE) > $(PROFILE_CACHEGRIND_ANNOTATION_FILE)
 		less $(PROFILE_CACHEGRIND_ANNOTATION_FILE)
 	else
-$(error valgrind is only available on Linux, but you are using $(PLATFORM))
+	$(error valgrind is only available on Linux, but you are using $(PLATFORM))
 	endif
 
 
