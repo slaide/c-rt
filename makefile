@@ -5,7 +5,7 @@ DECODE_PARALLEL ?= NO
 JEMALLOC ?= NO
 
 .PHONY: default
-default: run
+default: all
 
 OS ?= $(shell uname -s)
 ifeq ($(OS),Linux)
@@ -37,7 +37,17 @@ ifeq ($(DECODE_PARALLEL), YES)
 	CDEF += -DJPEG_DECODE_PARALLEL
 endif
 
-BUILD_OBJS := app.c.o app_mesh.c.o image.c.o huffman.c.o
+BUILD_DIR ?= build
+$(BUILD_DIR):
+	mkdir -p $(BUILD_DIR)
+
+BIN_DIR ?= bin
+$(BIN_DIR):
+	mkdir -p $(BIN_DIR)
+
+SHADER_SRC_FILES := vertshader.vert fragshader.frag
+C_SRC_FILES := app.c app_mesh.c image.c huffman.c
+OBJC_SRC_FILES :=
 
 ifeq ($(MODE), debug)
 	CDEF += -DDEBUG
@@ -75,7 +85,7 @@ ifeq ($(PLATFORM), linux)
 		COMPILE_FLAGS += -mavx2 # for some additional speed-up with O3
 	endif
 
-	BUILD_OBJS += main_linux.c.o
+	C_SRC_FILES += main_linux.c.o
 else ifeq ($(PLATFORM), macos)
 	LINKS += -framework Appkit -framework Metal -framework MetalKit -framework QuartzCore
 
@@ -90,29 +100,33 @@ else ifeq ($(PLATFORM), macos)
 	CDEF += -DVK_USE_PLATFORM_METAL_EXT
 	CINCLUDE += -I/opt/vulkansdk/macOS/include
 
-	BUILD_OBJS += main_macos.m.o
-
-%.m.o: src/%.m
-	$(OBJCC) $(COMPILE_FLAGS) $(CDEF) $(CINCLUDE) -c -o $@ $<
-
+	OBJC_SRC_FILES += main_macos.m
 else
 $(error Invalid platform: $(PLATFORMz) (valid options are { linux | macos }))
 endif
 
+$(BUILD_DIR)/%.m.o: src/%.m $(BUILD_DIR)
+	$(OBJCC) $(COMPILE_FLAGS) $(CDEF) $(CINCLUDE) -c -o $@ $<
+
 CCOMPILE := $(CC) $(OPT_FLAGS) $(CSTD) $(CDEF) $(COMPILE_FLAGS) $(CINCLUDE)
 
-%.c.o: src/%.c
+$(BUILD_DIR)/%.c.o: src/%.c $(BUILD_DIR)
 	$(CCOMPILE) -c -o $@ $<
 
-shaders/%.spv: shaders/shader.%
+$(BIN_DIR)/%.spv: shaders/%.* $(BIN_DIR)
 	glslangValidator --quiet -V -o $@ $<
 
-SHADER_FILES := shaders/vert.spv shaders/frag.spv
-main: $(BUILD_OBJS) $(SHADER_FILES)
-	$(CC) $(OPT_FLAGS) $(CSTD) $(CDEF) $(CINCLUDE) $(LINKS) $(COMPILE_FLAGS) -o $@ $(BUILD_OBJS)
+SHADER_SPV_FILES := $(patsubst %,$(BIN_DIR)/%.spv,$(basename $(SHADER_SRC_FILES)))
 
-run: main
-	./main
+C_BUILD_OBJS := $(patsubst %.c,$(BUILD_DIR)/%.c.o,$(C_SRC_FILES))
+OBJC_BUILD_OBJS := $(patsubst %.m,$(BUILD_DIR)/%.m.o,$(OBJC_SRC_FILES))
+
+BUILD_OBJS := $(C_BUILD_OBJS) $(OBJC_BUILD_OBJS)
+
+MAIN_FILE := $(BIN_DIR)/main
+
+all: $(SHADER_SPV_FILES) $(BUILD_OBJS) $(BIN_DIR)
+	$(CC) $(OPT_FLAGS) $(CSTD) $(CDEF) $(CINCLUDE) $(LINKS) $(COMPILE_FLAGS) -o $(MAIN_FILE) $(BUILD_OBJS)
 
 .PHONY: profile disasm-image count-loc
 
@@ -123,13 +137,12 @@ PROFILE_CACHEGRIND_ANNOTATION_FILE := cachegrind.out.annotation
 profile:
 	ifeq ($(OS),Linux)
 		make -Bj fresh MODE=debugrelease
-		valgrind --tool=cachegrind --cachegrind-out-file=$(PROFILE_CACHEGRIND_OUT_FILE) ./main
+		valgrind --tool=cachegrind --cachegrind-out-file=$(PROFILE_CACHEGRIND_OUT_FILE) ./$(MAIN_FILE)
 		callgrind_annotate $(PROFILE_CACHEGRIND_OUT_FILE) > $(PROFILE_CACHEGRIND_ANNOTATION_FILE)
 		less $(PROFILE_CACHEGRIND_ANNOTATION_FILE)
 	else
 	$(error valgrind is only available on Linux, but you are using $(PLATFORM))
 	endif
-
 
 disasm-image:
 	make -Bj fresh MODE=debugrelease
@@ -142,7 +155,7 @@ count-loc:
 doc:
 	doxygen Doxyfile
 clean:
-	$(RM) *.o main shaders/*.spv $(PROFILE_CACHEGRIND_OUT_FILE) $(PROFILE_CACHEGRIND_ANNOTATION_FILE)
+	$(RM) $(BUILD_DIR)/* $(BIN_DIR)/* $(PROFILE_CACHEGRIND_OUT_FILE) $(PROFILE_CACHEGRIND_ANNOTATION_FILE)
 fresh:
 	make clean
 	make main
