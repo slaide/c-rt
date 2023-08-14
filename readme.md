@@ -13,3 +13,5 @@ Additional formal requirements are (non-exhaustive):
     - see [issue #1](https://github.com/slaide/c-rt/issues/1).
 4. There should be some use of distributed or parallel computing within the project.
     - this project makes use SIMD instructions and multi-threading.
+5. There should be at least five tests using some testing framework for correctness, robustness to spurious input, and performance.
+    - Test images available on [Google Drive](https://drive.google.com/drive/folders/1eGyp0XP7DvyJD8yVl6GLlflGLXQac2kW?usp=sharing) because the data may not be compatible with license of this repository.
