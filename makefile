@@ -102,23 +102,32 @@ CCOMPILE := $(CC) $(OPT_FLAGS) $(CSTD) $(CDEF) $(COMPILE_FLAGS) $(CINCLUDE)
 %.c.o: src/%.c
 	$(CCOMPILE) -c -o $@ $<
 
-shaders/vert.spv: shaders/shader.vert
-	glslangValidator shaders/shader.vert -V -o shaders/vert.spv
-shaders/frag.spv: shaders/shader.frag
-	glslangValidator shaders/shader.frag -V -o shaders/frag.spv
+shaders/%.spv: shaders/shader.%
+	glslangValidator --quiet -V -o $@ $<
 
-main: $(BUILD_OBJS) shaders/vert.spv shaders/frag.spv
-	$(CC) $(OPT_FLAGS) $(CSTD) $(CDEF) $(CINCLUDE) $(LINKS) $(COMPILE_FLAGS) -o main $(BUILD_OBJS)
+SHADER_FILES := shaders/vert.spv shaders/frag.spv
+main: $(BUILD_OBJS) $(SHADER_FILES)
+	$(CC) $(OPT_FLAGS) $(CSTD) $(CDEF) $(CINCLUDE) $(LINKS) $(COMPILE_FLAGS) -o $@ $(BUILD_OBJS)
 
 run: main
 	./main
 
 .PHONY: profile disasm-image count-loc
+
+PROFILE_CACHEGRIND_OUT_FILE := cachegrind.out
+PROFILE_CACHEGRIND_ANNOTATION_FILE := cachegrind.out.annotation
+
+# valgrind is only available on linux
 profile:
-	make -Bj fresh MODE=debugrelease
-	valgrind --tool=cachegrind --cachegrind-out-file=cachegrind.out ./main
-	callgrind_annotate cachegrind.out > cachegrind.out.annotation
-	less cachegrind.out.annotation
+	ifeq ($(OS),Linux)
+		make -Bj fresh MODE=debugrelease
+		valgrind --tool=cachegrind --cachegrind-out-file=$(PROFILE_CACHEGRIND_OUT_FILE) ./main
+		callgrind_annotate $(PROFILE_CACHEGRIND_OUT_FILE) > $(PROFILE_CACHEGRIND_ANNOTATION_FILE)
+		less $(PROFILE_CACHEGRIND_ANNOTATION_FILE)
+	else
+$(error valgrind is only available on Linux, but you are using $(PLATFORM))
+	endif
+
 
 disasm-image:
 	make -Bj fresh MODE=debugrelease
@@ -131,7 +140,7 @@ count-loc:
 doc:
 	doxygen Doxyfile
 clean:
-	$(RM) *.o main shaders/*.spv
+	$(RM) *.o main shaders/*.spv $(PROFILE_CACHEGRIND_OUT_FILE) $(PROFILE_CACHEGRIND_ANNOTATION_FILE)
 fresh:
 	make clean
 	make main
