@@ -1235,7 +1235,9 @@ void JpegParser_parse_file(
 
                     const uint32_t total_num_pixels_in_image=parser->X*parser->Y;
 
-                    image_data->data=malloc(ROUND_UP(sizeof(uint8_t)*total_num_pixels_in_image*4,64));
+                    // overallocate for simd access overflows
+                    static  const uint32_t OVERALLOCATE_NUM_BYTES=256;
+                    image_data->data=malloc(sizeof(uint8_t)*total_num_pixels_in_image*4+OVERALLOCATE_NUM_BYTES);
 
                     parser->current_byte_position=segment_end_position;
                 }
