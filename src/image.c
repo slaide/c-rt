@@ -1017,8 +1017,32 @@ void JpegParser_parse_file(
                 }
                 break;
 
+            // used by the JFIF standard
             case APP0:
+            // used by the EXIF standard
             case APP1:
+                {
+                    GET_U16(segment_size);
+                    uint32_t segment_end_position=parser->current_byte_position+segment_size-2;
+                    parser->current_byte_position=segment_end_position;
+                }
+                break;
+
+            // application-specific marker segments not commonly used, but may be present
+            case APP2:
+            case APP3:
+            case APP4:
+            case APP5:
+            case APP6:
+            case APP7:
+            case APP8:
+            case APP9:
+            case APP10:
+            case APP11:
+            case APP12:
+            case APP13:
+            case APP14:
+            case APP15:
                 {
                     GET_U16(segment_size);
                     uint32_t segment_end_position=parser->current_byte_position+segment_size-2;
