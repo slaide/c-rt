@@ -192,6 +192,10 @@ CVReturn display_link_callback(
         main_app->cli_num_args=self.cli_argc;
         main_app->cli_args=self.cli_argv;
 
+        if (main_app->cli_num_args>1) {
+            [main_app->platform_window->window setTitle:[NSString stringWithUTF8String:main_app->cli_args[1]]];
+        }
+
         CVDisplayLinkRef display_link;
         CVDisplayLinkCreateWithActiveCGDisplays(&display_link);
         CVDisplayLinkSetOutputCallback(display_link, display_link_callback, main_app);
@@ -241,7 +245,7 @@ PlatformWindow* App_create_window(
         styleMask: NSWindowStyleMaskClosable | NSWindowStyleMaskTitled | NSWindowStyleMaskResizable
     ];
     [window->window center];
-    [window->window setTitle:@"my window title"];
+    [window->window setTitle:@"unknown image"];
     [window->window orderFrontRegardless];
 
     // from docs: Moves the window to the front of the screen list, within its level, and makes it the key window; that is, it shows the window.
