@@ -442,8 +442,8 @@ Shader* App_create_shader(
 
     shader->app=app;
 
-    shader->fragment_shader=App_create_shader_module(app, "shaders/frag.spv");
-    shader->vertex_shader=App_create_shader_module(app, "shaders/vert.spv");
+    shader->fragment_shader=App_create_shader_module(app, "fragshader.spv");
+    shader->vertex_shader=App_create_shader_module(app, "vertshader.spv");
 
     VkDescriptorSetLayoutCreateInfo descriptor_set_layout={
         .sType=VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,

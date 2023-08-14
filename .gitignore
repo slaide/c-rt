@@ -1,12 +1,16 @@
+# build files
 /main
 /*.o
 *.spv
 /.cache
-compile_commands.json
 /docs
+compile_commands.json
+/build
 
+# MacOS metadata
 .DS_Store
 
+# flamegraph data
 /flame_graph.svg
 /folded_data.txt
 /perf.data
@@ -15,6 +19,16 @@ compile_commands.json
 /FlameGraph
 /generate_flamegraph.sh
 
-/cmake-build-*
+# clion IDE
 /.idea/shelf
 /.idea
+
+# VSCode IDE
+/.vscode
+
+# cmake stuff
+/cmake-build-*
+Makefile
+CMakeCache.txt
+cmake_install.cmake
+/CMakeFiles
