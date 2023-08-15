@@ -1,11 +1,29 @@
 #include "app/app.h"
 #include "app/error.h"
+#include "vulkan/vulkan_core.h"
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <inttypes.h>
+
+void ImageData_initEmpty(struct ImageData* const image_data){
+    image_data->data=NULL;
+    image_data->height=0;
+    image_data->width=0;
+    image_data->pixel_format=0;
+
+    image_data->image_file_metadata.file_comment=NULL;
+}
+void ImageData_destroy(struct ImageData* const image_data){
+    if(image_data->image_file_metadata.file_comment){
+        free((void*)image_data->image_file_metadata.file_comment);
+        image_data->image_file_metadata.file_comment=NULL;
+    }
+    free(image_data->data);
+}
 
 /**
  * @brief get string representation of VkResult value
@@ -136,6 +154,7 @@ struct Texture{
     VkImage image;
     VkDeviceMemory image_memory;
     VkImageView image_view;
+    VkDescriptorSet descriptor_set;
 };
 /**
  * @brief create texture fit for supplied image data (does not upload data to gpu!)
@@ -235,31 +254,19 @@ Texture* App_create_texture(Application* app, ImageData* image_data){
         exit(VULKAN_CREATE_IMAGE_VIEW_FAILURE);
     }
 
-    VkSamplerCreateInfo sampler_create_info={
-        .sType=VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+    VkDescriptorSetAllocateInfo descriptor_set_allocate_info={
+        .sType=VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
         .pNext=NULL,
-        .flags=0,
-        .magFilter=VK_FILTER_NEAREST,
-        .minFilter=VK_FILTER_NEAREST,
-        .mipmapMode=VK_SAMPLER_MIPMAP_MODE_NEAREST,
-        .addressModeU=VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
-        .addressModeV=VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
-        .addressModeW=VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
-        .mipLodBias=0.0,
-        .anisotropyEnable=VK_FALSE,
-        .maxAnisotropy=0.0,
-        .compareEnable=VK_FALSE,
-        .compareOp=VK_COMPARE_OP_NEVER,
-        .minLod=1.0,
-        .maxLod=1.0,
-        .borderColor=VK_BORDER_COLOR_INT_OPAQUE_BLACK,
-        .unnormalizedCoordinates=VK_FALSE
+        .descriptorPool=app->shader->descriptor_pool,
+        .descriptorSetCount=1,
+        .pSetLayouts=&app->shader->set_layout
     };
-    res=vkCreateSampler(app->device, &sampler_create_info, app->vk_allocator, &app->shader->image_sampler);
+    res=vkAllocateDescriptorSets(app->device, &descriptor_set_allocate_info, &texture->descriptor_set);
     if(res!=VK_SUCCESS){
-        fprintf(stderr,"failed to create sampler\n");
-        exit(FATAL_UNEXPECTED_ERROR);
+        fprintf(stderr,"failed to allocate descriptor sets\n");
+        exit(VULKAN_ALLOCATE_DESCRIPTOR_SETS_FAILURE);
     }
+
     VkDescriptorImageInfo descriptor_image_info={
         .sampler=app->shader->image_sampler,
         .imageView=texture->image_view,
@@ -268,7 +275,7 @@ Texture* App_create_texture(Application* app, ImageData* image_data){
     VkWriteDescriptorSet write_descriptor_set={
         .sType=VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
         .pNext=NULL,
-        .dstSet=app->shader->descriptor_set,
+        .dstSet=texture->descriptor_set,
         .dstBinding=0,
         .dstArrayElement=0,
         .descriptorCount=1,
@@ -282,9 +289,9 @@ Texture* App_create_texture(Application* app, ImageData* image_data){
     return texture;
 }
 void App_upload_texture(
-    Application* app,
-    Texture* texture,
-    ImageData* image_data,
+    Application* const app,
+    Texture* const texture,
+    const ImageData* const image_data,
     VkCommandBuffer recording_command_buffer
 ){
     VkCommandBuffer command_buffer=recording_command_buffer;
@@ -322,11 +329,24 @@ void App_upload_texture(
     VkDeviceSize image_memory_size=image_data->height*image_data->width*4;
     image_memory_size=ROUND_UP(image_memory_size, physical_device_properties.limits.nonCoherentAtomSize);
 
+    const VkDeviceSize image_offset_into_staging_buffer=app->staging_buffer_size_occupied;
+
     void* staging_buffer_cpu_memory;
-    VkResult res=vkMapMemory(app->device, app->staging_buffer_memory, app->staging_buffer_size-app->staging_buffer_size_remaining, image_memory_size, 0, &staging_buffer_cpu_memory);
+    VkResult res=vkMapMemory(
+        app->device, 
+        app->staging_buffer_memory, 
+        image_offset_into_staging_buffer, 
+        image_memory_size, 0, &staging_buffer_cpu_memory
+    );
     if (res!=VK_SUCCESS) {
         fprintf(stderr,"failed to map memory\n");
         exit(VULKAN_MAP_MEMORY_FAILURE);
+    }
+    app->staging_buffer_size_occupied+=image_memory_size;
+
+    if(app->staging_buffer_size_occupied>app->staging_buffer_size){
+        fprintf(stderr,"copied more data into staging buffer than fits into it (%"PRIu64" > %"PRIu64")\n",app->staging_buffer_size_occupied,app->staging_buffer_size);
+        exit(ERROR_STAGING_BUFFER_OVERFLOW);
     }
 
     memcpy(staging_buffer_cpu_memory,image_data->data,image_memory_size);
@@ -335,8 +355,8 @@ void App_upload_texture(
         .sType=VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
         .pNext=NULL,
         .memory=app->staging_buffer_memory,
-        .offset=0,
-        .size=image_memory_size
+        .offset=image_offset_into_staging_buffer,
+        .size=VK_WHOLE_SIZE
     };
     res=vkFlushMappedMemoryRanges(app->device, 1, &flush_memory_range);
     if (res!=VK_SUCCESS) {
@@ -347,7 +367,7 @@ void App_upload_texture(
     vkUnmapMemory(app->device, app->staging_buffer_memory);
 
     VkBufferImageCopy buffer_image_copy={
-        .bufferOffset=0,
+        .bufferOffset=image_offset_into_staging_buffer,
         .bufferRowLength=0,
         .bufferImageHeight=0,
         .imageSubresource={
@@ -360,7 +380,7 @@ void App_upload_texture(
         .imageExtent={.width=image_data->width,.height=image_data->height,.depth=1}
     };
     vkCmdCopyBufferToImage(command_buffer, app->staging_buffer, texture->image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &buffer_image_copy);
-    // TODO copy data to image
+
     vkCmdPipelineBarrier(
         command_buffer, 
         VK_PIPELINE_STAGE_TRANSFER_BIT,
@@ -396,7 +416,10 @@ void App_destroy_texture(Application* app, Texture* texture){
     free(texture);
 }
 
-VkShaderModule App_create_shader_module(Application* app,const char* shader_file_path){
+VkShaderModule App_create_shader_module(
+    Application* const app,
+    const char* const shader_file_path
+){
     FILE* shader_file=fopen(shader_file_path,"rb");
     if(shader_file==NULL){
         fprintf(stderr,"failed to open shader file %s\n",shader_file_path);
@@ -433,10 +456,10 @@ VkShaderModule App_create_shader_module(Application* app,const char* shader_file
     return shader;
 }
 Shader* App_create_shader(
-    Application* app,
+    Application* const app,
 
-    uint32_t subpass,
-    uint32_t subpass_num_attachments
+    const uint32_t subpass,
+    const uint32_t subpass_num_attachments
 ){
     Shader* shader=malloc(sizeof(Shader));
 
@@ -475,11 +498,11 @@ Shader* App_create_shader(
 
     VkDescriptorPoolSize pool_sizes[2]={
         {
-            .descriptorCount=1,
+            .descriptorCount=app->cli_num_args,
             .type=VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER
         },
         {
-            .descriptorCount=1,
+            .descriptorCount=app->cli_num_args,
             .type=VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER
         }
     };
@@ -487,7 +510,7 @@ Shader* App_create_shader(
         .sType=VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
         .pNext=NULL,
         .flags=0,
-        .maxSets=1,
+        .maxSets=app->cli_num_args,
         .poolSizeCount=2,
         .pPoolSizes=pool_sizes
     };
@@ -496,18 +519,31 @@ Shader* App_create_shader(
         fprintf(stderr,"failed to create descriptor pool\n");
         exit(VULKAN_CREATE_DESCRIPTOR_POOL_FAILURE);
     }
-    
-    VkDescriptorSetAllocateInfo descriptor_set_allocate_info={
-        .sType=VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+
+    VkSamplerCreateInfo sampler_create_info={
+        .sType=VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
         .pNext=NULL,
-        .descriptorPool=shader->descriptor_pool,
-        .descriptorSetCount=1,
-        .pSetLayouts=&shader->set_layout
+        .flags=0,
+        .magFilter=VK_FILTER_NEAREST,
+        .minFilter=VK_FILTER_NEAREST,
+        .mipmapMode=VK_SAMPLER_MIPMAP_MODE_NEAREST,
+        .addressModeU=VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+        .addressModeV=VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+        .addressModeW=VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+        .mipLodBias=0.0,
+        .anisotropyEnable=VK_FALSE,
+        .maxAnisotropy=0.0,
+        .compareEnable=VK_FALSE,
+        .compareOp=VK_COMPARE_OP_NEVER,
+        .minLod=1.0,
+        .maxLod=1.0,
+        .borderColor=VK_BORDER_COLOR_INT_OPAQUE_BLACK,
+        .unnormalizedCoordinates=VK_FALSE
     };
-    res=vkAllocateDescriptorSets(app->device, &descriptor_set_allocate_info, &shader->descriptor_set);
+    res=vkCreateSampler(app->device, &sampler_create_info, app->vk_allocator, &shader->image_sampler);
     if(res!=VK_SUCCESS){
-        fprintf(stderr,"failed to allocate descriptor sets\n");
-        exit(VULKAN_ALLOCATE_DESCRIPTOR_SETS_FAILURE);
+        fprintf(stderr,"failed to create sampler\n");
+        exit(FATAL_UNEXPECTED_ERROR);
     }
 
     VkPipelineLayoutCreateInfo pipeline_layout_create_info={
@@ -666,7 +702,7 @@ Shader* App_create_shader(
 
     return shader;
 }
-void App_destroy_shader(Shader* shader){
+void App_destroy_shader(Shader* const shader){
     vkDestroyDescriptorPool(shader->app->device, shader->descriptor_pool, shader->app->vk_allocator);
     vkDestroyDescriptorSetLayout(shader->app->device, shader->set_layout, shader->app->vk_allocator);
 
@@ -1139,10 +1175,11 @@ Application* App_new(PlatformHandle* platform){
 
     App_create_swapchain(app);
 
-    app->shader=App_create_shader(app,0,render_pass_create_info.subpassCount);
+    app->shader=NULL;
 
-    app->staging_buffer_size=1024*1024*128;
-    app->staging_buffer_size_remaining=app->staging_buffer_size_remaining;
+    static const VkDeviceSize STAGING_BUFFER_SIZE_BYTES=512*1024*1024;
+    app->staging_buffer_size=STAGING_BUFFER_SIZE_BYTES;
+    app->staging_buffer_size_occupied=0;
 
     VkBufferCreateInfo staging_buffer_create_info={
         .sType=VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
@@ -1299,6 +1336,8 @@ GpuCpuDataReference App_GpuCpuDataReference_initialise(
 void App_run(Application* app){
     VkResult res;
 
+    app->shader=App_create_shader(app,0,1);
+
     VkSemaphoreCreateInfo semaphore_create_info={
         .sType=VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
         .pNext=NULL,
@@ -1346,13 +1385,18 @@ void App_run(Application* app){
 
     VkCommandBuffer command_buffer=command_buffers[0];
 
-    Mesh* quadmesh=NULL;
+    struct ImageViewData{
+        float scale;
+        float aspect_ratio;
+        float window_aspect_ratio;
 
-    ImageData image_data_jpeg;
-    const char* file_path="complex_pattern.jpg";
+        float offset_x;
+        float offset_y;
+    };
 
-    if(app->cli_num_args>1){
-        file_path=app->cli_args[1];
+    if(app->cli_num_args==1){
+        fprintf(stderr,"no image to display.\nprovide at least one image path as cli arg to this application for display.\n");
+        exit(ERROR_NO_ARGUMENT_IMAGE);
     }
 
     #ifdef DEBUG
@@ -1360,81 +1404,84 @@ void App_run(Application* app){
     #else
         static const int num_iterations=1;
     #endif
-    for(int i=0;i<num_iterations;i++){
-        if(i>0){
-            free(image_data_jpeg.data);
-        }
 
-        ImageParseResult image_parse_res=Image_read_jpeg(file_path,&image_data_jpeg);
-        if (image_parse_res!=IMAGE_PARSE_RESULT_OK) {
-            fprintf(stderr, "failed to parse jpeg\n");
-            exit(-31);
-        }
-    }
+    uint32_t num_images=app->cli_num_args-1;
 
-    ImageData* image_data=&image_data_jpeg;
+    Mesh* quadmesh=NULL;
 
-    Texture* sometexture=App_create_texture(app,image_data);
+    ImageData image_data_jpeg[num_images];
+    Texture* image_textures[num_images];
+    struct ImageViewData image_view_data[num_images];
+    GpuCpuDataReference image_view_data_refs[num_images];
 
-    struct ImageViewData{
-        float scale;
-        const float aspect_ratio;
-        float window_aspect_ratio;
+    for(uint32_t image_index=0;image_index<num_images;image_index++){
+        const char* file_path=app->cli_args[1+image_index];
 
-        float offset_x;
-        float offset_y;
-    };
+        ImageData* image_data=&image_data_jpeg[image_index];
 
-    const float image_aspect_ratio=(float)image_data->width/(float)image_data->height;
-    float window_aspect_ratio;
-    {
-        const uint16_t window_height=PlatformWindow_get_render_area_height(app->platform_window);
-        const uint16_t window_width=PlatformWindow_get_render_area_width(app->platform_window);
-
-        window_aspect_ratio=(float)window_width/(float)window_height;
-    }
-
-    struct ImageViewData image_view_data={
-        .scale=1.0,
-        .aspect_ratio=image_aspect_ratio,
-        .window_aspect_ratio=window_aspect_ratio,
-
-        .offset_x=0,
-        .offset_y=0,
-    };
-    GpuCpuDataReference image_view_data_ref=App_GpuCpuDataReference_initialise(
-        app, 
-        &image_view_data, 
-        sizeof(image_view_data), 
-        VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT
-    );
-
-    VkWriteDescriptorSet write_descriptor_set={
-        .sType=VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-        .pNext=NULL,
-        .dstSet=app->shader->descriptor_set,
-        .dstBinding=1,
-        .dstArrayElement=0,
-        .descriptorCount=1,
-        .descriptorType=VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-        .pImageInfo=NULL,
-        .pBufferInfo=(VkDescriptorBufferInfo[1]){
-            {
-                .buffer=image_view_data_ref.buffer,
-                .offset=0,
-                .range=sizeof(struct ImageViewData),
+        for(int i=0;i<num_iterations;i++){
+            if(i>0){
+                free(image_data->data);
             }
-        },
-        .pTexelBufferView=NULL
-    };
-    vkUpdateDescriptorSets(app->device, 1, &write_descriptor_set, 0, NULL);
 
+            ImageParseResult image_parse_res=Image_read_jpeg(file_path,image_data);
+            if (image_parse_res!=IMAGE_PARSE_RESULT_OK) {
+                fprintf(stderr, "failed to parse jpeg\n");
+                exit(-31);
+            }
+        }
+
+        image_textures[image_index]=App_create_texture(app,image_data);
+
+        const float image_aspect_ratio=(float)image_data->width/(float)image_data->height;
+        float window_aspect_ratio;
+        {
+            const uint16_t window_height=PlatformWindow_get_render_area_height(app->platform_window);
+            const uint16_t window_width=PlatformWindow_get_render_area_width(app->platform_window);
+
+            window_aspect_ratio=(float)window_width/(float)window_height;
+        }
+
+        image_view_data[image_index].scale=1.0;
+        image_view_data[image_index].aspect_ratio=image_aspect_ratio;
+        image_view_data[image_index].window_aspect_ratio=window_aspect_ratio;
+        image_view_data[image_index].offset_x=0;
+        image_view_data[image_index].offset_y=0;
+
+        image_view_data_refs[image_index]=App_GpuCpuDataReference_initialise(
+            app, 
+            &image_view_data[image_index], 
+            sizeof(struct ImageViewData), 
+            VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT
+        );
+
+        VkWriteDescriptorSet write_descriptor_set={
+            .sType=VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+            .pNext=NULL,
+            .dstSet=image_textures[image_index]->descriptor_set,
+            .dstBinding=1,
+            .dstArrayElement=0,
+            .descriptorCount=1,
+            .descriptorType=VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+            .pImageInfo=NULL,
+            .pBufferInfo=(VkDescriptorBufferInfo[1]){
+                {
+                    .buffer=image_view_data_refs[image_index].buffer,
+                    .offset=0,
+                    .range=sizeof(struct ImageViewData),
+                }
+            },
+            .pTexelBufferView=NULL
+        };
+        vkUpdateDescriptorSets(app->device, 1, &write_descriptor_set, 0, NULL);
+    }
     int32_t left_button_down_x=0;
     int32_t left_button_down_y=0;
 
     struct timespec last_frame_time;
     clock_gettime(CLOCK_MONOTONIC, &last_frame_time);
     
+    uint32_t current_image_index=0;
     int frame=0;
     bool window_should_close=false;
     while(1){
@@ -1450,6 +1497,38 @@ void App_run(Application* app){
 
         while(App_get_input_event(app,&event)){
             switch(event.generic.input_event_type){
+                case INPUT_EVENT_TYPE_KEY_PRESS:
+                    switch(event.keypress.key){
+                        case INPUT_KEY_ARROW_RIGHT:
+                            current_image_index++;
+                            if(current_image_index==num_images)
+                                current_image_index=0;
+                            break;
+
+                        case INPUT_KEY_ARROW_LEFT:
+                            if(current_image_index==0)
+                                current_image_index=num_images-1;
+                            else
+                                current_image_index--;
+
+                            break;
+
+                        case INPUT_KEY_LETTER_R:
+                            for(uint32_t i=0;i<num_images;i++){
+                                image_view_data[i].offset_x=0;
+                                image_view_data[i].offset_y=0;
+
+                                image_view_data[i].scale=1.0;
+
+                                GpuCpuDataReference_update(&image_view_data_refs[i]);
+                            }
+
+                            break;
+                        default:
+                            break;
+                    }
+                    App_set_window_title(app, app->platform_window, app->cli_args[current_image_index+1]);
+                    break;
                 case INPUT_EVENT_TYPE_BUTTON_PRESS:
                     if(event.buttonpress.button==INPUT_BUTTON_LEFT){
                         left_button_down_x=event.buttonpress.pointer_x;
@@ -1458,13 +1537,13 @@ void App_run(Application* app){
                     break;
                 case INPUT_EVENT_TYPE_POINTER_MOVE:
                     if(event.pointermove.button_pressed==INPUT_BUTTON_LEFT){
-                        image_view_data.offset_x-=((float)(left_button_down_x-event.pointermove.pointer_x))/window_width*2/image_view_data.scale;
-                        image_view_data.offset_y+=((float)(left_button_down_y-event.pointermove.pointer_y))/window_height*2/image_view_data.scale;
+                        image_view_data[current_image_index].offset_x-=((float)(left_button_down_x-event.pointermove.pointer_x))/window_width*2/image_view_data[current_image_index].scale;
+                        image_view_data[current_image_index].offset_y+=((float)(left_button_down_y-event.pointermove.pointer_y))/window_height*2/image_view_data[current_image_index].scale;
 
                         left_button_down_x=event.pointermove.pointer_x;
                         left_button_down_y=event.pointermove.pointer_y;
 
-                        GpuCpuDataReference_update(&image_view_data_ref);
+                        GpuCpuDataReference_update(&image_view_data_refs[current_image_index]);
                     }
                     break;
                 case INPUT_EVENT_TYPE_WINDOW_RESIZED:{
@@ -1478,9 +1557,11 @@ void App_run(Application* app){
                         const uint16_t window_height=PlatformWindow_get_render_area_height(app->platform_window);
                         const uint16_t window_width=PlatformWindow_get_render_area_width(app->platform_window);
 
-                        image_view_data.window_aspect_ratio=(float)window_width/(float)window_height;
+                        for(uint32_t i=0;i<num_images;i++){
+                            image_view_data[i].window_aspect_ratio=(float)window_width/(float)window_height;
 
-                        GpuCpuDataReference_update(&image_view_data_ref);
+                            GpuCpuDataReference_update(&image_view_data_refs[i]);
+                        }
                     }
                     break;
                 case INPUT_EVENT_TYPE_WINDOW_CLOSE:
@@ -1489,12 +1570,12 @@ void App_run(Application* app){
                 case INPUT_EVENT_TYPE_SCROLL:{
                         static const float scale_factor=1.05f;
                         if (event.scroll.scroll_y>0.0f) {
-                            image_view_data.scale*=scale_factor;
+                            image_view_data[current_image_index].scale*=scale_factor;
                         }else if (event.scroll.scroll_y<0.0f) {
-                            image_view_data.scale/=scale_factor;
+                            image_view_data[current_image_index].scale/=scale_factor;
                         }
 
-                        GpuCpuDataReference_update(&image_view_data_ref);
+                        GpuCpuDataReference_update(&image_view_data_refs[current_image_index]);
                     }
 
                     break;
@@ -1506,8 +1587,6 @@ void App_run(Application* app){
         if (window_has_been_resized) {
             continue;
         }
-
-        app->staging_buffer_size_remaining=app->staging_buffer_size;
 
         uint32_t next_swapchain_image_index;
         res=vkAcquireNextImageKHR(app->device, app->swapchain, UINT64_MAX, image_available_semaphore, VK_NULL_HANDLE, &next_swapchain_image_index);
@@ -1532,8 +1611,10 @@ void App_run(Application* app){
         if(frame==0){
             quadmesh=App_upload_mesh(app, command_buffer, 4, mesh);
 
-            App_upload_texture(app, sometexture, image_data, command_buffer);
-            free(image_data->data);
+            for(uint32_t image_index=0;image_index<num_images;image_index++){
+                App_upload_texture(app, image_textures[image_index], &image_data_jpeg[image_index], command_buffer);
+                ImageData_destroy(&image_data_jpeg[image_index]);
+            }
         }
 
         vkCmdPipelineBarrier(
@@ -1597,7 +1678,12 @@ void App_run(Application* app){
 
         vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, app->shader->pipeline);
         vkCmdBindVertexBuffers(command_buffer, 0, 1, (VkBuffer[1]){quadmesh->buffer}, (VkDeviceSize[1]){0});
-        vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, app->shader->pipeline_layout, 0, 1, &app->shader->descriptor_set, 0, NULL);
+        vkCmdBindDescriptorSets(command_buffer, 
+            VK_PIPELINE_BIND_POINT_GRAPHICS, 
+            app->shader->pipeline_layout, 
+            0, 1, &image_textures[current_image_index]->descriptor_set, 
+            0, NULL
+        );
         vkCmdDraw(command_buffer, 4, 1, 0, 0);
 
         vkCmdEndRenderPass(command_buffer);
@@ -1688,13 +1774,14 @@ void App_run(Application* app){
         last_frame_time=current_frame_time;
 
         frame+=1;
-        discard frame;
     }
 
-    vkDestroyBuffer(app->device,image_view_data_ref.buffer,app->vk_allocator);
-    vkFreeMemory(app->device,image_view_data_ref.memory,app->vk_allocator);
+    for(uint32_t i=0;i<num_images;i++){
+        vkDestroyBuffer(app->device,image_view_data_refs[i].buffer,app->vk_allocator);
+        vkFreeMemory(app->device,image_view_data_refs[i].memory,app->vk_allocator);
 
-    App_destroy_texture(app,sometexture);
+        App_destroy_texture(app,image_textures[i]);
+    }
 
     App_destroy_mesh(app,quadmesh);
 

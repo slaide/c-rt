@@ -124,7 +124,7 @@ void PlatformWindow_set_render_area_width(PlatformWindow* platform_window,uint16
     @property(nonatomic) CVDisplayLinkRef display_link;
     @property (nonatomic, strong) NSMutableArray *eventList;
 
-    @property(assign, nonatomic) int cli_argc;
+    @property(assign, nonatomic) uint32_t cli_argc;
     @property(assign, nonatomic) char** cli_argv;
 
 @end
@@ -270,7 +270,11 @@ void App_destroy_window(Application* app, PlatformWindow* window){
 }
 void App_set_window_title(Application* app, PlatformWindow* window, const char* title){
     discard app;
-    [window->window setTitle:[NSString stringWithUTF8String:title]];
+
+    // window interaction needs to happen on main thread
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [window->window setTitle:[NSString stringWithUTF8String:title]];
+    });
 }
 
 InputButton NSEventButton_to_InputButton(NSInteger ns_button){
@@ -295,11 +299,22 @@ InputButton NSEventButton_to_InputButton(NSInteger ns_button){
 /// these values are extracted using testing on a MacOS device.
 InputKeyCode NSKeyCode_to_InputKeyCode(unsigned short nskeycode){
     switch (nskeycode) {
+        case 12: return INPUT_KEY_LETTER_Q;
+        case 13: return INPUT_KEY_LETTER_W;
+        case 14: return INPUT_KEY_LETTER_E;
+        case 15: return INPUT_KEY_LETTER_R;
+        case 17: return INPUT_KEY_LETTER_T;
+        case 16: return INPUT_KEY_LETTER_Y;
+
         case 123: return INPUT_KEY_ARROW_LEFT;
         case 124: return INPUT_KEY_ARROW_RIGHT;
         case 125: return INPUT_KEY_ARROW_DOWN;
         case 126: return INPUT_KEY_ARROW_UP;
         default:
+            #ifdef DEBUG
+                printf("unknown key %d\n",nskeycode);
+            #endif
+
             return INPUT_KEY_UNKNOWN;
     }
 }
@@ -405,7 +420,7 @@ int main(int argc, char *argv[]){
     MyAppDelegate *myDelegate=[[MyAppDelegate alloc] init];
     [app setDelegate:myDelegate];
 
-    myDelegate.cli_argc=argc;
+    myDelegate.cli_argc=(uint32_t)argc;
     myDelegate.cli_argv=argv;
 
     [app run];

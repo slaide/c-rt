@@ -334,7 +334,7 @@ int main(int argc, char**argv){
     PlatformHandle* platform=Platform_new();
     Application *app=App_new(platform);
 
-    app->cli_num_args=argc;
+    app->cli_num_args=(uint32_t)argc;
     app->cli_args=argv;
 
     if (app->cli_num_args>1) {

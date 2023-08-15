@@ -26,6 +26,47 @@ typedef enum InputKeyCode{
     INPUT_KEY_ARROW_UP=3,
     INPUT_KEY_ARROW_DOWN=4,
 
+    INPUT_KEY_LETTER_A,
+    INPUT_KEY_LETTER_B,
+    INPUT_KEY_LETTER_C,
+    INPUT_KEY_LETTER_D,
+    INPUT_KEY_LETTER_E,
+    INPUT_KEY_LETTER_F,
+    INPUT_KEY_LETTER_G,
+    INPUT_KEY_LETTER_H,
+    INPUT_KEY_LETTER_I,
+    INPUT_KEY_LETTER_J,
+    INPUT_KEY_LETTER_K,
+    INPUT_KEY_LETTER_L,
+    INPUT_KEY_LETTER_M,
+    INPUT_KEY_LETTER_N,
+    INPUT_KEY_LETTER_O,
+    INPUT_KEY_LETTER_P,
+    INPUT_KEY_LETTER_Q,
+    INPUT_KEY_LETTER_R,
+    INPUT_KEY_LETTER_S,
+    INPUT_KEY_LETTER_T,
+    INPUT_KEY_LETTER_U,
+    INPUT_KEY_LETTER_V,
+    INPUT_KEY_LETTER_W,
+    INPUT_KEY_LETTER_X,
+    INPUT_KEY_LETTER_Y,
+    INPUT_KEY_LETTER_Z,
+
+    INPUT_KEY_NUMROW_0,
+    INPUT_KEY_NUMROW_1,
+    INPUT_KEY_NUMROW_2,
+    INPUT_KEY_NUMROW_3,
+    INPUT_KEY_NUMROW_4,
+    INPUT_KEY_NUMROW_5,
+    INPUT_KEY_NUMROW_6,
+    INPUT_KEY_NUMROW_7,
+    INPUT_KEY_NUMROW_8,
+    INPUT_KEY_NUMROW_9,
+
+    INPUT_KEY_BACKSPACE,
+    INPUT_KEY_ENTER,
+
     INPUT_KEY_UNKNOWN=0,
 }InputKeyCode;
 
@@ -196,7 +237,7 @@ typedef struct Shader{
 
     VkDescriptorSetLayout set_layout;
     VkDescriptorPool descriptor_pool;
-    VkDescriptorSet descriptor_set;
+
     VkSampler image_sampler;
 }Shader;
 
@@ -204,7 +245,7 @@ typedef struct Shader{
  * @brief main application handle
  */
 typedef struct Application{
-    int cli_num_args;
+    uint32_t cli_num_args;
     char** cli_args;
     
     PlatformHandle* platform_handle;
@@ -230,7 +271,7 @@ typedef struct Application{
     VkQueue present_queue;
 
     VkDeviceSize staging_buffer_size;
-    VkDeviceSize staging_buffer_size_remaining;
+    VkDeviceSize staging_buffer_size_occupied;
     VkBuffer staging_buffer;
     VkDeviceMemory staging_buffer_memory;
 
@@ -266,6 +307,9 @@ typedef struct Texture Texture;
 typedef enum PixelFormat{
     PIXEL_FORMAT_Ru8Gu8Bu8Au8
 }PixelFormat;
+struct ImageFileMetadata{
+    char* file_comment;
+};
 typedef struct ImageData{
     uint8_t* data;
 
@@ -274,7 +318,14 @@ typedef struct ImageData{
 
     PixelFormat pixel_format;
     bool interleaved;
+
+    struct ImageFileMetadata image_file_metadata;
 }ImageData;
+
+/// initialise all fields to their zero-equivalent
+void ImageData_initEmpty(struct ImageData* const image_data);
+void ImageData_destroy(struct ImageData* const image_data);
+
 /**
  * @brief create a new texture on the gpu for use by a shader
  * 

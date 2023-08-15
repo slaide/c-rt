@@ -511,7 +511,13 @@ static inline void IDCTMaskSet_generate(
 }
 
 typedef struct JpegParser{
-    double start_time;
+    #ifdef DEBUG
+        double start_time;
+        double parse_end_time;
+        double process_end_time;
+        double convert_end_time;
+        double crop_end_time;
+    #endif
 
     ImageData* image_data;
 
@@ -577,7 +583,13 @@ void JpegParser_init_empty(JpegParser* restrict parser){
 
     IDCTMaskSet_generate(&parser->idct_mask_set);
 
-    parser->start_time=current_time();
+    #ifdef DEBUG
+        parser->start_time=current_time();
+        parser->parse_end_time=0.0;
+        parser->process_end_time=0.0;
+        parser->convert_end_time=0.0;
+        parser->crop_end_time=0.0;
+    #endif
 
     parser->component_label=0;
     parser->color_space=0;
@@ -1009,9 +1021,7 @@ void JpegParser_parse_file(
 
                     memcpy(comment_str,&parser->file_contents[parser->current_byte_position],comment_length);
 
-                    println("found jpeg file comment: \"%s\"",comment_str);
-
-                    free(comment_str);
+                    image_data->image_file_metadata.file_comment=comment_str;
 
                     parser->current_byte_position=segment_end_position;
                 }
@@ -1265,9 +1275,6 @@ void JpegParser_parse_file(
 
                     parser->current_byte_position=segment_end_position;
                 }
-                #ifdef DEBUG
-                    println("SOF done at %f",current_time()-parser->start_time);
-                #endif
 
                 break;
 
@@ -1351,10 +1358,6 @@ void JpegParser_parse_file(
 
                         scan_components[c].num_horz_blocks=scan_components[c].horz_samples/8;
                     }
-
-                    #ifdef DEBUG
-                        println("scan info: %d succ low %d high %d start %d end %d",num_scan_components,successive_approximation_bit_low,successive_approximation_bit_high,spectral_selection_start,spectral_selection_end);
-                    #endif
 
                     if(parallel && (successive_approximation_bit_low==0)){
                         for (uint32_t c=0; c<num_scan_components; c++) {
@@ -1442,7 +1445,7 @@ void JpegParser_parse_file(
     }
 
     #ifdef DEBUG
-        println("parsing done at %f",current_time()-parser->start_time);
+        parser->parse_end_time=current_time()-parser->start_time;
     #endif
 
     if(parallel)
@@ -1456,7 +1459,7 @@ void JpegParser_parse_file(
     }
 
     #ifdef DEBUG
-        println("processing done at %f",current_time()-parser->start_time);
+        parser->process_end_time=current_time()-parser->start_time;
     #endif
 }
 
@@ -1477,15 +1480,13 @@ ImageParseResult Image_read_jpeg(
     const char* const filepath,
     ImageData* const restrict image_data
 ){
-    #ifdef DEBUG
-        println("starting decode");
-    #endif
-
     FILE* const file=fopen(filepath, "rb");
     if (!file) {
         fprintf(stderr, "file '%s' not found\n",filepath);
         return IMAGE_PARSE_RESULT_FILE_NOT_FOUND;
     }
+
+    ImageData_initEmpty(image_data);
 
     JpegParser parser;
     JpegParser_init_empty(&parser);
@@ -1563,7 +1564,7 @@ ImageParseResult Image_read_jpeg(
     }
 
     #ifdef DEBUG
-        println("colorspace done at %f",current_time()-parser.start_time);
+        parser.convert_end_time=current_time()-parser.start_time;
     #endif
 
     // -- crop to real size
@@ -1588,7 +1589,7 @@ ImageParseResult Image_read_jpeg(
         image_data->data=real_data;
 
         #ifdef DEBUG
-            println("cropped to final size at %f",current_time()-parser.start_time);
+            parser.crop_end_time=current_time()-parser.start_time;
         #endif
     }
 
@@ -1608,6 +1609,16 @@ ImageParseResult Image_read_jpeg(
         free(parser.image_components[c].scan_memory[0]);
         free(parser.image_components[c].scan_memory);
     }
+
+    #ifdef DEBUG
+        println(
+            "decoded %s: parsed %.3fms processed %.3fms converted %.3fms",
+            filepath,
+            parser.parse_end_time*1000,
+            parser.process_end_time*1000,
+            parser.convert_end_time*1000
+        );
+    #endif
 
     return IMAGE_PARSE_RESULT_OK;
 }
