@@ -151,11 +151,26 @@ disasm-image:
 count-loc:
 	cloc . --include-lang=c,objective-c,glsl,make,c/c++\ header
 
+$(BIN_DIR)/libjpeg_test: src/libjpeg_test.c
+	clang -std=gnu2x -O3 -ffast-math -flto=full -o $(BIN_DIR)/libjpeg_test -I/opt/homebrew/include -L/opt/homebrew/lib -ljpeg src/libjpeg_test.c
+
+.PHONY: test
+test: all $(BIN_DIR)/libjpeg_test
+	cd $(BIN_DIR) ; \
+	for image_file in images/*; do \
+		./libjpeg_test "$$image_file" ; \
+	done
+
+	cd $(BIN_DIR) ; \
+	./main $$(ls images/*)
+
+main: main.c
+
 .PHONY: clean fresh doc
 doc:
 	doxygen Doxyfile
 clean:
-	$(RM) $(BUILD_DIR)/* $(BIN_DIR)/* $(PROFILE_CACHEGRIND_OUT_FILE) $(PROFILE_CACHEGRIND_ANNOTATION_FILE)
+	$(RM) $(BUILD_DIR)/* $(BIN_DIR)/main $(BIN_DIR)/*.spv $(PROFILE_CACHEGRIND_OUT_FILE) $(PROFILE_CACHEGRIND_ANNOTATION_FILE)
 fresh:
 	make clean
 	make main
