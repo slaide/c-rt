@@ -1417,11 +1417,11 @@ void App_run(Application* app){
     for(uint32_t image_index=0;image_index<num_images;image_index++){
         const char* file_path=app->cli_args[1+image_index];
 
-        ImageData* image_data=&image_data_jpeg[image_index];
+        ImageData* const image_data=&image_data_jpeg[image_index];
 
         for(int i=0;i<num_iterations;i++){
             if(i>0){
-                free(image_data->data);
+                ImageData_destroy(image_data);
             }
 
             ImageParseResult image_parse_res=Image_read_jpeg(file_path,image_data);
