@@ -79,51 +79,42 @@ void PlatformWindow_set_render_area_width(PlatformWindow* platform_window,uint16
         return self;
     }
 
-    - (void)sendEvent:(NSEvent *)event {
-        switch (event.type) {
-            case NSEventTypeLeftMouseDown:
-            case NSEventTypeLeftMouseUp:
-            case NSEventTypeLeftMouseDragged:
-
-            case NSEventTypeRightMouseDown:
-            case NSEventTypeRightMouseUp:
-            case NSEventTypeRightMouseDragged:
-
-            case NSEventTypeOtherMouseDown:
-            case NSEventTypeOtherMouseUp:
-            case NSEventTypeOtherMouseDragged:
-
-            case NSEventTypeMouseMoved:
-            case NSEventTypeMouseEntered:
-            case NSEventTypeMouseExited:
-
-            case NSEventTypeMagnify:
-            case NSEventTypeRotate:
-
-            case NSEventTypeKeyDown:
-            case NSEventTypeKeyUp:
-
-            case NSEventTypeScrollWheel:
-
-                [event retain];
-                [self.eventList addObject:event];
-                break;
-
-            case NSEventTypeFlagsChanged:
-            case NSEventTypeAppKitDefined:
-            case NSEventTypePressure:
-                break;
-
-            default:
-                #ifdef DEBUG
-                    NSLog(@"unhandled event %@", event);
-                #else
-                    ;
-                #endif
-        }
-
-        // Pass the event to the superclass for default handling
-        [super sendEvent:event];
+    // intercept certain events to notify the OS that we are actually using them
+    - (void)keyDown:(NSEvent *)event {
+        [event retain];
+        [self.eventList addObject:event];
+    }
+    - (void)keyUp:(NSEvent *)event {
+        [event retain];
+        [self.eventList addObject:event];
+    }
+    -(void)mouseDown:(NSEvent *)event {
+        [event retain];
+        [self.eventList addObject:event];
+    }
+    -(void)mouseUp:(NSEvent *)event {
+        [event retain];
+        [self.eventList addObject:event];
+    }
+    -(void)mouseDragged:(NSEvent *)event {
+        [event retain];
+        [self.eventList addObject:event];
+    }
+    -(void)mouseEntered:(NSEvent *)event {
+        [event retain];
+        [self.eventList addObject:event];
+    }
+    -(void)mouseExited:(NSEvent *)event {
+        [event retain];
+        [self.eventList addObject:event];
+    }
+    -(void)mouseMoved:(NSEvent *)event {
+        [event retain];
+        [self.eventList addObject:event];
+    }
+    -(void)scrollWheel:(NSEvent *)event {
+        [event retain];
+        [self.eventList addObject:event];
     }
 @end
 
@@ -342,6 +333,12 @@ int App_get_input_event(Application *app, InputEvent *event){
 
                 event->scroll.scroll_x=(float)ns_event.scrollingDeltaX;
                 event->scroll.scroll_y=(float)ns_event.scrollingDeltaY;
+                break;
+
+            case NSEventTypeKeyDown:
+            case NSEventTypeKeyUp:
+                event->keypress.input_event_type=INPUT_EVENT_TYPE_KEY_PRESS;
+                event->keypress.key=ns_event.keyCode;
                 break;
 
             default:
