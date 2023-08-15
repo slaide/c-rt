@@ -391,13 +391,7 @@ void App_destroy_window(Application *app, PlatformWindow *window){
     }
 }
 
-int main(int argc, char**argv){
-    #ifdef DEBUG
-        for(int i=0;i<argc;i++){
-            printf("cli arg [%d] : %s\n",i,argv[i]);
-        }
-    #endif
-
+int main(int argc, char** argv){
     PlatformHandle* platform=Platform_new();
     Application *app=App_new(platform);
 

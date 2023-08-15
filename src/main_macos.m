@@ -412,7 +412,7 @@ int App_get_input_event(Application *app, InputEvent *event){
     return INPUT_EVENT_NOT_PRESENT;
 }
 
-int main(int argc, char *argv[]){
+int main(int argc, char** argv){
     NSApplication *app=[NSApplication sharedApplication];
     [app setActivationPolicy:NSApplicationActivationPolicyRegular];
     [app activateIgnoringOtherApps:YES];
