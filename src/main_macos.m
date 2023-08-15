@@ -290,6 +290,20 @@ InputButton NSEventButton_to_InputButton(NSInteger ns_button){
     }
 }
 
+/// the 'nskeycode's are not enumerated anywhere.
+/// nskeycode is not even a real class/enum, it's just whatever value NSEvent.keyCode holds.
+/// these values are extracted using testing on a MacOS device.
+InputKeyCode NSKeyCode_to_InputKeyCode(unsigned short nskeycode){
+    switch (nskeycode) {
+        case 123: return INPUT_KEY_ARROW_LEFT;
+        case 124: return INPUT_KEY_ARROW_RIGHT;
+        case 125: return INPUT_KEY_ARROW_DOWN;
+        case 126: return INPUT_KEY_ARROW_UP;
+        default:
+            return INPUT_KEY_UNKNOWN;
+    }
+}
+
 int App_get_input_event(Application *app, InputEvent *event){
     if (app->platform_window->window.eventList.count>0) {
         NSEvent* ns_event=[app->platform_window->window.eventList firstObject];
@@ -336,9 +350,12 @@ int App_get_input_event(Application *app, InputEvent *event){
                 break;
 
             case NSEventTypeKeyDown:
-            case NSEventTypeKeyUp:
                 event->keypress.input_event_type=INPUT_EVENT_TYPE_KEY_PRESS;
-                event->keypress.key=ns_event.keyCode;
+                event->keypress.key=NSKeyCode_to_InputKeyCode(ns_event.keyCode);
+                break;
+            case NSEventTypeKeyUp:
+                event->keypress.input_event_type=INPUT_EVENT_TYPE_KEY_RELEASE;
+                event->keypress.key=NSKeyCode_to_InputKeyCode(ns_event.keyCode);
                 break;
 
             default:

@@ -20,6 +20,15 @@
 #define ROUND_UP(VALUE,MULTIPLE_OF) (((VALUE) + ((MULTIPLE_OF)-1)) / (MULTIPLE_OF)) * (MULTIPLE_OF)
 #define MASK(LENGTH) ((1<<(LENGTH))-1)
 
+typedef enum InputKeyCode{
+    INPUT_KEY_ARROW_RIGHT=1,
+    INPUT_KEY_ARROW_LEFT=2,
+    INPUT_KEY_ARROW_UP=3,
+    INPUT_KEY_ARROW_DOWN=4,
+
+    INPUT_KEY_UNKNOWN=0,
+}InputKeyCode;
+
 typedef enum InputEventType{
     INPUT_EVENT_TYPE_KEY_PRESS,
     INPUT_EVENT_TYPE_KEY_RELEASE,
@@ -50,11 +59,11 @@ typedef enum InputButton{
 
 typedef struct InputEventKeyPress{
     int input_event_type;
-    int key;
+    InputKeyCode key;
 }InputEventKeyPress;
 typedef struct InputEventKeyRelease{
     int input_event_type;
-    int key;
+    InputKeyCode key;
 }InputEventKeyRelease;
 typedef struct InputEventButtonPress{
     int input_event_type;
