@@ -102,6 +102,29 @@ VkSurfaceKHR App_create_window_vk_surface(Application* app,PlatformWindow* platf
     return surface;
 }
 
+InputKeyCode XCBKeycode_to_InputKeyCode(xcb_keycode_t keycode){
+    switch(keycode){
+        case 24: return INPUT_KEY_LETTER_Q;
+        case 25: return INPUT_KEY_LETTER_W;
+        case 26: return INPUT_KEY_LETTER_E;
+        case 27: return INPUT_KEY_LETTER_R;
+        case 28: return INPUT_KEY_LETTER_T;
+        case 29: return INPUT_KEY_LETTER_Y;
+
+        case 113: return INPUT_KEY_ARROW_LEFT;
+        case 114: return INPUT_KEY_ARROW_RIGHT;
+        case 111: return INPUT_KEY_ARROW_UP;
+        case 116: return INPUT_KEY_ARROW_DOWN;
+
+        default:
+            #ifdef DEBUG
+                printf("pressed unknown key %d\n",keycode);
+            #endif
+
+            return INPUT_KEY_UNKNOWN;
+    }
+}
+
 int App_get_input_event(Application* app,InputEvent* input_event){
     xcb_generic_event_t* xcb_event=xcb_poll_for_event(app->platform_handle->connection);
     if(xcb_event == NULL){
@@ -143,13 +166,6 @@ int App_get_input_event(Application* app,InputEvent* input_event){
             }
             break;
 
-        case XCB_MOTION_NOTIFY:{
-                xcb_motion_notify_event_t* motion_event=(xcb_motion_notify_event_t*)xcb_event;
-                discard motion_event;
-                // TODO
-            }
-            break;
-
         enum MouseButton{
             MOUSE_BUTTON_LEFT=XCB_BUTTON_INDEX_1,
             MOUSE_BUTTON_MIDDLE=XCB_BUTTON_INDEX_2,
@@ -158,14 +174,44 @@ int App_get_input_event(Application* app,InputEvent* input_event){
             MOUSE_BUTTON_SCROLL_DOWN=XCB_BUTTON_INDEX_5,
         };
 
+        case XCB_MOTION_NOTIFY:{
+                xcb_motion_notify_event_t* motion_event=(xcb_motion_notify_event_t*)xcb_event;
+                input_event->pointermove.input_event_type=INPUT_EVENT_TYPE_POINTER_MOVE;
+                input_event->pointermove.pointer_x=motion_event->event_x;
+                input_event->pointermove.pointer_y=app->platform_window->render_area_height-motion_event->event_y;
+
+                if(motion_event->state&256){
+                    input_event->pointermove.button_pressed=INPUT_BUTTON_LEFT;
+                }else if(motion_event->state&512){
+                    input_event->pointermove.button_pressed=INPUT_BUTTON_MIDDLE;
+                }else if(motion_event->state&1024){
+                    input_event->pointermove.button_pressed=INPUT_BUTTON_RIGHT;
+                }else{
+                    input_event->pointermove.button_pressed=INPUT_BUTTON_NONE;
+                }
+            }
+            break;
+
         case XCB_BUTTON_PRESS:{
                 xcb_button_press_event_t* button_event=(xcb_button_press_event_t*)xcb_event;
                 switch(button_event->detail){
                     case MOUSE_BUTTON_LEFT:
+                        input_event->buttonpress.input_event_type=INPUT_EVENT_TYPE_BUTTON_PRESS;
+                        input_event->buttonpress.button=INPUT_BUTTON_LEFT;
+                        input_event->buttonpress.pointer_x=button_event->event_x;
+                        input_event->buttonpress.pointer_y=app->platform_window->render_area_height-button_event->event_y;
                         break;
                     case MOUSE_BUTTON_MIDDLE:
+                        input_event->buttonpress.input_event_type=INPUT_EVENT_TYPE_BUTTON_PRESS;
+                        input_event->buttonpress.button=INPUT_BUTTON_MIDDLE;
+                        input_event->buttonpress.pointer_x=button_event->event_x;
+                        input_event->buttonpress.pointer_y=app->platform_window->render_area_height-button_event->event_y;
                         break;
                     case MOUSE_BUTTON_RIGHT:
+                        input_event->buttonpress.input_event_type=INPUT_EVENT_TYPE_BUTTON_PRESS;
+                        input_event->buttonpress.button=INPUT_BUTTON_RIGHT;
+                        input_event->buttonpress.pointer_x=button_event->event_x;
+                        input_event->buttonpress.pointer_y=app->platform_window->render_area_height-button_event->event_y;
                         break;
                     case MOUSE_BUTTON_SCROLL_UP:{
                             input_event->scroll.input_event_type=INPUT_EVENT_TYPE_SCROLL;
@@ -181,14 +227,35 @@ int App_get_input_event(Application* app,InputEvent* input_event){
                         break;
                 }
             }
-        case XCB_BUTTON_RELEASE:
-        case XCB_KEY_RELEASE:
-            // TODO
+            break;
+        case XCB_BUTTON_RELEASE:{
+                xcb_button_release_event_t* button_event=(xcb_button_release_event_t*)xcb_event;
+                switch(button_event->detail){
+                    case MOUSE_BUTTON_LEFT:
+                        input_event->buttonrelease.input_event_type=INPUT_EVENT_TYPE_BUTTON_RELEASE;
+                        input_event->buttonrelease.button=INPUT_BUTTON_LEFT;
+                        break;
+                    case MOUSE_BUTTON_MIDDLE:
+                        input_event->buttonrelease.input_event_type=INPUT_EVENT_TYPE_BUTTON_RELEASE;
+                        input_event->buttonrelease.button=INPUT_BUTTON_MIDDLE;
+                        break;
+                    case MOUSE_BUTTON_RIGHT:
+                        input_event->buttonrelease.input_event_type=INPUT_EVENT_TYPE_BUTTON_RELEASE;
+                        input_event->buttonrelease.button=INPUT_BUTTON_RIGHT;
+                        break;
+                }
+            }
+            break;
+        case XCB_KEY_RELEASE:{
+                xcb_key_release_event_t* key_event=(xcb_key_release_event_t*)xcb_event;
+                input_event->keyrelease.input_event_type=INPUT_EVENT_TYPE_KEY_RELEASE;
+                input_event->keyrelease.key=XCBKeycode_to_InputKeyCode(key_event->detail);
+            }
             break;
         case XCB_KEY_PRESS:{
                 xcb_key_press_event_t* key_event=(xcb_key_press_event_t*)xcb_event;
-                discard key_event;
-                // TODO
+                input_event->keypress.input_event_type=INPUT_EVENT_TYPE_KEY_PRESS;
+                input_event->keypress.key=XCBKeycode_to_InputKeyCode(key_event->detail);
             }
             break;
 
