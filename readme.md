@@ -30,6 +30,12 @@ The application supports scroll-to-zoom on the image, and drag-to-move. Pressing
 
 Additionally, the application supports multiple arguments (at least 1 is required), all of which must be valid jpeg file paths. The application only displays one image at a time, and you can switch between the images using the right/left arrow keys. Moving and scaling each image is done separately, they don't share these properties. The Window title changes to display the name of the currently visible image. The 'R' key resets the view of all images, not just the currently visible one. [The CMake version only supports a single argument, and does not support the "press 'R' to reset view" feature.]
 
+### Testing
+
+One of my goals for this project was to write a jpeg parser than can compete with libjpeg's decompression speed. For this purpose, there is a makefile target called `test`. That target compiles a simple C application that uses libjpeg (it is therefore a requirement to have libjpeg installed), and this application, and runs both with all images in the `bin/images` directory (this path is hardcoded in the makefile). Both applications measure the time to decompress each image 5 times, and print it to the terminal. The build command accepts all build options mentioned above.
+
+We have used this script with the [test images](https://drive.google.com/drive/folders/1eGyp0XP7DvyJD8yVl6GLlflGLXQac2kW?usp=sharing) linked in the section below. In combination with the multi-argument functionality this can be used to quickly evaluate the time taken to decompress these images and also investigate the decoded images visually.
+
 ## Context
 This project is made to fulfill the requirements for the postgraduate course 'Techniques and Technologies for Scientific Software Engineering'.
 
