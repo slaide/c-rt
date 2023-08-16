@@ -32,7 +32,7 @@ Additionally, the application supports multiple arguments (at least 1 is require
 
 ### Testing
 
-One of my goals for this project was to write a jpeg parser than can compete with libjpeg's decompression speed. For this purpose, there is a makefile target called `test`. That target compiles a simple C application that uses libjpeg (it is therefore a requirement to have libjpeg installed), and this application, and runs both with all images in the `bin/images` directory (this path is hardcoded in the makefile). Both applications measure the time to decompress each image 5 times, and print it to the terminal. The build command accepts all build options mentioned above.
+One of my goals for this project was to write a jpeg parser than can compete with [libjpeg](https://libjpeg.sourceforge.net/)'s decompression speed. For this purpose, there is a makefile target called `test`. That target compiles a simple C application that uses libjpeg (which needs to be installed, e.g. on [MacOS](https://formulae.brew.sh/formula/jpeg) or [Linux](https://archlinux.org/packages/extra/x86_64/libjpeg-turbo/)), and this application, and runs both with all images in the `bin/images` directory (this path is hardcoded in the makefile). Both applications measure the time to decompress each image 5 times, and print it to the terminal. The build command accepts all build options mentioned above.
 
 We have used this script with the [test images](https://drive.google.com/drive/folders/1eGyp0XP7DvyJD8yVl6GLlflGLXQac2kW?usp=sharing) linked in the section below. In combination with the multi-argument functionality this can be used to quickly evaluate the time taken to decompress these images and also investigate the decoded images visually.
 
