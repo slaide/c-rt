@@ -4,7 +4,7 @@
 
 ### Compilation
 
-This project mainly uses makefile for building. There is a [branch](https://github.com/slaide/c-rt/tree/cmake-build) that uses CMake instead. It lags behind the main branch a bit, but has build feature parity.
+This project mainly uses makefile for building. There is a [branch][cmake-branch] that uses CMake instead. It lags behind the main branch a bit, but has build feature parity.
 
 This project works on MacOS/ARM64 and Linux/x64 (it requires a GPU with vulkan support on Linux). The build script detects the host OS, so the quickest way to compile is to just run `make` in the project root, which puts the executable and other required files into the `bin` subdirectory. This project has the following build-time dependencies:
 - A version of the clang compiler that supports the gnu2x standard.
@@ -43,12 +43,21 @@ We were allowed to pick any project by ourselves, requiring mainly that it chall
 
 Additional formal requirements are (non-exhaustive):
 1. There should be at least one secondary branch in the repo, providing some feature or addition that's not covered in the report.
-   - present in [cmake-build](https://github.com/slaide/c-rt/tree/cmake-build), which offers an alternative build system: CMake instead of makefile.
+   - Present in [cmake-build][cmake-branch], which offers an alternative build system: CMake instead of makefile.
 2. There should be a clear, defined open-source license for the repository that is compatible with any dependencies and pre-existing code or other assets that are used.
-    - TODO
+    - Licensed under GPL3. All code in this repository is my original work. Dependencies and test data are available externally.
 3. There should be at least one github issue that's been resolved with an associated code change (commit or pull request).
-    - see [issue #1](https://github.com/slaide/c-rt/issues/1).
+    - See [issue #1][#4].
+    - Also [#4][#4] and [#5][#5].
 4. There should be some use of distributed or parallel computing within the project.
-    - this project makes use SIMD instructions and multi-threading.
+    - This project makes use SIMD instructions and multi-threading.
 5. There should be at least five tests using some testing framework for correctness, robustness to spurious input, and performance.
-    - Test images available on [Google Drive](https://drive.google.com/drive/folders/1eGyp0XP7DvyJD8yVl6GLlflGLXQac2kW?usp=sharing) because the data may not be compatible with license of this repository.
+    - Test images available on [Google Drive](https://drive.google.com/drive/folders/1eGyp0XP7DvyJD8yVl6GLlflGLXQac2kW?usp=sharing) because they are not my original work and may not be compatible with license of this repository.
+
+## License
+This project is licensed under the GNU GPLv3 License - see the [LICENSE](LICENSE.txt) file for details.
+
+[cmake-branch]: https://github.com/slaide/c-rt/tree/cmake-build
+[#1]: https://github.com/slaide/c-rt/issues/1
+[#4]: https://github.com/slaide/c-rt/issues/4
+[#5]: https://github.com/slaide/c-rt/issues/5
