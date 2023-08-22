@@ -572,6 +572,7 @@ void JpegParser_init_empty(JpegParser* restrict parser){
     parser->color_space=0;
 }
 
+[[maybe_unused]]
 static uint32_t tzcnt_32(const uint32_t v){
     #ifdef __clang__
         return (uint32_t)_mm_tzcnt_32(v);
