@@ -41,7 +41,10 @@ REQUIRED_DIRS :=
 
 BUILD_BASE_DIR ?= build
 BUILD_DIR ?= $(BUILD_BASE_DIR)/$(MODE)
-REQUIRED_DIRS += $(BUILD_BASE_DIR) $(BUILD_DIR) $(BUILD_DIR)/image
+BUILD_FLAG_DIR ?= $(BUILD_DIR)/build_flags
+REQUIRED_DIRS += $(BUILD_BASE_DIR) $(BUILD_DIR) $(BUILD_DIR)/image $(BUILD_FLAG_DIR)
+
+BUILD_FLAGS :=
 
 BIN_DIR ?= bin
 REQUIRED_DIRS += $(BIN_DIR)
@@ -142,6 +145,25 @@ $(eval $(call compile_glsl, $(BIN_DIR)/fragshader.spv, shaders/fragshader.frag))
 
 # add files included by pre-processor in all .c files to their makefile build target dependencies
 -include $(BUILD_OBJS:.o=.d)
+
+define add_build_flag
+BUILD_FLAGS += $(BUILD_FLAG_DIR)/$(strip $(1))
+
+ifneq ($$(shell ls $(BUILD_FLAG_DIR)/$(strip $(1))* 2> /dev/null), $(BUILD_FLAG_DIR)/$(strip $(1)))
+$$(shell touch $(BUILD_FLAG_DIR)/$(strip $(1)))
+endif
+
+ifneq ($$(shell cat $(BUILD_FLAG_DIR)/$(strip $(1))),$($(strip $(1))))
+$$(shell echo $$($(strip $(1))) > $(BUILD_FLAG_DIR)/$(strip $(1)))
+endif
+endef
+
+$(eval $(call add_build_flag,HIGH_PRECISION))
+$(eval $(call add_build_flag,DECODE_PARALLEL))
+$(eval $(call add_build_flag,USEAVX))
+$(eval $(call add_build_flag,JEMALLOC))
+
+$(BUILD_OBJS): $(BUILD_FLAGS)
 
 # link 'main' for compile mode
 $(BUILD_DIR)/main: $(BUILD_OBJS)
