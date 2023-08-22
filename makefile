@@ -26,6 +26,8 @@ COMPILE_FLAGS := -Wall -Werror -Wpedantic -Wextra -Wno-sequence-point -Wconversi
 CINCLUDE := -Iinclude
 CDEF = 
 
+LIBJPEG_TEST_COMPILE_FLAGS := $(CSTD) -O3 -ffast-math -flto=full -ljpeg
+
 ifeq ($(JEMALLOC), YES)
 	CDEF += -DUSE_JEMALLOC
 	LINK_FLAGS += -ljemalloc
@@ -53,7 +55,7 @@ BUILD_OBJS :=
 SHADER_SPV_FILES :=
 
 $(REQUIRED_DIRS) |:
-	$(MKDIR_CMD) -p $@
+	$(MKDIR_CMD) $@
 
 define compile_objc
 BUILD_OBJS += $(1)
@@ -97,7 +99,7 @@ endif
 
 ifeq ($(PLATFORM), linux)
 	RM_CMD := $(RM) -r
-	MKDIR_CMD := mkdir
+	MKDIR_CMD := mkdir -p
 	CP_CMD := cp
 
 	LINK_FLAGS += -lxcb -lxcb-util -lm
@@ -111,7 +113,7 @@ ifeq ($(PLATFORM), linux)
 $(eval $(call compile_c, $(BUILD_DIR)/main.o, src/main/main_linux.c))
 else ifeq ($(PLATFORM), macos)
 	RM_CMD := $(RM) -r
-	MKDIR_CMD := mkdir
+	MKDIR_CMD := mkdir -p
 	CP_CMD := cp
 
 	LINK_FLAGS += -framework Appkit -framework Metal -framework MetalKit -framework QuartzCore
@@ -123,6 +125,8 @@ else ifeq ($(PLATFORM), macos)
 	# default homebrew paths
 	CINCLUDE += -I/opt/homebrew/include
 	LINK_FLAGS += -L/opt/homebrew/lib
+
+	LIBJPEG_TEST_COMPILE_FLAGS += -I/opt/homebrew/include -L/opt/homebrew/lib
 
 	CDEF += -DVK_USE_PLATFORM_METAL_EXT
 	CINCLUDE += -I/opt/vulkansdk/macOS/include
@@ -150,6 +154,7 @@ define add_build_flag
 BUILD_FLAGS += $(BUILD_FLAG_DIR)/$(strip $(1))
 
 ifneq ($$(shell ls $(BUILD_FLAG_DIR)/$(strip $(1))* 2> /dev/null), $(BUILD_FLAG_DIR)/$(strip $(1)))
+$(shell $(MKDIR_CMD) $(BUILD_FLAG_DIR))
 $$(shell touch $(BUILD_FLAG_DIR)/$(strip $(1)))
 endif
 
@@ -203,7 +208,7 @@ count-loc:
 	cloc . --include-lang=c,objective-c,glsl,make,c/c++\ header
 
 $(BIN_DIR)/libjpeg_test: src/libjpeg_test.c
-	clang -std=gnu2x -O3 -ffast-math -flto=full -o $(BIN_DIR)/libjpeg_test -I/opt/homebrew/include -L/opt/homebrew/lib -ljpeg src/libjpeg_test.c
+	$(CC) $(LIBJPEG_TEST_COMPILE_FLAGS) -o $(BIN_DIR)/libjpeg_test src/libjpeg_test.c
 
 .PHONY: test
 test: all $(BIN_DIR)/libjpeg_test
