@@ -11,11 +11,25 @@
 
 #include "app/error.h"
 
-/**
- * @brief utility macro
- * 
- */
+/// utility macro
 #define discard (void)
+
+#define println(...) {\
+    printf("%s : %d | ",__FILE__,__LINE__);\
+    printf(__VA_ARGS__);\
+    printf("\n");\
+}
+
+typedef void*(*pthread_callback)(void*);
+
+#define MAX_NSEC 999999999
+
+/**
+ * @brief get current time from CLOCK_MONOTONIC as single value (seconds as double)
+ * 
+ * @return double 
+ */
+double current_time();
 
 #define ROUND_UP(VALUE,MULTIPLE_OF) (((VALUE) + ((MULTIPLE_OF)-1)) / (MULTIPLE_OF)) * (MULTIPLE_OF)
 #define MASK(LENGTH) ((1<<(LENGTH))-1)
@@ -304,28 +318,7 @@ void App_destroy(Application* app);
 
 typedef struct Texture Texture;
 
-typedef enum PixelFormat{
-    PIXEL_FORMAT_Ru8Gu8Bu8Au8
-}PixelFormat;
-struct ImageFileMetadata{
-    char* file_comment;
-};
-typedef struct ImageData{
-    uint8_t* data;
-
-    uint32_t height;
-    uint32_t width;
-
-    PixelFormat pixel_format;
-    bool interleaved;
-
-    struct ImageFileMetadata image_file_metadata;
-}ImageData;
-
-/// initialise all fields to their zero-equivalent
-void ImageData_initEmpty(struct ImageData* const image_data);
-void ImageData_destroy(struct ImageData* const image_data);
-
+#include "app/image.h"
 /**
  * @brief create a new texture on the gpu for use by a shader
  * 
@@ -407,13 +400,6 @@ Mesh* App_upload_mesh(
  * @param mesh 
  */
 void App_destroy_mesh(Application* app,Mesh* mesh);
-
-typedef enum ImageParseResult{
-    IMAGE_PARSE_RESULT_OK,
-    IMAGE_PARSE_RESULT_FILE_NOT_FOUND,
-}ImageParseResult;
-
-ImageParseResult Image_read_jpeg(const char* filepath,ImageData* image_data);
 
 /**
  * @brief upload data to gpu

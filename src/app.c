@@ -8,6 +8,20 @@
 #include <string.h>
 #include <time.h>
 #include <inttypes.h>
+#include <unistd.h>
+
+double current_time(){
+    struct timespec current_time;
+    int time_get_result=clock_gettime(CLOCK_MONOTONIC, &current_time);
+    if (time_get_result != 0) {
+        fprintf(stderr, "failed to get start time because %d\n",time_get_result);
+        exit(-66);
+    }
+
+    double ret=(double)current_time.tv_sec;
+    ret+=((double)current_time.tv_nsec)/(double)(MAX_NSEC+1);
+    return ret;
+}
 
 void ImageData_initEmpty(struct ImageData* const image_data){
     image_data->data=NULL;
@@ -1334,6 +1348,29 @@ GpuCpuDataReference App_GpuCpuDataReference_initialise(
 }
 
 void App_run(Application* app){
+    // change working directory to executable location to be able to load runtime dependencies
+    {
+        uint64_t loc_len=strlen(app->cli_args[0]);
+        uint64_t slash_loc=UINT32_MAX;
+        for(uint64_t i=0;i<loc_len;i++){
+            if(app->cli_args[0][i]=='/'){
+                slash_loc=i;
+            }
+        }
+        static const uint64_t PATH_BUF_SIZE=1023;
+        if(loc_len<=PATH_BUF_SIZE){
+            if(loc_len>=PATH_BUF_SIZE){
+                fprintf(stderr,"path too long\n");
+                exit(FATAL_UNEXPECTED_ERROR);
+            }
+            char path_buf[PATH_BUF_SIZE+1];
+            memset(path_buf,0,PATH_BUF_SIZE+1);
+            memcpy(path_buf,app->cli_args[0],slash_loc);
+
+            chdir(path_buf);
+        }
+    }
+
     VkResult res;
 
     app->shader=App_create_shader(app,0,1);
@@ -1424,7 +1461,18 @@ void App_run(Application* app){
                 ImageData_destroy(image_data);
             }
 
-            ImageParseResult image_parse_res=Image_read_jpeg(file_path,image_data);
+            const uint64_t file_path_len=strlen(file_path);
+
+            static const char* const PNG_FILE_ENDING=".png";
+            static const uint64_t PNG_FILE_ENDING_LEN=strlen(PNG_FILE_ENDING);
+
+            ImageParseResult image_parse_res;
+            if(strncmp(PNG_FILE_ENDING,&file_path[file_path_len-PNG_FILE_ENDING_LEN],PNG_FILE_ENDING_LEN)==0){
+                image_parse_res=Image_read_png(file_path,image_data);
+            }else{
+                image_parse_res=Image_read_jpeg(file_path,image_data);
+            }
+
             if (image_parse_res!=IMAGE_PARSE_RESULT_OK) {
                 fprintf(stderr, "failed to parse jpeg\n");
                 exit(-31);
