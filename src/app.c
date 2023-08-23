@@ -1437,12 +1437,12 @@ void App_run(Application* app){
     }
 
     #ifdef DEBUG
-        static const int num_iterations=5;
+        static const int num_iterations=IMAGE_BENCHMARK_NUM_REPEATS;
     #else
         static const int num_iterations=1;
     #endif
 
-    uint32_t num_images=app->cli_num_args-1;
+    const uint32_t num_images=app->cli_num_args-1;
 
     Mesh* quadmesh=NULL;
 

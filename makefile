@@ -3,6 +3,7 @@ USEAVX ?= NO
 HIGH_PRECISION ?= NO
 DECODE_PARALLEL ?= NO
 JEMALLOC ?= NO
+IMAGE_BENCHMARK_NUM_REPEATS ?= 5
 
 .PHONY: default
 default: all
@@ -24,7 +25,7 @@ CSTD := -std=gnu2x
 LINK_FLAGS := -lvulkan -pthread
 COMPILE_FLAGS := -Wall -Werror -Wpedantic -Wextra -Wno-sequence-point -Wconversion -MMD -MP
 CINCLUDE := -Iinclude
-CDEF = 
+CDEF = -DIMAGE_BENCHMARK_NUM_REPEATS=$(strip $(IMAGE_BENCHMARK_NUM_REPEATS))
 
 LIBJPEG_TEST_COMPILE_FLAGS := $(CSTD) -O3 -ffast-math -flto=full -ljpeg
 
@@ -167,6 +168,7 @@ $(eval $(call add_build_flag,HIGH_PRECISION))
 $(eval $(call add_build_flag,DECODE_PARALLEL))
 $(eval $(call add_build_flag,USEAVX))
 $(eval $(call add_build_flag,JEMALLOC))
+$(eval $(call add_build_flag,IMAGE_BENCHMARK_NUM_REPEATS))
 
 $(BUILD_OBJS): $(BUILD_FLAGS)
 
