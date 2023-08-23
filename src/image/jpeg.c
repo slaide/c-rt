@@ -241,20 +241,20 @@ typedef struct ImageComponent{
 static inline void decode_dc(
     MCU_EL* const restrict block_mem,
 
-    const HuffmanCodingTableRtL* const restrict dc_table,
+    const HuffmanCodingTable* const restrict dc_table,
     MCU_EL* const restrict diff_dc,
 
     BitStream* const restrict stream,
 
     const uint8_t successive_approximation_bit_low
 ){
-    uint8_t dc_magnitude=HuffmanCodingTableRtLRtL_lookup(dc_table, stream);
+    uint8_t dc_magnitude=HuffmanCodingTable_lookup(dc_table, stream);
 
-    const MCU_EL lookahead_dc_value_bits=(MCU_EL)BitStreamRtL_get_bits(stream, 12);
+    const MCU_EL lookahead_dc_value_bits=(MCU_EL)BitStream_get_bits(stream, 12);
 
     if (dc_magnitude>0) {
         const MCU_EL dc_value_bits=lookahead_dc_value_bits>>(12-dc_magnitude);
-        BitStreamRtL_advance_unsafe(stream, dc_magnitude);
+        BitStream_advance_unsafe(stream, dc_magnitude);
         
         MCU_EL dc_value=(MCU_EL)twos_complement((uint16_t)dc_magnitude, dc_value_bits);
 
@@ -278,7 +278,7 @@ static inline void decode_dc(
 static inline void decode_block_ac(
     MCU_EL* const restrict block_mem,
 
-    const HuffmanCodingTableRtL* const restrict ac_table,
+    const HuffmanCodingTable* const restrict ac_table,
 
     const uint8_t spectral_selection_start,
     const uint8_t spectral_selection_end,
@@ -293,7 +293,7 @@ static inline void decode_block_ac(
         register int spec_sel=spectral_selection_start;
         spec_sel<=spectral_selection_end;
     ){
-        const uint8_t ac_bits=HuffmanCodingTableRtLRtL_lookup(ac_table, stream);
+        const uint8_t ac_bits=HuffmanCodingTable_lookup(ac_table, stream);
 
         if (ac_bits==0) {
             break;
@@ -308,7 +308,7 @@ static inline void decode_block_ac(
                 continue;
             }else{
                 *eob_run=get_mask_u32(num_zeros);
-                *eob_run+=BitStreamRtL_get_bits_advance(stream, num_zeros);
+                *eob_run+=BitStream_get_bits_advance(stream, num_zeros);
 
                 break;
             }
@@ -319,7 +319,7 @@ static inline void decode_block_ac(
             break;
         }
 
-        const MCU_EL ac_value_bits=(MCU_EL)BitStreamRtL_get_bits_advance(stream,ac_magnitude);
+        const MCU_EL ac_value_bits=(MCU_EL)BitStream_get_bits_advance(stream,ac_magnitude);
 
         const MCU_EL ac_value=(MCU_EL)twos_complement((uint16_t)ac_magnitude,ac_value_bits);
 
@@ -347,7 +347,7 @@ static inline uint8_t refine_block(
 
             num_zeros -= 1;
         }else{
-            uint64_t next_bit=BitStreamRtL_get_bits_advance(bit_stream,1);
+            uint64_t next_bit=BitStream_get_bits_advance(bit_stream,1);
             if(next_bit==1 && (block_mem[index]&bit) == 0){
                 if(block_mem[index]>0){
                     block_mem[index] += bit;
@@ -376,7 +376,7 @@ static inline uint8_t refine_block(
 static inline void decode_block_with_sbh(
     MCU_EL* const restrict block_mem,
 
-    const HuffmanCodingTableRtL* const restrict ac_table,
+    const HuffmanCodingTable* const restrict ac_table,
 
     const uint8_t spectral_selection_start,
     const uint8_t spectral_selection_end,
@@ -389,7 +389,7 @@ static inline void decode_block_with_sbh(
 ){
     uint8_t next_pixel_index=spectral_selection_start;
     for(;next_pixel_index <= spectral_selection_end;){
-        const uint8_t ac_bits=HuffmanCodingTableRtLRtL_lookup(ac_table, bit_stream);
+        const uint8_t ac_bits=HuffmanCodingTable_lookup(ac_table, bit_stream);
 
         // 4 most significant bits are number of zero-value bytes inserted before actual value (may be zero)
         uint8_t num_zeros=ac_bits>>4;
@@ -404,7 +404,7 @@ static inline void decode_block_with_sbh(
                     break; // num_zeros is 15, value is zero => 16 zeros written already
                 default:
                     {
-                        uint32_t eob_run_bits=(uint32_t)BitStreamRtL_get_bits_advance(bit_stream,num_zeros);
+                        uint32_t eob_run_bits=(uint32_t)BitStream_get_bits_advance(bit_stream,num_zeros);
                         *eob_run=get_mask_u32(num_zeros) + eob_run_bits;
                     }
                     num_zeros=64;
@@ -414,7 +414,7 @@ static inline void decode_block_with_sbh(
                     num_zeros=64;
             }
         }else{
-            if(BitStreamRtL_get_bits_advance(bit_stream,1)==1){
+            if(BitStream_get_bits_advance(bit_stream,1)==1){
                 value = succ_approx_bit_shifted;
             }else{
                 value = -succ_approx_bit_shifted;
@@ -503,8 +503,8 @@ typedef struct JpegParser{
     uint32_t current_byte_position;
 
     QuantizationTable quant_tables[4];
-    HuffmanCodingTableRtL ac_coding_tables[4];
-    HuffmanCodingTableRtL dc_coding_tables[4];
+    HuffmanCodingTable ac_coding_tables[4];
+    HuffmanCodingTable dc_coding_tables[4];
 
     uint8_t max_component_vert_sample_factor;
     uint8_t max_component_horz_sample_factor;
@@ -748,8 +748,8 @@ struct ScanComponent{
 
     uint32_t num_horz_blocks;
 
-    HuffmanCodingTableRtL* ac_table;
-    HuffmanCodingTableRtL* dc_table;
+    HuffmanCodingTable* ac_table;
+    HuffmanCodingTable* dc_table;
 
     MCU_EL** scan_memory;
 };
@@ -767,8 +767,8 @@ static inline void process_mcu_baseline(
     const uint32_t vert_sample_factor=component->vert_sample_factor;
     const uint32_t horz_sample_factor=component->horz_sample_factor;
 
-    const HuffmanCodingTableRtL* const ac_table=component->ac_table;
-    const HuffmanCodingTableRtL* const dc_table=component->dc_table;
+    const HuffmanCodingTable* const ac_table=component->ac_table;
+    const HuffmanCodingTable* const dc_table=component->dc_table;
 
     for (uint32_t vert_sid=0; vert_sid<vert_sample_factor; vert_sid++) {
         for (uint32_t horz_sid=0; horz_sid<horz_sample_factor; horz_sid++) {
@@ -809,8 +809,8 @@ static inline void process_mcu_generic(
     const uint32_t vert_sample_factor=component->vert_sample_factor;
     const uint32_t horz_sample_factor=component->horz_sample_factor;
 
-    const HuffmanCodingTableRtL* const ac_table=component->ac_table;
-    const HuffmanCodingTableRtL* const dc_table=component->dc_table;
+    const HuffmanCodingTable* const ac_table=component->ac_table;
+    const HuffmanCodingTable* const dc_table=component->dc_table;
 
     for (uint32_t vert_sid=0; vert_sid<vert_sample_factor; vert_sid++) {
         for (uint32_t horz_sid=0; horz_sid<horz_sample_factor; horz_sid++) {
@@ -853,7 +853,7 @@ static inline void process_mcu_generic(
                 const uint8_t sse=spectral_selection_end;
                 register uint8_t spec_sel=scan_start;
                 for (; spec_sel<=sse;) {
-                    const uint8_t ac_bits=HuffmanCodingTableRtLRtL_lookup(ac_table, stream);
+                    const uint8_t ac_bits=HuffmanCodingTable_lookup(ac_table, stream);
 
                     if (ac_bits==0) {
                         break;
@@ -868,7 +868,7 @@ static inline void process_mcu_generic(
                             continue;
                         }else {
                             *eob_run=get_mask_u32(num_zeros);
-                            *eob_run+=BitStreamRtL_get_bits_advance(stream, num_zeros);
+                            *eob_run+=BitStream_get_bits_advance(stream, num_zeros);
 
                             break;
                         }
@@ -879,7 +879,7 @@ static inline void process_mcu_generic(
                         break;
                     }
 
-                    const MCU_EL ac_value_bits=(MCU_EL)BitStreamRtL_get_bits_advance(stream,ac_magnitude);
+                    const MCU_EL ac_value_bits=(MCU_EL)BitStream_get_bits_advance(stream,ac_magnitude);
 
                     const MCU_EL ac_value=(MCU_EL)twos_complement((uint16_t)ac_magnitude,ac_value_bits);
 
@@ -887,7 +887,7 @@ static inline void process_mcu_generic(
                 }
             }else{
                 if(spectral_selection_start == 0){
-                    const uint64_t test_bit=BitStreamRtL_get_bits_advance(stream, 1);
+                    const uint64_t test_bit=BitStream_get_bits_advance(stream, 1);
                     if(test_bit){
                         block_mem[0] += succ_approx_bit_shifted;
                     }
@@ -1100,7 +1100,7 @@ void JpegParser_parse_file(
                         const uint8_t table_index=LB_U8(table_index_and_class);
                         const uint8_t table_class=HB_U8(table_index_and_class);
 
-                        HuffmanCodingTableRtL* target_table=NULL;
+                        HuffmanCodingTable* target_table=NULL;
                         switch (table_class) {
                             case  0:
                                 target_table=&parser->dc_coding_tables[table_index];
@@ -1139,9 +1139,9 @@ void JpegParser_parse_file(
                         segment_bytes_read+=value_index;
 
                         // destroy previous table, if there was one
-                        HuffmanCodingTableRtL_destroy(target_table);
+                        HuffmanCodingTable_destroy(target_table);
 
-                        HuffmanCodingTableRtL_new(
+                        HuffmanCodingTable_new(
                             target_table,
                             num_values_of_length,
                             total_num_values,
@@ -1307,7 +1307,7 @@ void JpegParser_parse_file(
 
                     BitStream _bit_stream;
                     BitStream* const restrict stream=&_bit_stream;
-                    BitStreamRtL_new(stream, &parser->file_contents[parser->current_byte_position]);
+                    BitStream_new(stream, &parser->file_contents[parser->current_byte_position], BITSTREAM_DIRECTION_LEFT_TO_RIGHT, true);
 
                     const uint32_t mcu_cols=parser->image_components[0].horz_samples/parser->image_components[0].horz_sample_factor/8;
                     const uint32_t mcu_rows=parser->image_components[0].vert_samples/parser->image_components[0].vert_sample_factor/8;
@@ -1595,8 +1595,8 @@ ImageParseResult Image_read_jpeg(
     free(parser.file_contents);
 
     for(int i=0;i<4;i++){
-        HuffmanCodingTableRtL_destroy(&parser.ac_coding_tables[i]);
-        HuffmanCodingTableRtL_destroy(&parser.dc_coding_tables[i]);
+        HuffmanCodingTable_destroy(&parser.ac_coding_tables[i]);
+        HuffmanCodingTable_destroy(&parser.dc_coding_tables[i]);
     }
 
     for(int c=0;c<3;c++){

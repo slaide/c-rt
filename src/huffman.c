@@ -56,8 +56,8 @@ static inline int32_t reverse_bits(
 #define MAX_HUFFMAN_TABLE_CODE_LENGTH 16
 #define MAX_HUFFMAN_TABLE_ENTRIES 260
 
-void HuffmanCodingTableRtL_new(
-    HuffmanCodingTableRtL* const restrict table,
+void HuffmanCodingTable_new(
+    HuffmanCodingTable* const restrict table,
 
     const uint8_t num_values_of_length[MAX_HUFFMAN_TABLE_CODE_LENGTH],
 
@@ -115,14 +115,16 @@ void HuffmanCodingTableRtL_new(
         }
     }
 }
-void HuffmanCodingTableRtL_destroy(HuffmanCodingTableRtL* table){
+void HuffmanCodingTable_destroy(HuffmanCodingTable* table){
     if(table->lookup_table)
         free(table->lookup_table);
 }
 
-void BitStreamRtL_new(BitStream* stream,void* const data){
+void BitStream_new(BitStream* stream,void* const data, const enum BitStreamDirection direction, const bool remove_jpeg_byte_stuffing){
     stream->data=data;
     stream->next_data_index=0;
     stream->buffer=0;
     stream->buffer_bits_filled=0;
+    stream->direction=direction;
+    stream->remove_jpeg_byte_stuffing=remove_jpeg_byte_stuffing;
 }

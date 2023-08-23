@@ -116,15 +116,22 @@ static const uint32_t MASKS_U32[32]={
 #define get_mask_u32(N) (MASKS_U32[(N)])
 #define get_mask_u64(N) (MASKS_U64[(N)])
 
+enum BitStreamDirection{
+    /// read bits from least to most significant bit in each byte
+    BITSTREAM_DIRECTION_RIGHT_TO_LEFT,
+    /// read bits from most to least significant bit in each byte
+    BITSTREAM_DIRECTION_LEFT_TO_RIGHT,
+};
+
 struct LookupLeaf{
     uint8_t value;
     uint8_t len;
 };
-typedef struct HuffmanCodingTableRtL{
+typedef struct HuffmanCodingTable{
     uint8_t max_code_length_bits;
 
     struct LookupLeaf* lookup_table;
-}HuffmanCodingTableRtL;
+}HuffmanCodingTable;
 
 struct ParseLeaf{
     uint8_t value;
@@ -141,8 +148,8 @@ struct ParseLeaf{
  * @param value_code_lengths 
  * @param values 
  */
-void HuffmanCodingTableRtL_new(
-    HuffmanCodingTableRtL* const restrict table,
+void HuffmanCodingTable_new(
+    HuffmanCodingTable* const restrict table,
 
     const uint8_t num_values_of_length[16],
 
@@ -150,7 +157,7 @@ void HuffmanCodingTableRtL_new(
     const uint8_t value_code_lengths[260],
     const uint8_t values[260]
 );
-void HuffmanCodingTableRtL_destroy(HuffmanCodingTableRtL* table);
+void HuffmanCodingTable_destroy(HuffmanCodingTable* table);
 
 typedef struct BitStream{
     uint8_t* data;
@@ -158,14 +165,18 @@ typedef struct BitStream{
 
     uint64_t buffer;
     uint64_t buffer_bits_filled;
+
+    enum BitStreamDirection direction;
+    bool remove_jpeg_byte_stuffing;
 }BitStream;
 /**
  * @brief initialise stream
  * 
  * @param stream 
  * @param data 
+ * @param direction
  */
-void BitStreamRtL_new(BitStream* stream,void* data);
+void BitStream_new(BitStream* stream,void* const data, const enum BitStreamDirection direction, const bool remove_jpeg_byte_stuffing);
 
 /**
  * @brief advance stream
@@ -174,16 +185,26 @@ void BitStreamRtL_new(BitStream* stream,void* data);
  * @param n_bits 
  */
 [[gnu::always_inline,gnu::flatten]]
-static inline void BitStreamRtL_advance_unsafe(
+static inline void BitStream_advance_unsafe(
     BitStream* const restrict stream,
     const uint8_t n_bits
 ){
     stream->buffer_bits_filled-=n_bits;
-    stream->buffer<<=n_bits;
+    switch(stream->direction){
+        case BITSTREAM_DIRECTION_LEFT_TO_RIGHT:
+            stream->buffer<<=n_bits;
+            break;
+        case BITSTREAM_DIRECTION_RIGHT_TO_LEFT:
+            stream->buffer>>=n_bits;
+            break;
+    }
 }
 
+/// advance stream by some bits
+///
+/// may not skip more bits than are present in the buffer currently
 [[gnu::always_inline,gnu::flatten,maybe_unused]]
-static inline void BitStreamRtL_advance(
+static inline void BitStream_advance(
     BitStream* const restrict stream,
     const uint8_t n_bits
 ){
@@ -192,7 +213,43 @@ static inline void BitStreamRtL_advance(
         exit(-50);
     }
 
-    BitStreamRtL_advance_unsafe(stream, n_bits);
+    BitStream_advance_unsafe(stream, n_bits);
+}
+
+static inline void BitStream_fill_buffer(
+    BitStream* const restrict stream
+);
+
+/// skip bits in stream
+///
+/// number may be much larger than cache size
+[[gnu::always_inline,gnu::flatten,maybe_unused]]
+static inline void BitStream_skip(
+    BitStream* const restrict stream,
+    const uint64_t n_bits
+){
+    if(n_bits>stream->buffer_bits_filled){
+        uint64_t remaining_bits=n_bits-stream->buffer_bits_filled;
+        stream->next_data_index+=remaining_bits/8;
+
+        stream->buffer_bits_filled=0;
+        stream->buffer=0;
+
+        remaining_bits=remaining_bits%8;
+        if(remaining_bits>0){
+            BitStream_fill_buffer(stream);
+            BitStream_advance_unsafe(stream, (uint8_t)remaining_bits);
+        }
+    }else{
+        if(n_bits>stream->buffer_bits_filled){
+            uint64_t bits_remaining=n_bits-stream->buffer_bits_filled;
+            BitStream_advance_unsafe(stream, (uint8_t)stream->buffer_bits_filled);
+            BitStream_fill_buffer(stream);
+            BitStream_advance_unsafe(stream, (uint8_t)bits_remaining);
+        }else{
+            BitStream_advance_unsafe(stream, (uint8_t)n_bits);
+        }
+    }
 }
 
 /**
@@ -201,24 +258,47 @@ static inline void BitStreamRtL_advance(
  * @param stream 
  */
 [[gnu::hot,gnu::flatten]]
-static inline void BitStreamRtL_fill_buffer(
+static inline void BitStream_fill_buffer(
     BitStream* const restrict stream
 ){
     const uint64_t num_bytes_missing = (64-stream->buffer_bits_filled)/8;
 
-    uint64_t new_bytes=0;
-    for(uint64_t i=0; i<num_bytes_missing; i++){
-        const uint64_t next_byte = stream->data[stream->next_data_index++];
+    switch(stream->direction){
+        case BITSTREAM_DIRECTION_RIGHT_TO_LEFT:
+            {
+                uint64_t new_bytes=0;
+                for(uint64_t i=0; i<num_bytes_missing; i++){
+                    const uint64_t next_byte = stream->data[stream->next_data_index++];
 
-        const uint64_t shift_by = (7-i)*8;
-        new_bytes |= next_byte << shift_by;
+                    const uint64_t shift_by = i*8;
+                    new_bytes |= next_byte << shift_by;
 
-        if(next_byte==0xFF && stream->data[stream->next_data_index]==0){
-            stream->next_data_index++;
-        }
+                    if(stream->remove_jpeg_byte_stuffing && next_byte==0xFF && stream->data[stream->next_data_index]==0){
+                        stream->next_data_index++;
+                    }
+                }
+                stream->buffer |= new_bytes << stream->buffer_bits_filled;
+                stream->buffer_bits_filled += num_bytes_missing*8;
+            }
+            break;
+        case BITSTREAM_DIRECTION_LEFT_TO_RIGHT:
+            {
+                uint64_t new_bytes=0;
+                for(uint64_t i=0; i<num_bytes_missing; i++){
+                    const uint64_t next_byte = stream->data[stream->next_data_index++];
+
+                    const uint64_t shift_by = (7-i)*8;
+                    new_bytes |= next_byte << shift_by;
+
+                    if(stream->remove_jpeg_byte_stuffing && next_byte==0xFF && stream->data[stream->next_data_index]==0){
+                        stream->next_data_index++;
+                    }
+                }
+                stream->buffer |= new_bytes >> stream->buffer_bits_filled;
+                stream->buffer_bits_filled += num_bytes_missing*8;
+            }
+            break;
     }
-    stream->buffer |= new_bytes >> stream->buffer_bits_filled;
-    stream->buffer_bits_filled += num_bytes_missing*8;
 }
 /**
  * @brief ensure that the bitstream has at least n bits cached
@@ -227,65 +307,75 @@ static inline void BitStreamRtL_fill_buffer(
  * @param n_bits 
  */
 [[gnu::always_inline,gnu::flatten]]
-static inline void BitStreamRtL_ensure_filled(
+static inline void BitStream_ensure_filled(
     BitStream* const restrict stream,
     const uint8_t n_bits
 ){
     if(stream->buffer_bits_filled<n_bits){
-        BitStreamRtL_fill_buffer(stream);
+        BitStream_fill_buffer(stream);
     }
 }
 
 [[gnu::always_inline,gnu::flatten]]
-static inline uint64_t BitStreamRtL_get_bits_unsafe(
+static inline uint64_t BitStream_get_bits_unsafe(
     const BitStream* const restrict stream,
     uint8_t n_bits
 ){
-    const uint64_t ret=stream->buffer>>(64-n_bits);
-    return ret;
+    switch(stream->direction){
+        case BITSTREAM_DIRECTION_LEFT_TO_RIGHT:
+            {
+                const uint64_t ret=stream->buffer>>(64-n_bits);
+                return ret;
+            }
+        case BITSTREAM_DIRECTION_RIGHT_TO_LEFT:
+            {
+                const uint64_t ret=stream->buffer&mask_u64(n_bits);
+                return ret;
+            }
+    }
 }
 
 /**
  * @brief get next n bits from stream
  * n must not be larger than 57. the internal bit buffer is automatically filled if it was not big enough at function start.
  * this function does NOT advance the internal state, i.e. repeated calls to this function with the same arguments will yield the same result.
- * call BitStreamRtL_advance to manually advance the stream.
+ * call BitStream_advance to manually advance the stream.
  * @param stream 
  * @param n_bits 
  * @return int 
  */
 [[gnu::always_inline,gnu::flatten]]
-static inline uint64_t BitStreamRtL_get_bits(
+static inline uint64_t BitStream_get_bits(
     BitStream* const restrict stream,
     const uint8_t n_bits
 ){
-    BitStreamRtL_ensure_filled(stream, n_bits);
+    BitStream_ensure_filled(stream, n_bits);
 
-    const uint64_t ret=BitStreamRtL_get_bits_unsafe(stream, n_bits);
+    const uint64_t ret=BitStream_get_bits_unsafe(stream, n_bits);
 
     return ret;
 }
 
 [[gnu::always_inline,gnu::flatten,maybe_unused]]
-static inline uint8_t HuffmanCodingTableRtLRtL_lookup(
-    const HuffmanCodingTableRtL* const restrict table,
+static inline uint8_t HuffmanCodingTable_lookup(
+    const HuffmanCodingTable* const restrict table,
     BitStream* const restrict stream
 ){
-    const uint64_t bits=BitStreamRtL_get_bits(stream,table->max_code_length_bits);
+    const uint64_t bits=BitStream_get_bits(stream,table->max_code_length_bits);
 
     const struct LookupLeaf leaf=table->lookup_table[bits];
-    BitStreamRtL_advance_unsafe(stream, leaf.len);
+    BitStream_advance_unsafe(stream, leaf.len);
 
     return leaf.value;
 }
 
 [[gnu::always_inline,gnu::flatten,maybe_unused]]
-static inline uint64_t BitStreamRtL_get_bits_advance(
+static inline uint64_t BitStream_get_bits_advance(
     BitStream* const restrict stream,
     const uint8_t n_bits
 ){
-    const uint64_t res=BitStreamRtL_get_bits(stream, n_bits);
-    BitStreamRtL_advance_unsafe(stream, n_bits);
+    const uint64_t res=BitStream_get_bits(stream, n_bits);
+    BitStream_advance_unsafe(stream, n_bits);
 
     return res;
 }
