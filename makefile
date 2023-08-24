@@ -228,7 +228,7 @@ main: main.c
 doc:
 	doxygen Doxyfile
 clean:
-	$(RM_CMD) $(BUILD_BASE_DIR) $(BIN_DIR)/main* $(BIN_DIR)/*.spv $(PROFILE_CACHEGRIND_OUT_FILE) $(PROFILE_CACHEGRIND_ANNOTATION_FILE)
+	$(RM_CMD) $(BUILD_BASE_DIR) $(BIN_DIR)/libjpeg_test $(BIN_DIR)/main* $(BIN_DIR)/*.spv $(PROFILE_CACHEGRIND_OUT_FILE) $(PROFILE_CACHEGRIND_ANNOTATION_FILE)
 fresh:
 	make clean
 	make main
