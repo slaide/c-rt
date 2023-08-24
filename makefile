@@ -77,60 +77,60 @@ $(1): $(2) | $(REQUIRED_DIRS)
 endef
 
 ifeq ($(MODE), debug)
-	CDEF += -DDEBUG
-	COMPILE_FLAGS += -g
-	COMPILE_FLAGS += -fno-omit-frame-pointer -fno-inline
-	OPT_FLAGS := -O1
+CDEF += -DDEBUG
+COMPILE_FLAGS += -g
+COMPILE_FLAGS += -fno-omit-frame-pointer -fno-inline
+OPT_FLAGS := -O1
 
-	ifeq ($(PLATFORM), linux)
-		COMPILE_FLAGS += -fsanitize=address
-	endif
+ifeq ($(PLATFORM), linux)
+COMPILE_FLAGS += -fsanitize=address
+endif
 else ifeq ($(MODE), debugrelease)
-	CDEF += -DDEBUG -DRELEASE
-	COMPILE_FLAGS += -g
-	COMPILE_FLAGS += -fno-omit-frame-pointer -fno-inline
-	OPT_FLAGS := -O3 -ffast-math
+CDEF += -DDEBUG -DRELEASE
+COMPILE_FLAGS += -g
+COMPILE_FLAGS += -fno-omit-frame-pointer -fno-inline
+OPT_FLAGS := -O3 -ffast-math
 else ifeq ($(MODE), release)
-	CDEF += -DRELEASE
-	OPT_FLAGS := -O3 -ffast-math 
-	LINK_FLAGS += -flto=full 
+CDEF += -DRELEASE
+OPT_FLAGS := -O3 -ffast-math 
+LINK_FLAGS += -flto=full 
 else
 $(error Invalid build mode: $(MODE) (valid options are { release | debug }))
 endif
 
 ifeq ($(PLATFORM), linux)
-	RM_CMD := $(RM) -r
-	MKDIR_CMD := mkdir -p
-	CP_CMD := cp
+RM_CMD := $(RM) -r
+MKDIR_CMD := mkdir -p
+CP_CMD := cp
 
-	LINK_FLAGS += -lxcb -lxcb-util -lm
-	CDEF += -DVK_USE_PLATFORM_XCB_KHR
-	COMPILE_FLAGS += -mssse3 # required for hand-written simd code
+LINK_FLAGS += -lxcb -lxcb-util -lm
+CDEF += -DVK_USE_PLATFORM_XCB_KHR
+COMPILE_FLAGS += -mssse3 # required for hand-written simd code
 
-	ifeq ($(USEAVX),YES)
-		COMPILE_FLAGS += -mavx2 # for some additional speed-up with O3
-	endif
+ifeq ($(USEAVX),YES)
+COMPILE_FLAGS += -mavx2 # for some additional speed-up with O3
+endif
 
 $(eval $(call compile_c, $(BUILD_DIR)/main.o, src/main/main_linux.c))
 else ifeq ($(PLATFORM), macos)
-	RM_CMD := $(RM) -r
-	MKDIR_CMD := mkdir -p
-	CP_CMD := cp
+RM_CMD := $(RM) -r
+MKDIR_CMD := mkdir -p
+CP_CMD := cp
 
-	LINK_FLAGS += -framework Appkit -framework Metal -framework MetalKit -framework QuartzCore
+LINK_FLAGS += -framework Appkit -framework Metal -framework MetalKit -framework QuartzCore
 
-	# default MoltenVK installation path
-	CINCLUDE += -I/opt/vulkansdk/macOS/include
-	LINK_FLAGS += -L/opt/vulkansdk/macOS/lib
+# default MoltenVK installation path
+CINCLUDE += -I/opt/vulkansdk/macOS/include
+LINK_FLAGS += -L/opt/vulkansdk/macOS/lib
 
-	# default homebrew paths
-	CINCLUDE += -I/opt/homebrew/include
-	LINK_FLAGS += -L/opt/homebrew/lib
+# default homebrew paths
+CINCLUDE += -I/opt/homebrew/include
+LINK_FLAGS += -L/opt/homebrew/lib
 
-	LIBJPEG_TEST_COMPILE_FLAGS += -I/opt/homebrew/include -L/opt/homebrew/lib
+LIBJPEG_TEST_COMPILE_FLAGS += -I/opt/homebrew/include -L/opt/homebrew/lib
 
-	CDEF += -DVK_USE_PLATFORM_METAL_EXT
-	CINCLUDE += -I/opt/vulkansdk/macOS/include
+CDEF += -DVK_USE_PLATFORM_METAL_EXT
+CINCLUDE += -I/opt/vulkansdk/macOS/include
 
 $(eval $(call compile_objc, $(BUILD_DIR)/main.o, src/main/main_macos.m))
 else
@@ -155,7 +155,7 @@ define add_build_flag
 BUILD_FLAGS += $(BUILD_FLAG_DIR)/$(strip $(1))
 
 ifneq ($$(shell ls $(BUILD_FLAG_DIR)/$(strip $(1))* 2> /dev/null), $(BUILD_FLAG_DIR)/$(strip $(1)))
-$(shell $(MKDIR_CMD) $(BUILD_FLAG_DIR))
+$$(shell $(MKDIR_CMD) $(BUILD_FLAG_DIR))
 $$(shell touch $(BUILD_FLAG_DIR)/$(strip $(1)))
 endif
 
@@ -194,10 +194,10 @@ PROFILE_CACHEGRIND_ANNOTATION_FILE := cachegrind.out.annotation
 # valgrind is only available on linux
 profile:
 	ifeq ($(OS),Linux)
-		make -Bj fresh MODE=debugrelease
-		valgrind --tool=cachegrind --cachegrind-out-file=$(PROFILE_CACHEGRIND_OUT_FILE) ./$(MAIN_FILE)
-		callgrind_annotate $(PROFILE_CACHEGRIND_OUT_FILE) > $(PROFILE_CACHEGRIND_ANNOTATION_FILE)
-		less $(PROFILE_CACHEGRIND_ANNOTATION_FILE)
+	make -Bj fresh MODE=debugrelease
+	valgrind --tool=cachegrind --cachegrind-out-file=$(PROFILE_CACHEGRIND_OUT_FILE) ./$(MAIN_FILE)
+	callgrind_annotate $(PROFILE_CACHEGRIND_OUT_FILE) > $(PROFILE_CACHEGRIND_ANNOTATION_FILE)
+	less $(PROFILE_CACHEGRIND_ANNOTATION_FILE)
 	else
 	$(error valgrind is only available on Linux, but you are using $(PLATFORM))
 	endif
@@ -216,7 +216,7 @@ $(BIN_DIR)/libjpeg_test: src/libjpeg_test.c
 test: all $(BIN_DIR)/libjpeg_test
 	cd $(BIN_DIR) ; \
 	for image_file in images/*; do \
-		./libjpeg_test "$$image_file" ; \
+	./libjpeg_test "$$image_file" ; \
 	done
 
 	cd $(BIN_DIR) ; \
