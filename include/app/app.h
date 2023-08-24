@@ -29,7 +29,7 @@ typedef void*(*pthread_callback)(void*);
  * 
  * @return double 
  */
-double current_time();
+double current_time(void);
 
 #define ROUND_UP(VALUE,MULTIPLE_OF) (((VALUE) + ((MULTIPLE_OF)-1)) / (MULTIPLE_OF)) * (MULTIPLE_OF)
 #define MASK(LENGTH) ((1<<(LENGTH))-1)

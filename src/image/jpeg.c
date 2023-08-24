@@ -572,6 +572,7 @@ void JpegParser_init_empty(JpegParser* restrict parser){
     parser->color_space=0;
 }
 
+#ifdef VK_USE_PLATFORM_XCB_KHR
 [[maybe_unused]]
 static uint32_t tzcnt_32(const uint32_t v){
     #ifdef __clang__
@@ -580,6 +581,7 @@ static uint32_t tzcnt_32(const uint32_t v){
         return __builtin_ia32_lzcnt_u32(v);
     #endif
 }
+#endif
 
 [[gnu::flatten,gnu::nonnull(1)]]
 static void JpegParser_process_channel(
