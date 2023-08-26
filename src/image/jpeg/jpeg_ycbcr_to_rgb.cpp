@@ -74,7 +74,7 @@ static inline void scan_ycbcr_to_rgb(
 }
 
 [[gnu::flatten,gnu::hot,gnu::nonnull(1)]]
-void JpegParser_convert_colorspace(
+static void JpegParser_convert_colorspace(
     JpegParser* const  parser,
     const uint32_t scan_index_start,
     const uint32_t scan_index_end

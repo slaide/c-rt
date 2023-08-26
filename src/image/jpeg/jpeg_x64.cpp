@@ -20,9 +20,9 @@ void scan_ycbcr_to_rgb_sse_float(
     uint8_t* const  image_data_data=parser->image_data->data+scan_offset*4;
 
     const uint32_t rescale_factor[3]={
-        parser->max_component_horz_sample_factor*parser->max_component_vert_sample_factor/(image_components[0].horz_sample_factor*image_components[0].vert_sample_factor),
-        parser->max_component_horz_sample_factor*parser->max_component_vert_sample_factor/(image_components[1].horz_sample_factor*image_components[1].vert_sample_factor),
-        parser->max_component_horz_sample_factor*parser->max_component_vert_sample_factor/(image_components[2].horz_sample_factor*image_components[2].vert_sample_factor)
+        (uint32_t)parser->max_component_horz_sample_factor*parser->max_component_vert_sample_factor/(image_components[0].horz_sample_factor*image_components[0].vert_sample_factor),
+        (uint32_t)parser->max_component_horz_sample_factor*parser->max_component_vert_sample_factor/(image_components[1].horz_sample_factor*image_components[1].vert_sample_factor),
+        (uint32_t)parser->max_component_horz_sample_factor*parser->max_component_vert_sample_factor/(image_components[2].horz_sample_factor*image_components[2].vert_sample_factor)
     };
 
     const OUT_EL* const  y[[gnu::aligned(16)]]=image_components[0].out_block_downsampled+scan_offset/rescale_factor[0];
@@ -70,11 +70,11 @@ void scan_ycbcr_to_rgb_sse_float(
             2, 6, 10, 14, 
             3, 7, 11, 15
         };
-        const __m128i indices_vector = _mm_load_ps((void*)indices);
+        const __m128i indices_vector = _mm_load_ps((float*)indices);
 
         rgba_u8=_mm_shuffle_epi8(rgba_u8, indices_vector);
 
-        _mm_storeu_si128((void*)(image_data_data+i*4),rgba_u8);
+        _mm_storeu_si128((__m128i*)(image_data_data+i*4),rgba_u8);
     }
 }
 
