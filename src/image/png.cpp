@@ -277,20 +277,20 @@ ImageParseResult Image_read_png(
     BitStream::BitStream_new(stream, data_buffer);
 
     /// combined cm+cinfo flag across 2 bytes is used to verify data integrity
-    const uint64_t cmf_flag=byteswap((uint32_t)BitStream::BitStream_get_bits(stream,16),2);
+    const uint64_t cmf_flag=byteswap((uint32_t)stream->get_bits(16),2);
     if(cmf_flag%31!=0){
         fprintf(stderr,"png cmf integrity check failed: cmf is %" PRIu64 "\n",cmf_flag);
         exit(FATAL_UNEXPECTED_ERROR);
     }
 
     /// compression method flag
-    const uint64_t cm_flag=BitStream::BitStream_get_bits_advance(stream, 4);
+    const uint64_t cm_flag=stream->get_bits_advance(4);
     if(cm_flag!=PNG_COMPRESSION_METHOD_CODE_ZLIB){
         fprintf(stderr,"invalid png bitstream compression method\n");
         exit(FATAL_UNEXPECTED_ERROR);
     }
     /// (encoded) compression info flag
-    const uint64_t cinfo_flag=BitStream::BitStream_get_bits_advance(stream, 4);
+    const uint64_t cinfo_flag=stream->get_bits_advance(4);
 
     const uint32_t window_size=1<<(cinfo_flag+8);
     if(window_size>PNG_BITSTREAM_COMPRESSION_MAX_WINDOW_SIZE){
@@ -299,11 +299,11 @@ ImageParseResult Image_read_png(
     }
 
     /// is set so that the cmf integrity check above can succeed
-    uint64_t fcheck_flag=BitStream::BitStream_get_bits_advance(stream, 5);
+    uint64_t fcheck_flag=stream->get_bits_advance(5);
     discard fcheck_flag;
-    uint64_t fdict_flag=BitStream::BitStream_get_bits_advance(stream, 1);
+    uint64_t fdict_flag=stream->get_bits_advance(1);
     /// compression level (not relevant for decompression)
-    uint64_t flevel_flag=BitStream::BitStream_get_bits_advance(stream, 2);
+    uint64_t flevel_flag=stream->get_bits_advance(2);
     discard flevel_flag;
 
     if(fdict_flag){
@@ -314,9 +314,9 @@ ImageParseResult Image_read_png(
     // remaining bitstream is formatted according to RFC 1951 (deflate/zlib) (e.g. https://datatracker.ietf.org/doc/html/rfc1951)
     bool keep_parsing=true;
     while(keep_parsing){
-        uint64_t bfinal=BitStream::BitStream_get_bits_advance(stream, 1);
+        uint64_t bfinal=stream->get_bits_advance(1);
 
-        uint64_t btype=BitStream::BitStream_get_bits_advance(stream, 2);
+        uint64_t btype=stream->get_bits_advance(2);
         switch(btype){
             case 0:
                 {
@@ -325,12 +325,12 @@ ImageParseResult Image_read_png(
                     uint8_t bits_to_next_byte_boundary=stream->buffer_bits_filled%8;
                     keep_parsing=false;
                     if(bits_to_next_byte_boundary>0)
-                        BitStream::BitStream_advance_unsafe(stream, bits_to_next_byte_boundary);
+                        stream->advance_unsafe(bits_to_next_byte_boundary);
 
                     /// num bytes in this block
-                    uint32_t len=byteswap((uint32_t)BitStream::BitStream_get_bits_advance(stream, 16),2);
+                    uint32_t len=byteswap((uint32_t)stream->get_bits_advance(16),2);
                     /// one's complement of len
-                    uint32_t nlen=byteswap((uint32_t)BitStream::BitStream_get_bits_advance(stream, 16),2);
+                    uint32_t nlen=byteswap((uint32_t)stream->get_bits_advance(16),2);
                     discard nlen;
 
                     if((len|nlen)!=UINT16_MAX){
@@ -341,7 +341,7 @@ ImageParseResult Image_read_png(
                     // TODO copy LEN bytes of data to output
 
                     printf("got %d bytes of uncompressed data\n",len);
-                    BitStream::BitStream_skip(stream,len*8);
+                    stream->skip(len*8);
                 }
                 break;
             case 1:
@@ -352,13 +352,13 @@ ImageParseResult Image_read_png(
                 {
                 printf("compression with dynamic huffman codes\n");
                 
-                uint64_t num_literal_codes=257+BitStream::BitStream_get_bits_advance(stream, 5);
+                uint64_t num_literal_codes=257+stream->get_bits_advance(5);
                 printf("num_literal_codes %" PRIu64 "\n",num_literal_codes);
                 if(num_literal_codes>286){
                     fprintf(stderr,"too many huffman codes (literals) %" PRIu64 "\n",num_literal_codes);
                     exit(FATAL_UNEXPECTED_ERROR);
                 }
-                uint64_t num_distance_codes=1+BitStream::BitStream_get_bits_advance(stream, 5);
+                uint64_t num_distance_codes=1+stream->get_bits_advance(5);
                 printf("num_distance_codes %" PRIu64 "\n",num_distance_codes);
                 if(num_distance_codes>30){
                     fprintf(stderr,"too many huffman codes (distance) %" PRIu64 "\n",num_distance_codes);
@@ -366,7 +366,7 @@ ImageParseResult Image_read_png(
                 }
 
                 // the number of elements in this table can be 4-19. the code length codes not present in the table are specified to not occur (i.e. zero bits)
-                uint8_t num_huffman_codes=4+(uint8_t)BitStream::BitStream_get_bits_advance(stream, 4);
+                uint8_t num_huffman_codes=4+(uint8_t)stream->get_bits_advance(4);
                 printf("num_huffman_codes %d\n",num_huffman_codes);
 
                 // parse code sizes for each entry in the huffman code table
@@ -376,7 +376,7 @@ ImageParseResult Image_read_png(
                 memset(code_length_code_lengths,0,NUM_CODE_LENGTH_CODES);
 
                 for(uint64_t code_size_index=0;code_size_index<num_huffman_codes;code_size_index++){
-                    code_length_code_lengths[CODE_LENGTH_CODE_CHARACTERS[code_size_index]]=(uint8_t)BitStream::BitStream_get_bits_advance(stream,3);
+                    code_length_code_lengths[CODE_LENGTH_CODE_CHARACTERS[code_size_index]]=(uint8_t)stream->get_bits_advance(3);
                 }
 
                 uint8_t num_values_of_length[MAX_HUFFMAN_TABLE_CODE_LENGTH];

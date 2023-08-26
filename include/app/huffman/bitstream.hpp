@@ -28,7 +28,7 @@ class BitStream{
     * @param data 
     * @param direction
     */
-    static void BitStream_new(BitStream* stream,void* const data);
+    static void BitStream_new(BitStream* stream,void* const data)noexcept;
 
     /**
     * @brief advance stream
@@ -37,17 +37,16 @@ class BitStream{
     * @param n_bits 
     */
     [[gnu::always_inline,gnu::flatten]]
-    static inline void BitStream_advance_unsafe(
-        BitStream* const  stream,
+    inline void advance_unsafe(
         const uint8_t n_bits
-    ){
-        stream->buffer_bits_filled-=n_bits;
+    )noexcept{
+        this->buffer_bits_filled-=n_bits;
         switch(DIRECTION){
             case BITSTREAM_DIRECTION_LEFT_TO_RIGHT:
-                stream->buffer<<=n_bits;
+                this->buffer<<=n_bits;
                 break;
             case BITSTREAM_DIRECTION_RIGHT_TO_LEFT:
-                stream->buffer>>=n_bits;
+                this->buffer>>=n_bits;
                 break;
         }
     }
@@ -56,50 +55,46 @@ class BitStream{
     ///
     /// may not skip more bits than are present in the buffer currently
     [[gnu::always_inline,gnu::flatten,maybe_unused]]
-    static inline void BitStream_advance(
-        BitStream* const  stream,
+    inline void advance(
         const uint8_t n_bits
-    ){
-        if (n_bits>stream->buffer_bits_filled) {
-            fprintf(stderr, "bitstream advance by %d bits invalid with %" PRIu64 " current buffer length\n",n_bits,stream->buffer_bits_filled);
+    )noexcept{
+        if (n_bits>this->buffer_bits_filled) {
+            fprintf(stderr, "bitstream advance by %d bits invalid with %" PRIu64 " current buffer length\n",n_bits,this->buffer_bits_filled);
             exit(-50);
         }
 
-        BitStream_advance_unsafe(stream, n_bits);
+        this->advance_unsafe(n_bits);
     }
 
-    static inline void BitStream_fill_buffer(
-        BitStream* const  stream
-    );
+    inline void fill_buffer()noexcept;
 
     /// skip bits in stream
     ///
     /// number may be much larger than cache size
     [[gnu::always_inline,gnu::flatten,maybe_unused]]
-    static inline void BitStream_skip(
-        BitStream* const  stream,
+    inline void skip(
         const uint64_t n_bits
-    ){
-        if(n_bits>stream->buffer_bits_filled){
-            uint64_t remaining_bits=n_bits-stream->buffer_bits_filled;
-            stream->next_data_index+=remaining_bits/8;
+    )noexcept{
+        if(n_bits>this->buffer_bits_filled){
+            uint64_t remaining_bits=n_bits-this->buffer_bits_filled;
+            this->next_data_index+=remaining_bits/8;
 
-            stream->buffer_bits_filled=0;
-            stream->buffer=0;
+            this->buffer_bits_filled=0;
+            this->buffer=0;
 
             remaining_bits=remaining_bits%8;
             if(remaining_bits>0){
-                BitStream_fill_buffer(stream);
-                BitStream_advance_unsafe(stream, (uint8_t)remaining_bits);
+                this->fill_buffer();
+                this->advance_unsafe((uint8_t)remaining_bits);
             }
         }else{
-            if(n_bits>stream->buffer_bits_filled){
-                uint64_t bits_remaining=n_bits-stream->buffer_bits_filled;
-                BitStream_advance_unsafe(stream, (uint8_t)stream->buffer_bits_filled);
-                BitStream_fill_buffer(stream);
-                BitStream_advance_unsafe(stream, (uint8_t)bits_remaining);
+            if(n_bits>this->buffer_bits_filled){
+                uint64_t bits_remaining=n_bits-this->buffer_bits_filled;
+                this->advance_unsafe((uint8_t)this->buffer_bits_filled);
+                this->fill_buffer();
+                this->advance_unsafe((uint8_t)bits_remaining);
             }else{
-                BitStream_advance_unsafe(stream, (uint8_t)n_bits);
+                this->advance_unsafe((uint8_t)n_bits);
             }
         }
     }
@@ -111,31 +106,24 @@ class BitStream{
     * @param n_bits 
     */
     [[gnu::always_inline,gnu::flatten]]
-    static inline void BitStream_ensure_filled(
-        BitStream* const  stream,
+    inline void ensure_filled(
         const uint8_t n_bits
-    ){
-        if(stream->buffer_bits_filled<n_bits){
-            BitStream_fill_buffer(stream);
+    )noexcept{
+        if(this->buffer_bits_filled<n_bits){
+            this->fill_buffer();
         }
     }
 
     [[gnu::always_inline,gnu::flatten]]
-    static inline uint64_t BitStream_get_bits_unsafe(
-        const BitStream* const  stream,
+    inline uint64_t get_bits_unsafe(
         uint8_t n_bits
-    ){
-        switch(DIRECTION){
-            case BITSTREAM_DIRECTION_LEFT_TO_RIGHT:
-                {
-                    const uint64_t ret=stream->buffer>>(64-n_bits);
-                    return ret;
-                }
-            case BITSTREAM_DIRECTION_RIGHT_TO_LEFT:
-                {
-                    const uint64_t ret=stream->buffer&mask_u64(n_bits);
-                    return ret;
-                }
+    )const noexcept{
+        if constexpr(DIRECTION==BITSTREAM_DIRECTION_LEFT_TO_RIGHT){
+            const uint64_t ret=this->buffer>>(64-n_bits);
+            return ret;
+        }else if constexpr(DIRECTION==BITSTREAM_DIRECTION_RIGHT_TO_LEFT){
+            const uint64_t ret=this->buffer&Huffman::get_mask_u64(n_bits);
+            return ret;
         }
     }
 
@@ -149,31 +137,29 @@ class BitStream{
     * @return int 
     */
     [[gnu::always_inline,gnu::flatten]]
-    static inline uint64_t BitStream_get_bits(
-        BitStream* const  stream,
+    inline uint64_t get_bits(
         const uint8_t n_bits
-    ){
-        BitStream_ensure_filled(stream, n_bits);
+    )noexcept{
+        this->ensure_filled(n_bits);
 
-        const uint64_t ret=BitStream_get_bits_unsafe(stream, n_bits);
+        const uint64_t ret=this->get_bits_unsafe(n_bits);
 
         return ret;
     }
 
     [[gnu::always_inline,gnu::flatten,maybe_unused]]
-    static inline uint64_t BitStream_get_bits_advance(
-        BitStream* const  stream,
+    inline uint64_t get_bits_advance(
         const uint8_t n_bits
-    ){
-        const uint64_t res=BitStream_get_bits(stream, n_bits);
-        BitStream_advance_unsafe(stream, n_bits);
+    )noexcept{
+        const uint64_t res=this->get_bits(n_bits);
+        this->advance_unsafe(n_bits);
 
         return res;
     }
 };
 
 template <BitStreamDirection DIR,bool REM_JPG_STUFF>
-void BitStream<DIR,REM_JPG_STUFF>::BitStream_new(BitStream* stream,void* const data){
+void BitStream<DIR,REM_JPG_STUFF>::BitStream_new(BitStream* stream,void* const data)noexcept{
     stream->data=static_cast<uint8_t*>(data);
     stream->next_data_index=0;
     stream->buffer=0;
@@ -187,40 +173,39 @@ void BitStream<DIR,REM_JPG_STUFF>::BitStream_new(BitStream* stream,void* const d
 */
 template <BitStreamDirection DIRECTION,bool REMOVE_JPEG_BYTE_STUFFING>
 [[gnu::hot,gnu::flatten]]
-inline void BitStream<DIRECTION,REMOVE_JPEG_BYTE_STUFFING>::BitStream_fill_buffer(
-    BitStream* const  stream
-){
-    const uint64_t num_bytes_missing = (64-stream->buffer_bits_filled)/8;
+inline void BitStream<DIRECTION,REMOVE_JPEG_BYTE_STUFFING>::fill_buffer(
+)noexcept{
+    const uint64_t num_bytes_missing = (64-this->buffer_bits_filled)/8;
 
     if constexpr(DIRECTION==BITSTREAM_DIRECTION_RIGHT_TO_LEFT){
         uint64_t new_bytes=0;
         for(uint64_t i=0; i<num_bytes_missing; i++){
-            const uint64_t next_byte = stream->data[stream->next_data_index++];
+            const uint64_t next_byte = this->data[this->next_data_index++];
 
             const uint64_t shift_by = i*8;
             new_bytes |= next_byte << shift_by;
 
             if constexpr(REMOVE_JPEG_BYTE_STUFFING)
-                if(next_byte==0xFF && stream->data[stream->next_data_index]==0){
-                    stream->next_data_index++;
+                if(next_byte==0xFF && this->data[this->next_data_index]==0){
+                    this->next_data_index++;
                 }
         }
-        stream->buffer |= new_bytes << stream->buffer_bits_filled;
-        stream->buffer_bits_filled += num_bytes_missing*8;
+        this->buffer |= new_bytes << this->buffer_bits_filled;
+        this->buffer_bits_filled += num_bytes_missing*8;
     }else if constexpr(DIRECTION==BITSTREAM_DIRECTION_LEFT_TO_RIGHT){
         uint64_t new_bytes=0;
         for(uint64_t i=0; i<num_bytes_missing; i++){
-            const uint64_t next_byte = stream->data[stream->next_data_index++];
+            const uint64_t next_byte = this->data[this->next_data_index++];
 
             const uint64_t shift_by = (7-i)*8;
             new_bytes |= next_byte << shift_by;
 
             if constexpr(REMOVE_JPEG_BYTE_STUFFING)
-                if(next_byte==0xFF && stream->data[stream->next_data_index]==0){
-                    stream->next_data_index++;
+                if(next_byte==0xFF && this->data[this->next_data_index]==0){
+                    this->next_data_index++;
                 }
         }
-        stream->buffer |= new_bytes >> stream->buffer_bits_filled;
-        stream->buffer_bits_filled += num_bytes_missing*8;
+        this->buffer |= new_bytes >> this->buffer_bits_filled;
+        this->buffer_bits_filled += num_bytes_missing*8;
     }
 }

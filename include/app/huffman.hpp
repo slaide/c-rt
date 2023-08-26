@@ -216,14 +216,13 @@ class HuffmanCodingTable{
     public:
 
     [[gnu::always_inline,gnu::flatten,maybe_unused]]
-    static inline VALUE HuffmanCodingTable_lookup(
-        const HuffmanCodingTable* const  table,
+    inline VALUE lookup(
         BitStream_* const  stream
-    ){
-        const uint64_t bits=BitStream_::BitStream_get_bits(stream,table->max_code_length_bits);
+    )const noexcept{
+        const uint64_t bits=stream->get_bits(this->max_code_length_bits);
 
-        const struct LookupLeaf leaf=table->lookup_table[bits];
-        BitStream_::BitStream_advance_unsafe(stream, leaf.len);
+        const struct LookupLeaf leaf=this->lookup_table[bits];
+        stream->advance_unsafe(leaf.len);
 
         return leaf.value;
     }
@@ -296,8 +295,11 @@ class HuffmanCodingTable{
             }
         }
     }
-    static void HuffmanCodingTable_destroy(HuffmanCodingTable* table){
-        if(table->lookup_table)
-            free(table->lookup_table);
+    
+    void destroy()noexcept{
+        if(this->lookup_table){
+            free(this->lookup_table);
+            this->lookup_table=nullptr;
+        }
     }
 };
