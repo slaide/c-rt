@@ -10,9 +10,9 @@ default: all
 
 OS ?= $(shell uname -s)
 ifeq ($(OS),Linux)
-	DEFAULT_PLATFORM := linux
+DEFAULT_PLATFORM := linux
 else ifeq ($(OS),Darwin)
-	DEFAULT_PLATFORM := macos
+DEFAULT_PLATFORM := macos
 else
 $(error invalid OS $(OS))
 endif
@@ -20,8 +20,10 @@ endif
 PLATFORM ?= $(DEFAULT_PLATFORM)
 
 CC := clang
+CXX := clang++ -nostdlib -fno-exceptions
 OBJCC := clang
 CSTD := -std=gnu2x
+CXXSTD := -std=gnu++2b
 LINK_FLAGS := -lvulkan -pthread
 COMPILE_FLAGS := -Wall -Werror -Wpedantic -Wextra -Wno-sequence-point -Wconversion -MMD -MP
 CINCLUDE := -Iinclude
@@ -30,14 +32,14 @@ CDEF = -DIMAGE_BENCHMARK_NUM_REPEATS=$(strip $(IMAGE_BENCHMARK_NUM_REPEATS))
 LIBJPEG_TEST_COMPILE_FLAGS := $(CSTD) -O3 -ffast-math -flto=full -ljpeg
 
 ifeq ($(JEMALLOC), YES)
-	CDEF += -DUSE_JEMALLOC
-	LINK_FLAGS += -ljemalloc
+CDEF += -DUSE_JEMALLOC
+LINK_FLAGS += -ljemalloc
 endif
 ifeq ($(HIGH_PRECISION), YES)
-	CDEF += -DUSE_FLOAT_PRECISION
+CDEF += -DUSE_FLOAT_PRECISION
 endif
 ifeq ($(DECODE_PARALLEL), YES)
-	CDEF += -DJPEG_DECODE_PARALLEL
+CDEF += -DJPEG_DECODE_PARALLEL
 endif
 
 REQUIRED_DIRS := 
@@ -68,6 +70,12 @@ define compile_c
 BUILD_OBJS += $(1)
 $(1): $(2) | $(REQUIRED_DIRS)
 	$(CC) $(OPT_FLAGS) $(CSTD) $(CDEF) $(COMPILE_FLAGS) $(CINCLUDE) -c -o $(1) $(2)
+endef
+
+define compile_cpp
+BUILD_OBJS += $(1)
+$(1): $(2) | $(REQUIRED_DIRS)
+	$(CXX) $(OPT_FLAGS) $(CXXSTD) $(CDEF) $(COMPILE_FLAGS) $(CINCLUDE) -c -o $(1) $(2)
 endef
 
 define compile_glsl
