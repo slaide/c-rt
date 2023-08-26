@@ -10,10 +10,12 @@
 #include <time.h>
 
 #include "app/app.hpp"
+#include "app/bitstream.hpp"
 #include "app/error.hpp"
-namespace Huffman{
 #include "app/huffman.hpp"
-};
+
+typedef huffman::CodingTable<uint16_t, true, bitStream::BITSTREAM_DIRECTION_RIGHT_TO_LEFT, false> HuffmanTable;
+typedef HuffmanTable::BitStream_ BitStream;
 
 static const uint32_t PNG_BITSTREAM_COMPRESSION_MAX_WINDOW_SIZE=32768;
 static const uint32_t MAX_CHUNK_SIZE=0x8FFFFFFF;
@@ -271,7 +273,6 @@ ImageParseResult Image_read_png(
 
     // the data spread across the IDAT chunks is combined into a single bitstream, defined by RFC 1950 (e.g. https://datatracker.ietf.org/doc/html/rfc1950)
 
-    typedef Huffman::BitStream<Huffman::BITSTREAM_DIRECTION_RIGHT_TO_LEFT, false> BitStream;
     BitStream _bit_stream;
     BitStream* const  stream=&_bit_stream;
     BitStream::BitStream_new(stream, data_buffer);

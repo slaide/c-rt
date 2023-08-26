@@ -16,11 +16,10 @@
 
 #include "app/app.hpp"
 #include "app/error.hpp"
-namespace Huffman {
 #include "app/huffman.hpp"
-};
+#include "app/bit_util.hpp"
 
-typedef Huffman::HuffmanCodingTable<uint8_t, Huffman::BITSTREAM_DIRECTION_LEFT_TO_RIGHT, true> HuffmanTable;
+typedef huffman::CodingTable<uint8_t, false, bitStream::BITSTREAM_DIRECTION_LEFT_TO_RIGHT, true> HuffmanTable;
 typedef HuffmanTable::BitStream_ BitStream;
 
 typedef int16_t MCU_EL;
@@ -287,7 +286,7 @@ static inline void decode_block_ac(
                 spec_sel+=16;
                 continue;
             }else{
-                *eob_run=Huffman::get_mask_u32(num_zeros);
+                *eob_run=bitUtil::get_mask_u32(num_zeros);
                 *eob_run+=stream->get_bits_advance((uint8_t)num_zeros);
 
                 break;
@@ -385,7 +384,7 @@ static inline void decode_block_with_sbh(
                 default:
                     {
                         uint32_t eob_run_bits=(uint32_t)stream->get_bits_advance((uint8_t)num_zeros);
-                        *eob_run=Huffman::get_mask_u32(num_zeros) + eob_run_bits;
+                        *eob_run=bitUtil::get_mask_u32(num_zeros) + eob_run_bits;
                     }
                     num_zeros=64;
                     break;
@@ -849,7 +848,7 @@ static inline void process_mcu_generic(
                             spec_sel+=16;
                             continue;
                         }else {
-                            *eob_run=Huffman::get_mask_u32(num_zeros);
+                            *eob_run=bitUtil::get_mask_u32(num_zeros);
                             *eob_run+=stream->get_bits_advance((uint8_t)num_zeros);
 
                             break;
@@ -1125,7 +1124,7 @@ void JpegParser_parse_file(
                         // destroy previous table, if there was one
                         target_table->destroy();
 
-                        HuffmanTable::HuffmanCodingTable_new(
+                        HuffmanTable::CodingTable_new(
                             target_table,
                             num_values_of_length,
                             total_num_values,

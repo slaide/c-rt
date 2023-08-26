@@ -5,14 +5,17 @@
 #include <cstdint>
 #include <cstdio>
 
-enum BitStreamDirection{
+#include "app/bit_util.hpp"
+
+namespace bitStream {
+enum Direction{
     /// read bits from least to most significant bit in each byte
     BITSTREAM_DIRECTION_RIGHT_TO_LEFT,
     /// read bits from most to least significant bit in each byte
     BITSTREAM_DIRECTION_LEFT_TO_RIGHT,
 };
 
-template <BitStreamDirection DIRECTION,bool REMOVE_JPEG_BYTE_STUFFING>
+template <Direction DIRECTION,bool REMOVE_JPEG_BYTE_STUFFING>
 class BitStream{
     public:
         uint8_t* data;
@@ -122,7 +125,7 @@ class BitStream{
             const uint64_t ret=this->buffer>>(64-n_bits);
             return ret;
         }else if constexpr(DIRECTION==BITSTREAM_DIRECTION_RIGHT_TO_LEFT){
-            const uint64_t ret=this->buffer&Huffman::get_mask_u64(n_bits);
+            const uint64_t ret=this->buffer & bitUtil::get_mask_u64(n_bits);
             return ret;
         }
     }
@@ -158,7 +161,7 @@ class BitStream{
     }
 };
 
-template <BitStreamDirection DIR,bool REM_JPG_STUFF>
+template <Direction DIR,bool REM_JPG_STUFF>
 void BitStream<DIR,REM_JPG_STUFF>::BitStream_new(BitStream* stream,void* const data)noexcept{
     stream->data=static_cast<uint8_t*>(data);
     stream->next_data_index=0;
@@ -171,7 +174,7 @@ void BitStream<DIR,REM_JPG_STUFF>::BitStream_new(BitStream* stream,void* const d
 * this function is called automatically (internally) when required
 * @param stream 
 */
-template <BitStreamDirection DIRECTION,bool REMOVE_JPEG_BYTE_STUFFING>
+template <Direction DIRECTION,bool REMOVE_JPEG_BYTE_STUFFING>
 [[gnu::hot,gnu::flatten]]
 inline void BitStream<DIRECTION,REMOVE_JPEG_BYTE_STUFFING>::fill_buffer(
 )noexcept{
@@ -209,3 +212,4 @@ inline void BitStream<DIRECTION,REMOVE_JPEG_BYTE_STUFFING>::fill_buffer(
         this->buffer_bits_filled += num_bytes_missing*8;
     }
 }
+};
