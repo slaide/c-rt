@@ -1,7 +1,7 @@
 #ifdef  VK_USE_PLATFORM_XCB_KHR
-    #include "jpeg_x64.c"
+    #include "jpeg_x64.cpp"
 #elif defined( VK_USE_PLATFORM_METAL_EXT)
-    #include "jpeg_arm64.c"
+    #include "jpeg_arm64.cpp"
 #endif
 
 [[gnu::hot,gnu::flatten,gnu::nonnull(1)]]

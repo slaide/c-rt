@@ -1444,7 +1444,7 @@ void JpegParser_parse_file(
     #endif
 }
 
-#include "jpeg/jpeg_ycbcr_to_rgb.c"
+#include "jpeg/jpeg_ycbcr_to_rgb.cpp"
 
 struct JpegParser_convert_colorspace_argset{
     JpegParser* parser;

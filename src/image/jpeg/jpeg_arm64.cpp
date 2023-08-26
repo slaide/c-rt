@@ -1,6 +1,8 @@
 #include <stdint.h>
 #include <arm_neon.h>
 
+#include "app/image.hpp"
+
 #ifdef USE_FLOAT_PRECISION
 
 [[gnu::hot,gnu::flatten,gnu::nonnull(1)]]
