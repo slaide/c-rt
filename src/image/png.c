@@ -111,6 +111,67 @@ enum PNGInterlace{
     PNG_INTERLACE_ADAM7=1,
 };
 
+[[maybe_unused]]
+static const uint8_t DEFLATE_EXTRA_BITS[]={
+    0,0,0,0, 0,0,0,0,// 257...264
+    1,1,1,1,// 265...268
+    2,2,2,2,// 269...272
+    3,3,3,3,// 273...276
+    4,4,4,4,// 277...280
+    5,5,5,5,// 281...284
+    0 // 285
+};
+[[maybe_unused]]
+static const uint16_t DEFLATE_BASE_LENGTH_OFFSET[]={
+    3,   4,      5,        6,      7,  8,  9,  10, // 257...264
+    11,  11+2,   11+2*2,   11+2*3, // 265...268
+    19,  19+4,   19+4*2,   19+4*3, // 269...272
+    35,  35+8,   35+8*2,   35+8*3, // 273...276
+    67,  67+16,  67+16*2,  67+16*3, // 277...280
+    131, 131+32, 131+32*2, 131+32*3, // 281...284
+    258 // 285
+};
+[[maybe_unused]]
+static const uint8_t DEFLATE_BACKWARD_EXTRA_BIT[]={
+    0,  0,  0,  0,
+    1,  1,
+    2,  2,
+    3,  3,
+    4,  4,
+    5,  5,
+    6,  6,
+    7,  7,
+    8,  8,
+    9,  9,
+    10, 10,
+    11, 11,
+    12, 12,
+    13, 13
+};
+[[maybe_unused]]
+static const uint16_t DEFLATE_BACKWARD_LENGTH_OFFSET[]={
+    1,     2,    3,    4,
+    5,     7,
+    9,     13,
+    17,    25,
+    33,    49,
+    65,    97,
+    129,   193,
+    257,   385,
+    513,   769,
+    1025,  1537,
+    2049,  3073,
+    4097,  6145,
+    8193,  12289,
+    16385, 24577
+};
+
+#define NUM_CODE_LENGTH_CODES 19
+/// this table in turn is also hufmann encoded, so:
+/// per spec, there are 19 code length codes (0-15 denote code length of this many bits, 16-19 are special)
+/// the sequence in which the number of bits used for each code length code appear in this table is specified to the following:
+static const uint8_t CODE_LENGTH_CODE_CHARACTERS[NUM_CODE_LENGTH_CODES]={16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15};
+
 /// spec at http://www.libpng.org/pub/png/spec/1.2/PNG-Compression.html
 ImageParseResult Image_read_png(
     const char* const filepath,
@@ -303,8 +364,121 @@ ImageParseResult Image_read_png(
                     exit(FATAL_UNEXPECTED_ERROR);
                 }
 
-                uint64_t num_huffman_codes=4+BitStream_get_bits_advance(stream, 4);
-                printf("num_huffman_codes %"PRIu64"\n",num_huffman_codes);
+                // the number of elements in this table can be 4-19. the code length codes not present in the table are specified to not occur (i.e. zero bits)
+                uint8_t num_huffman_codes=4+(uint8_t)BitStream_get_bits_advance(stream, 4);
+                printf("num_huffman_codes %d\n",num_huffman_codes);
+
+                // parse code sizes for each entry in the huffman code table
+
+                // parse all code lengths in one go
+                uint8_t code_length_code_lengths[NUM_CODE_LENGTH_CODES];
+                memset(code_length_code_lengths,0,NUM_CODE_LENGTH_CODES);
+
+                for(uint64_t code_size_index=0;code_size_index<num_huffman_codes;code_size_index++){
+                    code_length_code_lengths[CODE_LENGTH_CODE_CHARACTERS[code_size_index]]=(uint8_t)BitStream_get_bits_advance(stream,3);
+                }
+
+                uint8_t num_values_of_length[MAX_HUFFMAN_TABLE_CODE_LENGTH];
+                memset(num_values_of_length,0,MAX_HUFFMAN_TABLE_CODE_LENGTH);
+                num_values_of_length[3]=num_huffman_codes;
+
+                uint8_t values[NUM_CODE_LENGTH_CODES];
+                memset(values,0,NUM_CODE_LENGTH_CODES);
+                for(uint8_t i=0;i<NUM_CODE_LENGTH_CODES;i++)
+                    values[i]=i;
+
+                /*HuffmanCodingTable code_length_code_alphabet;
+                HuffmanCodingTable_new(
+                    &code_length_code_alphabet, 
+                    num_values_of_length, 
+                    num_huffman_codes, 
+                    code_length_code_lengths, 
+                    const uint8_t *values
+                );*/
+                /*let code_length_code_alphabet:CODE_LENGTH_ALPHABET=HuffmanAlphabet(
+                    value_len_map: code_length_codes.enumerated().map{
+                        (index,code_len) in return (UInt8(index),CODE_LENGTH_ALPHABET.CODE_LEN(code_len))
+                    },
+                    max_bits: code_length_codes.max()!
+                )
+
+                // then read literal and distance alphabet code lengths in one pass, since they use the same alphabet
+                let combined_code_lengths=Array<UInt8>(unsafeUninitializedCapacity: 288+33){(ptr,len) in
+                    var combined_code_index:UInt32=0
+                    while combined_code_index<(num_literal_codes+num_distance_codes){
+                        let value_parsed=code_length_code_alphabet.parse(stream:self.bitStream)
+                        switch value_parsed{
+                            case 0...15:
+                                ptr[Int(combined_code_index)]=value_parsed
+                                combined_code_index+=1
+                            case 16:
+                                //Copy the previous code length 3 - 6 times.
+                                //The next 2 bits indicate repeat length
+                                //        (0 = 3, ... , 3 = 6)
+                                let num_reps=3+self.bitStream.nbits(2)
+                                for rep in 0..<num_reps{
+                                    ptr[Int(combined_code_index)+Int(rep)]=ptr[Int(combined_code_index-1)]
+                                }
+                                combined_code_index+=UInt32(num_reps)
+                            case 17:
+                                //Repeat a code length of 0 for 3 - 10 times.
+                                //   (3 bits of length)
+                                let num_reps=3+self.bitStream.nbits(3)
+                                for rep in 0..<num_reps{
+                                    ptr[Int(combined_code_index)+Int(rep)]=0
+                                }
+                                combined_code_index+=UInt32(num_reps)
+                            case 18:
+                                // Repeat a code length of 0 for 11 - 138 times
+                                //   (7 bits of length)
+                                let num_reps=11+self.bitStream.nbits(7)
+                                for rep in 0..<num_reps{
+                                    ptr[Int(combined_code_index)+Int(rep)]=0
+                                }
+                                combined_code_index+=UInt32(num_reps)
+                            default:
+                                fatalError("unreachable")
+                        }
+                    }
+                    len=Int(combined_code_index)
+                }
+
+                // split combined alphabet
+                let literal_code_lengths: [UInt8]=Array(unsafeUninitializedCapacity: 288){(ptr,len) in
+                    len=288
+                    for i in 0..<Int(num_literal_codes){
+                        ptr[i]=combined_code_lengths[i]
+                    }
+                    for i in Int(num_literal_codes)..<len{
+                        ptr[i]=0
+                    }
+                }
+
+                let distance_code_lengths: [UInt8]=Array(unsafeUninitializedCapacity: 33){(ptr,len) in
+                    len=33
+                    for i in 0..<Int(num_distance_codes){
+                        ptr[i]=combined_code_lengths[i+Int(num_literal_codes)]
+                    }
+                    for i in Int(num_distance_codes)..<len{
+                        ptr[i]=0
+                    }
+                }
+
+                // construct literal alphabet from compressed alphabet lengths
+                literal_alphabet=LITERAL_ALPHABET(
+                    value_len_map: literal_code_lengths.enumerated().map{
+                        (UInt16($0),LITERAL_ALPHABET.CODE_LEN($1))
+                    },
+                    max_bits: LITERAL_ALPHABET.CODE_LEN(literal_code_lengths.max()!)
+                )
+
+                // construct distance alphabet from compressed alphabet lengths
+                distance_alphabet=DISTANCE_ALPHABET(
+                    value_len_map: distance_code_lengths.enumerated().map{
+                        (index,code_len) in return (UInt16(index),DISTANCE_ALPHABET.CODE_LEN(code_len))
+                    },
+                    max_bits: DISTANCE_ALPHABET.CODE_LEN(distance_code_lengths.max()!)
+                )*/
 
                 // TODO parse codes
 
