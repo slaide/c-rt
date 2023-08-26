@@ -1,12 +1,12 @@
 #pragma  once
 
-#include <cstdbool>
-#include <stdint.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <strings.h>
+#include <cstdlib>
+#include <cstring>
+#include <string>
 #include <inttypes.h>
+#include <cstdint>
+#include <cstdio>
+#include <cstdint>
 
 #define UINT32_1 ((uint32_t)1u)
 #define UINT64_1 ((uint64_t)1u)

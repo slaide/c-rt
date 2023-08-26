@@ -20,15 +20,16 @@ endif
 PLATFORM ?= $(DEFAULT_PLATFORM)
 
 CC := clang
-CXX := clang++ -nostdlib -fno-exceptions
+CXX := clang++
 OBJCC := clang
-OBJCXX := clang++ -nostdlib -fno-exceptions
+OBJCXX := clang++
 CSTD := -std=gnu2x
-CXXSTD := -std=gnu++2b
+CXXSTD := -std=gnu++20
 LINK_FLAGS := -lvulkan -pthread
 COMPILE_FLAGS := -Wall -Werror -Wpedantic -Wextra -Wno-sequence-point -Wconversion -MMD -MP
 CINCLUDE := -Iinclude
 CDEF = -DIMAGE_BENCHMARK_NUM_REPEATS=$(strip $(IMAGE_BENCHMARK_NUM_REPEATS))
+CDEF += -D__STDC_FORMAT_MACROS=1
 
 LIBJPEG_TEST_COMPILE_FLAGS := $(CSTD) -O3 -ffast-math -flto=full -ljpeg
 
@@ -125,7 +126,7 @@ ifeq ($(USEAVX),YES)
 COMPILE_FLAGS += -mavx2 # for some additional speed-up with O3
 endif
 
-$(eval $(call compile_c, $(BUILD_DIR)/main.o, src/main/main_linux.c))
+$(eval $(call compile_cpp, $(BUILD_DIR)/main.o, src/main/main_linux.cpp))
 else ifeq ($(PLATFORM), macos)
 RM_CMD := $(RM) -r
 MKDIR_CMD := mkdir -p
@@ -154,7 +155,6 @@ endif
 # Usage of the function
 $(eval $(call compile_cpp, $(BUILD_DIR)/app.o, src/app.cpp))
 $(eval $(call compile_cpp, $(BUILD_DIR)/app_mesh.o, src/app_mesh.cpp))
-# $(eval $(call compile_c, $(BUILD_DIR)/huffman.o, src/huffman.c))
 
 $(eval $(call compile_cpp, $(BUILD_DIR)/image/jpeg.o, src/image/jpeg.cpp))
 $(eval $(call compile_cpp, $(BUILD_DIR)/image/png.o, src/image/png.cpp))

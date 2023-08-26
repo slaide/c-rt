@@ -1,6 +1,6 @@
 #pragma once
 
-#include <cstdint>
+#include <stdint.h>
 
 typedef enum PixelFormat{
     PIXEL_FORMAT_Ru8Gu8Bu8Au8

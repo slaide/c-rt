@@ -1,11 +1,10 @@
 #pragma once
 
-#include <stdint.h>
-#include <stdio.h>
-#include <memory.h>
-#include <string.h>
-#include <stdlib.h>
-#include <time.h>
+#include <cstdint>
+#include <cstdio>
+#include <cstring>
+#include <cstdlib>
+#include <ctime>
 
 #include <vulkan/vulkan.h>
 

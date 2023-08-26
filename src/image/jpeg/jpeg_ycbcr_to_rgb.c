@@ -1,6 +1,6 @@
 #ifdef  VK_USE_PLATFORM_XCB_KHR
     #include "jpeg_x64.c"
-#elifdef VK_USE_PLATFORM_METAL_EXT
+#elif defined( VK_USE_PLATFORM_METAL_EXT)
     #include "jpeg_arm64.c"
 #endif
 
@@ -84,13 +84,13 @@ void JpegParser_convert_colorspace(
             #ifdef  USE_FLOAT_PRECISION
                 #ifdef VK_USE_PLATFORM_METAL_EXT
                     scan_ycbcr_to_rgb_neon_float(parser,s);
-                #elifdef VK_USE_PLATFORM_XCB_KHR
+                #elif defined( VK_USE_PLATFORM_XCB_KHR)
                     scan_ycbcr_to_rgb_sse_float(parser,s);
                 #endif
             #else
                 #ifdef VK_USE_PLATFORM_METAL_EXT
                     scan_ycbcr_to_rgb_neon_fixed(parser,s);
-                #elifdef VK_USE_PLATFORM_XCB_KHR
+                #elif defined( VK_USE_PLATFORM_XCB_KHR)
                     scan_ycbcr_to_rgb_sse_fixed(parser,s);
                 #endif
             #endif

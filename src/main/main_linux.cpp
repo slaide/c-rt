@@ -369,7 +369,7 @@ PlatformWindow* App_create_window(
 
     uint32_t new_window_id=app->platform_handle->num_open_windows;
     app->platform_handle->num_open_windows+=1;
-    app->platform_handle->open_windows=realloc(app->platform_handle->open_windows, app->platform_handle->num_open_windows*sizeof(PlatformWindow*));
+    app->platform_handle->open_windows=(PlatformWindow**)realloc(app->platform_handle->open_windows, app->platform_handle->num_open_windows*sizeof(PlatformWindow*));
 
     app->platform_handle->open_windows[new_window_id]=window;
 
@@ -384,7 +384,7 @@ void App_destroy_window(Application *app, PlatformWindow *window){
     if(app->platform_handle->num_open_windows>0){
         app->platform_handle->num_open_windows-=1;
         if(app->platform_handle->num_open_windows>0){
-            app->platform_handle->open_windows=realloc(app->platform_handle->open_windows,app->platform_handle->num_open_windows*sizeof(PlatformWindow*));
+            app->platform_handle->open_windows=(PlatformWindow**)realloc(app->platform_handle->open_windows,app->platform_handle->num_open_windows*sizeof(PlatformWindow*));
         }else{
             free(app->platform_handle->open_windows);
         }

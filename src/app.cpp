@@ -1,14 +1,14 @@
 #include "app/app.hpp"
 #include "app/error.hpp"
+#include <cstdlib>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
-#include <stdbool.h>
-#include <stdint.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <time.h>
+#include <cstring>
+#include <ctime>
 #include <inttypes.h>
+#include <cstdint>
+#include <cstdio>
 #include <unistd.h>
 
 double current_time(){
@@ -926,7 +926,7 @@ Application* App_new(PlatformHandle* platform){
 
         #ifdef VK_USE_PLATFORM_XCB_KHR
             "VK_KHR_xcb_surface"
-        #elifdef VK_USE_PLATFORM_METAL_EXT
+        #elif defined( VK_USE_PLATFORM_METAL_EXT)
             "VK_EXT_metal_surface",
             "VK_KHR_portability_enumeration",
             "VK_KHR_get_physical_device_properties2"
@@ -935,7 +935,7 @@ Application* App_new(PlatformHandle* platform){
     uint32_t num_instance_extensions=1;
     #ifdef VK_USE_PLATFORM_XCB_KHR
         num_instance_extensions+=1;
-    #elifdef VK_USE_PLATFORM_METAL_EXT
+    #elif defined( VK_USE_PLATFORM_METAL_EXT)
         num_instance_extensions+=3;
     #endif
 

@@ -1,10 +1,9 @@
 #pragma once
 
-#include <cstdbool>
+#include <cstdlib>
+#include <inttypes.h>
 #include <cstdint>
 #include <cstdio>
-#include <cstdlib>
-#include <cinttypes>
 
 enum BitStreamDirection{
     /// read bits from least to most significant bit in each byte
@@ -193,40 +192,35 @@ inline void BitStream<DIRECTION,REMOVE_JPEG_BYTE_STUFFING>::BitStream_fill_buffe
 ){
     const uint64_t num_bytes_missing = (64-stream->buffer_bits_filled)/8;
 
-    switch(DIRECTION){
-        case BITSTREAM_DIRECTION_RIGHT_TO_LEFT:
-            {
-                uint64_t new_bytes=0;
-                for(uint64_t i=0; i<num_bytes_missing; i++){
-                    const uint64_t next_byte = stream->data[stream->next_data_index++];
+    if constexpr(DIRECTION==BITSTREAM_DIRECTION_RIGHT_TO_LEFT){
+        uint64_t new_bytes=0;
+        for(uint64_t i=0; i<num_bytes_missing; i++){
+            const uint64_t next_byte = stream->data[stream->next_data_index++];
 
-                    const uint64_t shift_by = i*8;
-                    new_bytes |= next_byte << shift_by;
+            const uint64_t shift_by = i*8;
+            new_bytes |= next_byte << shift_by;
 
-                    if(REMOVE_JPEG_BYTE_STUFFING && next_byte==0xFF && stream->data[stream->next_data_index]==0){
-                        stream->next_data_index++;
-                    }
+            if constexpr(REMOVE_JPEG_BYTE_STUFFING)
+                if(next_byte==0xFF && stream->data[stream->next_data_index]==0){
+                    stream->next_data_index++;
                 }
-                stream->buffer |= new_bytes << stream->buffer_bits_filled;
-                stream->buffer_bits_filled += num_bytes_missing*8;
-            }
-            break;
-        case BITSTREAM_DIRECTION_LEFT_TO_RIGHT:
-            {
-                uint64_t new_bytes=0;
-                for(uint64_t i=0; i<num_bytes_missing; i++){
-                    const uint64_t next_byte = stream->data[stream->next_data_index++];
+        }
+        stream->buffer |= new_bytes << stream->buffer_bits_filled;
+        stream->buffer_bits_filled += num_bytes_missing*8;
+    }else if constexpr(DIRECTION==BITSTREAM_DIRECTION_LEFT_TO_RIGHT){
+        uint64_t new_bytes=0;
+        for(uint64_t i=0; i<num_bytes_missing; i++){
+            const uint64_t next_byte = stream->data[stream->next_data_index++];
 
-                    const uint64_t shift_by = (7-i)*8;
-                    new_bytes |= next_byte << shift_by;
+            const uint64_t shift_by = (7-i)*8;
+            new_bytes |= next_byte << shift_by;
 
-                    if(REMOVE_JPEG_BYTE_STUFFING && next_byte==0xFF && stream->data[stream->next_data_index]==0){
-                        stream->next_data_index++;
-                    }
+            if constexpr(REMOVE_JPEG_BYTE_STUFFING)
+                if(next_byte==0xFF && stream->data[stream->next_data_index]==0){
+                    stream->next_data_index++;
                 }
-                stream->buffer |= new_bytes >> stream->buffer_bits_filled;
-                stream->buffer_bits_filled += num_bytes_missing*8;
-            }
-            break;
+        }
+        stream->buffer |= new_bytes >> stream->buffer_bits_filled;
+        stream->buffer_bits_filled += num_bytes_missing*8;
     }
 }

@@ -2,10 +2,9 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
-#include <strings.h>
 #include <cmath>
-#include <pthread.h>
-#include <stdatomic.h>
+#include <thread>
+#include <atomic>
 
 #ifdef VK_USE_PLATFORM_METAL_EXT
     #include <arm_neon.h>
@@ -558,7 +557,7 @@ void JpegParser_init_empty(JpegParser*  parser){
 static uint32_t tzcnt_32(const uint32_t v){
     #ifdef __clang__
         return (uint32_t)_mm_tzcnt_32(v);
-    #elifdef __GNUC__
+    #elif defined( __GNUC__)
         return __builtin_ia32_lzcnt_u32(v);
     #endif
 }
@@ -614,12 +613,12 @@ static void JpegParser_process_channel(
             for(uint32_t cosine_index = 1;cosine_index<64;){
                 #ifndef USE_FLOAT_PRECISION
                     #ifdef VK_USE_PLATFORM_XCB_KHR
-                        const __m128i mask_strengths=_mm_loadu_si128((void*)(&in_block[cosine_index]));
+                        const __m128i mask_strengths=_mm_loadu_si128((__m128i*)(&in_block[cosine_index]));
                         const __m128i elements_zero_result=_mm_cmpeq_epi16(mask_strengths, _mm_set1_epi16(0));
                         uint32_t elements_nonzero=0xFFFF-(uint32_t)_mm_movemask_epi8(elements_zero_result);
 
                         const uint32_t num_cosines_remaining=64-cosine_index;
-                        const uint32_t num_cosines_remaining_in_current_iteration=min_u32(8,num_cosines_remaining);
+                        const uint32_t num_cosines_remaining_in_current_iteration=min(8u,num_cosines_remaining);
 
                         const uint32_t all_elements_mask=mask_u32(num_cosines_remaining_in_current_iteration*2);
                         elements_nonzero&=all_elements_mask;
@@ -630,7 +629,7 @@ static void JpegParser_process_channel(
                         }
 
                         cosine_index+=tzcnt_32(elements_nonzero)/2;
-                    #elifdef VK_USE_PLATFORM_METAL_EXT
+                    #elif defined( VK_USE_PLATFORM_METAL_EXT)
                         const int16x8_t mask_strengths=vld1q_s16((int16_t*)(&in_block[cosine_index]));
                         const int16x8_t elements_zero_result=vceqq_s16(mask_strengths, vdupq_n_s16(0));
                         uint64_t elements_nonzero=0;
@@ -690,14 +689,14 @@ void* JpegParser_process_channel_pthread(struct JpegParser_process_channel_argse
 struct SomeData{
     JpegParser* parser;
     uint8_t channel;
-    atomic_uint32_t num_scans_parsed;
+    std::atomic<uint32_t> num_scans_parsed;
     ImageData* image_data;
 };
 void* ProcessIncomingScans_pthread(struct SomeData* somedata){
     uint32_t scan_id_start=0;
     uint32_t total_num_scans=somedata->parser->image_components[1].num_scans;
     while(scan_id_start<total_num_scans){
-        uint32_t scan_id_end=atomic_load(&somedata->num_scans_parsed);
+        uint32_t scan_id_end=somedata->num_scans_parsed.load();
 
         uint32_t num_scans_to_process=scan_id_end-scan_id_start;
         if(num_scans_to_process){
@@ -1409,7 +1408,7 @@ void JpegParser_parse_file(
                             for(int t=0;t<num_scan_components;t++){
                                 const uint8_t index=scan_components[t].component_index_in_image;
                                 if (channel_completeness[index]==CHANNEL_COMPLETE)
-                                    atomic_fetch_add(&async_scan_info[index].num_scans_parsed, 1);
+                                    async_scan_info[index].num_scans_parsed+=1;
                             }
                     }
 
