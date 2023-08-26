@@ -1,6 +1,7 @@
-#include "app/app.h"
-#include "app/error.h"
-#include "vulkan/vulkan_core.h"
+#include "app/app.hpp"
+#include "app/error.hpp"
+#include <cstdio>
+#include <cstdlib>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -27,13 +28,13 @@ void ImageData_initEmpty(struct ImageData* const image_data){
     image_data->data=NULL;
     image_data->height=0;
     image_data->width=0;
-    image_data->pixel_format=0;
+    image_data->pixel_format=(PixelFormat)0;
 
     image_data->image_file_metadata.file_comment=NULL;
 }
 void ImageData_destroy(struct ImageData* const image_data){
     if(image_data->image_file_metadata.file_comment){
-        free((void*)image_data->image_file_metadata.file_comment);
+        free(static_cast<void*>(image_data->image_file_metadata.file_comment));
         image_data->image_file_metadata.file_comment=NULL;
     }
     free(image_data->data);
@@ -181,7 +182,7 @@ struct Texture{
 Texture* App_create_texture(Application* app, ImageData* image_data){
     discard image_data;
 
-    Texture* texture=malloc(sizeof(Texture));
+    Texture* texture=static_cast<Texture*>(malloc(sizeof(Texture)));
 
     VkImageCreateInfo image_create_info={
         .sType=VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
@@ -310,14 +311,8 @@ void App_upload_texture(
 ){
     VkCommandBuffer command_buffer=recording_command_buffer;
 
-    vkCmdPipelineBarrier(
-        command_buffer, 
-        VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
-        VK_PIPELINE_STAGE_TRANSFER_BIT, 
-        0, 
-        0, NULL, 
-        0, NULL, 
-        1, (VkImageMemoryBarrier[1]){{
+    {
+        VkImageMemoryBarrier image_memory_barriers[1]={{
             .sType=VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
             .pNext=NULL,
             .srcAccessMask=0,  
@@ -327,15 +322,24 @@ void App_upload_texture(
             .srcQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED,  
             .dstQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED,  
             .image=texture->image, 
-            {
+            .subresourceRange={
                 .aspectMask=VK_IMAGE_ASPECT_COLOR_BIT,
                 .baseMipLevel=0,
                 .levelCount=1,
                 .baseArrayLayer=0,
                 .layerCount=1 
             }
-        }}
-    );
+        }};
+        vkCmdPipelineBarrier(
+            command_buffer, 
+            VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+            VK_PIPELINE_STAGE_TRANSFER_BIT, 
+            0, 
+            0, NULL, 
+            0, NULL, 
+            1, image_memory_barriers
+        );
+    }
 
     VkPhysicalDeviceProperties physical_device_properties;
     vkGetPhysicalDeviceProperties(app->physical_device,&physical_device_properties);
@@ -359,7 +363,7 @@ void App_upload_texture(
     app->staging_buffer_size_occupied+=image_memory_size;
 
     if(app->staging_buffer_size_occupied>app->staging_buffer_size){
-        fprintf(stderr,"copied more data into staging buffer than fits into it (%"PRIu64" > %"PRIu64")\n",app->staging_buffer_size_occupied,app->staging_buffer_size);
+        fprintf(stderr,"copied more data into staging buffer than fits into it (%" PRIu64 " > %" PRIu64 ")\n",app->staging_buffer_size_occupied,app->staging_buffer_size);
         exit(ERROR_STAGING_BUFFER_OVERFLOW);
     }
 
@@ -395,14 +399,8 @@ void App_upload_texture(
     };
     vkCmdCopyBufferToImage(command_buffer, app->staging_buffer, texture->image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &buffer_image_copy);
 
-    vkCmdPipelineBarrier(
-        command_buffer, 
-        VK_PIPELINE_STAGE_TRANSFER_BIT,
-        VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 
-        0, 
-        0, NULL, 
-        0, NULL, 
-        1, (VkImageMemoryBarrier[1]){{
+    {
+        VkImageMemoryBarrier image_memory_barriers[1]={{
             .sType=VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
             .pNext=NULL,
             .srcAccessMask=VK_ACCESS_TRANSFER_WRITE_BIT,  
@@ -412,15 +410,24 @@ void App_upload_texture(
             .srcQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED,  
             .dstQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED,  
             .image=texture->image, 
-            {
+            .subresourceRange={
                 .aspectMask=VK_IMAGE_ASPECT_COLOR_BIT,
                 .baseMipLevel=0,
                 .levelCount=1,
                 .baseArrayLayer=0,
                 .layerCount=1 
             }
-        }}
-    );
+        }};
+        vkCmdPipelineBarrier(
+            command_buffer, 
+            VK_PIPELINE_STAGE_TRANSFER_BIT,
+            VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 
+            0, 
+            0, NULL, 
+            0, NULL, 
+            1, image_memory_barriers
+        );
+    }
 }
 void App_destroy_texture(Application* app, Texture* texture){
     vkDestroyImageView(app->device,texture->image_view,app->vk_allocator);
@@ -446,10 +453,10 @@ VkShaderModule App_create_shader_module(
         fprintf(stderr,"could not get shader file size.\n");
         exit(FATAL_UNEXPECTED_ERROR);
     }
-    uint64_t shader_size=(uint64_t)shader_size_res;
+    uint64_t shader_size=static_cast<uint64_t>(shader_size_res);
     rewind(shader_file);
 
-    uint32_t* shader_code=malloc(shader_size);
+    uint32_t* shader_code=static_cast<uint32_t*>(malloc(shader_size));
     fread(shader_code, 1, shader_size, shader_file);
 
     fclose(shader_file);
@@ -475,19 +482,15 @@ Shader* App_create_shader(
     const uint32_t subpass,
     const uint32_t subpass_num_attachments
 ){
-    Shader* shader=malloc(sizeof(Shader));
+    Shader* shader=static_cast<Shader*>(malloc(sizeof(Shader)));
 
     shader->app=app;
 
     shader->fragment_shader=App_create_shader_module(app, "fragshader.spv");
     shader->vertex_shader=App_create_shader_module(app, "vertshader.spv");
 
-    VkDescriptorSetLayoutCreateInfo descriptor_set_layout={
-        .sType=VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-        .pNext=NULL,
-        .flags=0,
-        .bindingCount=2,
-        .pBindings=(VkDescriptorSetLayoutBinding[2]){
+    {
+        VkDescriptorSetLayoutBinding set_layout_bindings[2]={
             {
                 .binding=0,
                 .descriptorType=VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
@@ -502,22 +505,29 @@ Shader* App_create_shader(
                 .stageFlags=VK_SHADER_STAGE_VERTEX_BIT,
                 .pImmutableSamplers=NULL
             }
+        };
+        VkDescriptorSetLayoutCreateInfo descriptor_set_layout={
+            .sType=VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+            .pNext=NULL,
+            .flags=0,
+            .bindingCount=2,
+            .pBindings=set_layout_bindings
+        };
+        VkResult res=vkCreateDescriptorSetLayout(app->device, &descriptor_set_layout, app->vk_allocator, &shader->set_layout);
+        if(res!=VK_SUCCESS){
+            fprintf(stderr,"failed to create descriptor set layout\n");
+            exit(VULKAN_CREATE_DESCRIPTOR_SET_LAYOUT_FAILURE);
         }
-    };
-    VkResult res=vkCreateDescriptorSetLayout(app->device, &descriptor_set_layout, app->vk_allocator, &shader->set_layout);
-    if(res!=VK_SUCCESS){
-        fprintf(stderr,"failed to create descriptor set layout\n");
-        exit(VULKAN_CREATE_DESCRIPTOR_SET_LAYOUT_FAILURE);
     }
 
     VkDescriptorPoolSize pool_sizes[2]={
         {
+            .type=VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
             .descriptorCount=app->cli_num_args,
-            .type=VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER
         },
         {
+            .type=VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
             .descriptorCount=app->cli_num_args,
-            .type=VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER
         }
     };
     VkDescriptorPoolCreateInfo descriptor_pool_create_info={
@@ -528,7 +538,7 @@ Shader* App_create_shader(
         .poolSizeCount=2,
         .pPoolSizes=pool_sizes
     };
-    res=vkCreateDescriptorPool(app->device, &descriptor_pool_create_info, app->vk_allocator, &shader->descriptor_pool);
+    VkResult res=vkCreateDescriptorPool(app->device, &descriptor_pool_create_info, app->vk_allocator, &shader->descriptor_pool);
     if(res!=VK_SUCCESS){
         fprintf(stderr,"failed to create descriptor pool\n");
         exit(VULKAN_CREATE_DESCRIPTOR_POOL_FAILURE);
@@ -661,42 +671,45 @@ Shader* App_create_shader(
         .pAttachments=&subpass_attachment_color_blend_states,
         .blendConstants={0.0,0.0,0.0,0.0}
     };
+
+    VkDynamicState dynamic_states[2]={
+        VK_DYNAMIC_STATE_VIEWPORT,
+        VK_DYNAMIC_STATE_SCISSOR
+    };
     VkPipelineDynamicStateCreateInfo dynamic_state={
         .sType=VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
         .pNext=NULL,
         .flags=0,
         .dynamicStateCount=2,
-        .pDynamicStates=(VkDynamicState[2]){
-            VK_DYNAMIC_STATE_VIEWPORT,
-            VK_DYNAMIC_STATE_SCISSOR
-        }
+        .pDynamicStates=dynamic_states
     };
 
+    VkPipelineShaderStageCreateInfo graphics_pipeline_stages[2]={
+        {
+            .sType=VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, //VkStructureType
+            .pNext=NULL, //const void*
+            .flags=0, //VkPipelineShaderStageCreateFlags
+            .stage=VK_SHADER_STAGE_VERTEX_BIT, //VkShaderStageFlagBits
+            .module=shader->vertex_shader, //VkShaderModule
+            .pName="main", //const char*
+            .pSpecializationInfo=NULL, //const VkSpecializationInfo*
+        },
+        {
+            .sType=VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, //VkStructureType
+            .pNext=NULL, //const void*
+            .flags=0, //VkPipelineShaderStageCreateFlags
+            .stage=VK_SHADER_STAGE_FRAGMENT_BIT, //VkShaderStageFlagBits
+            .module=shader->fragment_shader, //VkShaderModule
+            .pName="main", //const char*
+            .pSpecializationInfo=NULL, //const VkSpecializationInfo*
+        }
+    };
     VkGraphicsPipelineCreateInfo graphics_pipeline_create_info={
         .sType=VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
         .pNext=NULL,
         .flags=0,
         .stageCount=2,
-        .pStages=(VkPipelineShaderStageCreateInfo[2]){
-            {
-                .sType=VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, //VkStructureType
-                .pNext=NULL, //const void*
-                .flags=0, //VkPipelineShaderStageCreateFlags
-                .stage=VK_SHADER_STAGE_VERTEX_BIT, //VkShaderStageFlagBits
-                .module=shader->vertex_shader, //VkShaderModule
-                .pName="main", //const char*
-                .pSpecializationInfo=NULL, //const VkSpecializationInfo*
-            },
-            {
-                .sType=VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, //VkStructureType
-                .pNext=NULL, //const void*
-                .flags=0, //VkPipelineShaderStageCreateFlags
-                .stage=VK_SHADER_STAGE_FRAGMENT_BIT, //VkShaderStageFlagBits
-                .module=shader->fragment_shader, //VkShaderModule
-                .pName="main", //const char*
-                .pSpecializationInfo=NULL, //const VkSpecializationInfo*
-            }
-        },
+        .pStages=graphics_pipeline_stages,
         .pVertexInputState=&vertex_input_state,
         .pInputAssemblyState=&input_assembly_state,
         .pTessellationState=NULL,
@@ -741,7 +754,7 @@ VkSwapchainCreateInfoKHR App_create_swapchain(Application* app){
 
     uint32_t num_surface_formats;
     vkGetPhysicalDeviceSurfaceFormatsKHR(app->physical_device, app->window_surface, &num_surface_formats, NULL);
-    VkSurfaceFormatKHR *surface_formats=malloc(num_surface_formats*sizeof(VkSurfaceFormatKHR));
+    VkSurfaceFormatKHR *surface_formats=static_cast<VkSurfaceFormatKHR*>(malloc(num_surface_formats*sizeof(VkSurfaceFormatKHR)));
     vkGetPhysicalDeviceSurfaceFormatsKHR(app->physical_device, app->window_surface, &num_surface_formats, surface_formats);
     app->swapchain_format=surface_formats[0];
     free(surface_formats);
@@ -756,7 +769,7 @@ VkSwapchainCreateInfoKHR App_create_swapchain(Application* app){
 
     uint32_t num_present_modes;
     vkGetPhysicalDeviceSurfacePresentModesKHR(app->physical_device, app->window_surface, &num_present_modes, NULL);
-    VkPresentModeKHR* present_modes=malloc(num_present_modes*sizeof(VkPresentModeKHR));
+    VkPresentModeKHR* present_modes=static_cast<VkPresentModeKHR*>(malloc(num_present_modes*sizeof(VkPresentModeKHR)));
     vkGetPhysicalDeviceSurfacePresentModesKHR(app->physical_device, app->window_surface, &num_present_modes, present_modes);
     VkPresentModeKHR swapchain_present_mode=present_modes[0];
     free(present_modes);
@@ -797,7 +810,7 @@ VkSwapchainCreateInfoKHR App_create_swapchain(Application* app){
     }
 
     vkGetSwapchainImagesKHR(app->device, app->swapchain, &app->num_swapchain_images, NULL);
-    app->swapchain_images=malloc(app->num_swapchain_images*sizeof(VkImage));
+    app->swapchain_images=static_cast<VkImage*>(malloc(app->num_swapchain_images*sizeof(VkImage)));
     vkGetSwapchainImagesKHR(app->device, app->swapchain, &app->num_swapchain_images, app->swapchain_images);
 
     if(app->render_pass!=VK_NULL_HANDLE){
@@ -814,8 +827,8 @@ VkSwapchainCreateInfoKHR App_create_swapchain(Application* app){
             free(app->swapchain_image_views);
         }
 
-        app->swapchain_image_views=malloc(app->num_swapchain_images*sizeof(VkImageView));
-        app->swapchain_framebuffers=malloc(app->num_swapchain_images*sizeof(VkFramebuffer));
+        app->swapchain_image_views=static_cast<VkImageView*>(malloc(app->num_swapchain_images*sizeof(VkImageView)));
+        app->swapchain_framebuffers=static_cast<VkFramebuffer*>(malloc(app->num_swapchain_images*sizeof(VkFramebuffer)));
 
         VkImageViewCreateInfo image_view_create_info={
             .sType=VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
@@ -871,7 +884,7 @@ VkSwapchainCreateInfoKHR App_create_swapchain(Application* app){
 ///
 /// this struct owns all memory, unless indicated otherwise
 Application* App_new(PlatformHandle* platform){
-    Application* app=malloc(sizeof(Application));
+    Application* app=static_cast<Application*>(malloc(sizeof(Application)));
 
     app->vk_allocator=NULL;
     app->platform_handle=platform;
@@ -879,12 +892,12 @@ Application* App_new(PlatformHandle* platform){
     {
         uint32_t num_instance_extensions;
         vkEnumerateInstanceExtensionProperties(NULL, &num_instance_extensions, NULL);
-        VkExtensionProperties* instance_extensions=malloc(num_instance_extensions*sizeof(VkExtensionProperties));
+        VkExtensionProperties* instance_extensions=static_cast<VkExtensionProperties*>(malloc(num_instance_extensions*sizeof(VkExtensionProperties)));
         vkEnumerateInstanceExtensionProperties(NULL, &num_instance_extensions, instance_extensions);
 
         uint32_t num_instance_layers;
         vkEnumerateInstanceLayerProperties(&num_instance_layers, NULL);
-        VkLayerProperties* layer_extensions=malloc(num_instance_layers*sizeof(VkLayerProperties));
+        VkLayerProperties* layer_extensions=static_cast<VkLayerProperties*>(malloc(num_instance_layers*sizeof(VkLayerProperties)));
         vkEnumerateInstanceLayerProperties(&num_instance_layers, layer_extensions);
 
         for(uint32_t i=0;i<num_instance_extensions;i++){
@@ -957,7 +970,7 @@ Application* App_new(PlatformHandle* platform){
 
     uint32_t num_physical_devices;
     vkEnumeratePhysicalDevices(app->instance, &num_physical_devices, NULL);
-    VkPhysicalDevice* physical_devices=malloc(num_physical_devices*sizeof(VkPhysicalDevice));
+    VkPhysicalDevice* physical_devices=static_cast<VkPhysicalDevice*>(malloc(num_physical_devices*sizeof(VkPhysicalDevice)));
     vkEnumeratePhysicalDevices(app->instance, &num_physical_devices, physical_devices);
 
     // look for fit physical device, and required queue families
@@ -976,7 +989,7 @@ Application* App_new(PlatformHandle* platform){
 
         uint32_t num_queue_families;
         vkGetPhysicalDeviceQueueFamilyProperties(physical_device, &num_queue_families,NULL);
-        VkQueueFamilyProperties* queue_families=malloc(num_queue_families*sizeof(VkQueueFamilyProperties));
+        VkQueueFamilyProperties* queue_families=static_cast<VkQueueFamilyProperties*>(malloc(num_queue_families*sizeof(VkQueueFamilyProperties)));
         vkGetPhysicalDeviceQueueFamilyProperties(physical_device, &num_queue_families,queue_families);
 
         graphics_queue_family_index=UINT32_MAX;
@@ -1015,12 +1028,12 @@ Application* App_new(PlatformHandle* platform){
     {
         uint32_t num_device_extensions;
         vkEnumerateDeviceExtensionProperties(app->physical_device, NULL, &num_device_extensions,NULL);
-        VkExtensionProperties* device_extensions=malloc(num_device_extensions*sizeof(VkExtensionProperties));
+        VkExtensionProperties* device_extensions=static_cast<VkExtensionProperties*>(malloc(num_device_extensions*sizeof(VkExtensionProperties)));
         vkEnumerateDeviceExtensionProperties(app->physical_device, NULL, &num_device_extensions,device_extensions);
 
         uint32_t num_device_layers;
         vkEnumerateDeviceLayerProperties(app->physical_device, &num_device_layers, NULL);
-        VkLayerProperties* device_layers=malloc(num_device_layers*sizeof(VkLayerProperties));
+        VkLayerProperties* device_layers=static_cast<VkLayerProperties*>(malloc(num_device_layers*sizeof(VkLayerProperties)));
         vkEnumerateDeviceLayerProperties(app->physical_device, &num_device_layers, device_layers);
 
         for(uint32_t i=0;i<num_device_extensions;i++){
@@ -1040,33 +1053,34 @@ Application* App_new(PlatformHandle* platform){
     VkDeviceQueueCreateInfo* queue_create_infos;
     uint32_t num_queue_create_infos;
 
+    float queue_priorities[2]={1.0,1.0};
     if(graphics_queue_family_index==present_queue_family_index){
         num_queue_create_infos=1;
-        queue_create_infos=malloc(1*sizeof(VkDeviceQueueCreateInfo));
+        queue_create_infos=static_cast<VkDeviceQueueCreateInfo*>(malloc(1*sizeof(VkDeviceQueueCreateInfo)));
 
         queue_create_infos[0].sType=VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
         queue_create_infos[0].pNext=NULL;
         queue_create_infos[0].flags=0;
         queue_create_infos[0].queueFamilyIndex=graphics_queue_family_index;
         queue_create_infos[0].queueCount=1;
-        queue_create_infos[0].pQueuePriorities=(float[]){1.0};
+        queue_create_infos[0].pQueuePriorities=queue_priorities+0;
     }else{
         num_queue_create_infos=2;
-        queue_create_infos=malloc(2*sizeof(VkDeviceQueueCreateInfo));
+        queue_create_infos=static_cast<VkDeviceQueueCreateInfo*>(malloc(2*sizeof(VkDeviceQueueCreateInfo)));
 
         queue_create_infos[0].sType=VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
         queue_create_infos[0].pNext=NULL;
         queue_create_infos[0].flags=0;
         queue_create_infos[0].queueFamilyIndex=graphics_queue_family_index;
         queue_create_infos[0].queueCount=1;
-        queue_create_infos[0].pQueuePriorities=(float[]){1.0};
+        queue_create_infos[0].pQueuePriorities=queue_priorities+0;
 
         queue_create_infos[1].sType=VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
         queue_create_infos[1].pNext=NULL;
         queue_create_infos[1].flags=0;
         queue_create_infos[1].queueFamilyIndex=present_queue_family_index;
         queue_create_infos[1].queueCount=1;
-        queue_create_infos[1].pQueuePriorities=(float[]){1.0};
+        queue_create_infos[1].pQueuePriorities=queue_priorities+1;
     };
 
     uint32_t num_device_layers=1;
@@ -1134,6 +1148,10 @@ Application* App_new(PlatformHandle* platform){
         }
     };
     uint32_t num_render_pass_subpass=1;
+    VkAttachmentReference render_subpass_attachment_references[1]={{
+        /*uint32_t*/         .attachment=0,
+        /*VkImageLayout*/    .layout=VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+    }};
     VkSubpassDescription render_pass_subpasses[1]={
         {
             /*VkSubpassDescriptionFlags */      .flags=0,
@@ -1141,14 +1159,31 @@ Application* App_new(PlatformHandle* platform){
             /*uint32_t */                       .inputAttachmentCount=0,
             /*const VkAttachmentReference**/    .pInputAttachments=NULL,
             /*uint32_t */                       .colorAttachmentCount=1,
-            /*const VkAttachmentReference**/    .pColorAttachments=(VkAttachmentReference[1]){{
-                /*uint32_t*/         .attachment=0,
-                /*VkImageLayout*/    .layout=VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-            }},
+            /*const VkAttachmentReference**/    .pColorAttachments=render_subpass_attachment_references,
             /*const VkAttachmentReference**/    .pResolveAttachments=NULL,
             /*const VkAttachmentReference**/    .pDepthStencilAttachment=NULL,
             /*uint32_t */                       .preserveAttachmentCount=0,
             /*const uint32_t**/                 .pPreserveAttachments=NULL,
+        }
+    };
+    VkSubpassDependency render_subpass_dependencies[2]={
+        {
+            .srcSubpass= VK_SUBPASS_EXTERNAL,
+            .dstSubpass= 0,
+            .srcStageMask= VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
+            .dstStageMask= VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+            .srcAccessMask= VK_ACCESS_MEMORY_READ_BIT,
+            .dstAccessMask= VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+            .dependencyFlags= VK_DEPENDENCY_BY_REGION_BIT
+        },
+        {
+            .srcSubpass= 0, 
+            .dstSubpass= VK_SUBPASS_EXTERNAL, 
+            .srcStageMask= VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, 
+            .dstStageMask= VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 
+            .srcAccessMask= VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, 
+            .dstAccessMask= VK_ACCESS_MEMORY_READ_BIT, 
+            .dependencyFlags= VK_DEPENDENCY_BY_REGION_BIT
         }
     };
     VkRenderPassCreateInfo render_pass_create_info={
@@ -1160,26 +1195,7 @@ Application* App_new(PlatformHandle* platform){
         .subpassCount=num_render_pass_subpass,
         .pSubpasses=render_pass_subpasses,
         .dependencyCount=2,
-        .pDependencies=(VkSubpassDependency[2]){
-            {
-                .srcSubpass= VK_SUBPASS_EXTERNAL,
-                .dstSubpass= 0,
-                .srcStageMask= VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
-                .dstStageMask= VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-                .srcAccessMask= VK_ACCESS_MEMORY_READ_BIT,
-                .dstAccessMask= VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
-                .dependencyFlags= VK_DEPENDENCY_BY_REGION_BIT
-            },
-            {
-                .srcSubpass= 0, 
-                .dstSubpass= VK_SUBPASS_EXTERNAL, 
-                .srcStageMask= VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, 
-                .dstStageMask= VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 
-                .srcAccessMask= VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, 
-                .dstAccessMask= VK_ACCESS_MEMORY_READ_BIT, 
-                .dependencyFlags= VK_DEPENDENCY_BY_REGION_BIT
-            }
-        }
+        .pDependencies=render_subpass_dependencies
     };
     res=vkCreateRenderPass(app->device,&render_pass_create_info,app->vk_allocator,&app->render_pass);
     if(res!=VK_SUCCESS){
@@ -1334,12 +1350,11 @@ GpuCpuDataReference App_GpuCpuDataReference_initialise(
 ){
     GpuCpuDataReference ret={
         .app=app,
+        .buffer_usage_flags=buffer_usage_flags,
+        .buffer=VK_NULL_HANDLE,
+        .memory=VK_NULL_HANDLE,
         .data=data,
         .size=data_size,
-        .buffer_usage_flags=buffer_usage_flags,
-
-        .buffer=VK_NULL_HANDLE,
-        .memory=VK_NULL_HANDLE
     };
 
     GpuCpuDataReference_update(&ret);
@@ -1413,7 +1428,7 @@ void App_run(Application* app){
         .level=VK_COMMAND_BUFFER_LEVEL_PRIMARY,
         .commandBufferCount=1
     };
-    VkCommandBuffer* command_buffers=malloc(command_buffer_allocate_info.commandBufferCount*sizeof(VkCommandBuffer));
+    VkCommandBuffer* command_buffers=static_cast<VkCommandBuffer*>(malloc(command_buffer_allocate_info.commandBufferCount*sizeof(VkCommandBuffer)));
     res=vkAllocateCommandBuffers(app->device, &command_buffer_allocate_info, command_buffers);
     if(res!=VK_SUCCESS){
         fprintf(stderr,"failed to allocate command buffers\n");
@@ -1446,10 +1461,17 @@ void App_run(Application* app){
 
     Mesh* quadmesh=NULL;
 
-    ImageData image_data_jpeg[num_images];
-    Texture* image_textures[num_images];
-    struct ImageViewData image_view_data[num_images];
-    GpuCpuDataReference image_view_data_refs[num_images];
+    static const int MAX_NUM_SWAPCHAIN_IMAGES=8;
+
+    if (num_images>MAX_NUM_SWAPCHAIN_IMAGES) {
+        fprintf(stderr,"too many images in swapchain\n");
+        exit(FATAL_UNEXPECTED_ERROR);
+    }
+
+    ImageData image_data_jpeg[MAX_NUM_SWAPCHAIN_IMAGES];
+    Texture* image_textures[MAX_NUM_SWAPCHAIN_IMAGES];
+    struct ImageViewData image_view_data[MAX_NUM_SWAPCHAIN_IMAGES];
+    GpuCpuDataReference image_view_data_refs[MAX_NUM_SWAPCHAIN_IMAGES];
 
     for(uint32_t image_index=0;image_index<num_images;image_index++){
         const char* file_path=app->cli_args[1+image_index];
@@ -1503,6 +1525,11 @@ void App_run(Application* app){
             VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT
         );
 
+        VkDescriptorBufferInfo write_descriptor_set_buffers[1]={{
+            .buffer=image_view_data_refs[image_index].buffer,
+            .offset=0,
+            .range=sizeof(struct ImageViewData),
+        }};
         VkWriteDescriptorSet write_descriptor_set={
             .sType=VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
             .pNext=NULL,
@@ -1512,13 +1539,7 @@ void App_run(Application* app){
             .descriptorCount=1,
             .descriptorType=VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
             .pImageInfo=NULL,
-            .pBufferInfo=(VkDescriptorBufferInfo[1]){
-                {
-                    .buffer=image_view_data_refs[image_index].buffer,
-                    .offset=0,
-                    .range=sizeof(struct ImageViewData),
-                }
-            },
+            .pBufferInfo=write_descriptor_set_buffers,
             .pTexelBufferView=NULL
         };
         vkUpdateDescriptorSets(app->device, 1, &write_descriptor_set, 0, NULL);
@@ -1665,14 +1686,8 @@ void App_run(Application* app){
             }
         }
 
-        vkCmdPipelineBarrier(
-            command_buffer, 
-            VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, 
-            VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, 
-            0, 
-            0, NULL, 
-            0, NULL, 
-            1, (VkImageMemoryBarrier[1]){{
+        {
+            VkImageMemoryBarrier image_memory_barriers[1]={{
                 .sType=VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
                 .pNext=NULL,
                 .srcAccessMask=VK_ACCESS_MEMORY_READ_BIT,  
@@ -1682,16 +1697,28 @@ void App_run(Application* app){
                 .srcQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED,  
                 .dstQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED,  
                 .image=app->swapchain_images[next_swapchain_image_index], 
-                {
+                .subresourceRange={
                     .aspectMask=VK_IMAGE_ASPECT_COLOR_BIT,
                     .baseMipLevel=0,
                     .levelCount=1,
                     .baseArrayLayer=0,
                     .layerCount=1 
                 }
-            }}
-        );
+            }};
+            vkCmdPipelineBarrier(
+                command_buffer, 
+                VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, 
+                VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, 
+                0, 
+                0, NULL, 
+                0, NULL, 
+                1, image_memory_barriers
+            );
+        }
 
+        VkClearValue render_pass_clear_values[1]={{
+            .color={.float32={1.0,1.0,1.0,1.0}}
+        }};
         VkRenderPassBeginInfo render_pass_begin_info={
             .sType=VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
             .pNext=NULL,
@@ -1702,30 +1729,37 @@ void App_run(Application* app){
                 .extent={.width=window_width,.height=window_height}
             },
             .clearValueCount=1,
-            .pClearValues=(VkClearValue[1]){{
-                .color={.float32={1.0,1.0,1.0,1.0}}
-            }}
+            .pClearValues=render_pass_clear_values
         };
         vkCmdBeginRenderPass(command_buffer, &render_pass_begin_info, VK_SUBPASS_CONTENTS_INLINE);
 
+        VkViewport viewports[1]={{
+            .x=0,.y=0,
+            .width=(float)window_width,
+            .height=(float)window_height,
+            .minDepth=0.0,
+            .maxDepth=1.0
+        }};
         vkCmdSetViewport(
             command_buffer, 
             0, 1, 
-            (VkViewport[1]){{
-                .x=0,.y=0,
-                .width=window_width,
-                .height=window_height,
-                .minDepth=0.0,
-                .maxDepth=1.0
-            }}
+            viewports
         );
-        vkCmdSetScissor(command_buffer, 0, 1, (VkRect2D[1]){{
+        VkRect2D scissors[1]={{
             .offset={.x=0,.y=0},
             .extent={.width=window_width,.height=window_height},
-        }});
+        }};
+        vkCmdSetScissor(command_buffer, 0, 1, scissors);
 
         vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, app->shader->pipeline);
-        vkCmdBindVertexBuffers(command_buffer, 0, 1, (VkBuffer[1]){quadmesh->buffer}, (VkDeviceSize[1]){0});
+        VkBuffer bind_vertex_buffers[1]={quadmesh->buffer};
+        VkDeviceSize bind_vertex_buffer_offsets[1]={0};
+        vkCmdBindVertexBuffers(
+            command_buffer, 
+            0, 1, 
+            bind_vertex_buffers, 
+            bind_vertex_buffer_offsets
+        );
         vkCmdBindDescriptorSets(command_buffer, 
             VK_PIPELINE_BIND_POINT_GRAPHICS, 
             app->shader->pipeline_layout, 
@@ -1735,15 +1769,9 @@ void App_run(Application* app){
         vkCmdDraw(command_buffer, 4, 1, 0, 0);
 
         vkCmdEndRenderPass(command_buffer);
-
-        vkCmdPipelineBarrier(
-            command_buffer, 
-            VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, 
-            VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 
-            0, 
-            0, NULL, 
-            0, NULL, 
-            1, (VkImageMemoryBarrier[1]){{
+ 
+        {
+            VkImageMemoryBarrier pipeline_image_memory_barriers[1]={{
                 .sType=VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
                 .pNext=NULL,
                 .srcAccessMask=VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
@@ -1753,15 +1781,24 @@ void App_run(Application* app){
                 .srcQueueFamilyIndex=app->present_queue_family_index,
                 .dstQueueFamilyIndex=app->present_queue_family_index,
                 .image=app->swapchain_images[next_swapchain_image_index],
-                {
+                .subresourceRange={
                     .aspectMask=VK_IMAGE_ASPECT_COLOR_BIT,
                     .baseMipLevel=0,
                     .levelCount=1,
                     .baseArrayLayer=0,
                     .layerCount=1 
                 }
-            }}
-        );
+            }};
+            vkCmdPipelineBarrier(
+                command_buffer, 
+                VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, 
+                VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 
+                0, 
+                0, NULL, 
+                0, NULL, 
+                1, pipeline_image_memory_barriers
+            );
+        }
 
         res=vkEndCommandBuffer(command_buffer);
         if(res!=VK_SUCCESS){
@@ -1769,31 +1806,36 @@ void App_run(Application* app){
             exit(VULKAN_END_COMMAND_BUFFER_FAILURE);
         }
 
-        res=vkQueueSubmit(app->present_queue,1,(VkSubmitInfo[1]){{
+        VkPipelineStageFlags queue_submit_wait_dst_stages[1]={VK_PIPELINE_STAGE_TRANSFER_BIT};
+        VkSubmitInfo queue_submit_infos[1]={{
             .sType=VK_STRUCTURE_TYPE_SUBMIT_INFO,
             .pNext=NULL,
             .waitSemaphoreCount=1,
             .pWaitSemaphores=&image_available_semaphore,
-            .pWaitDstStageMask=(VkPipelineStageFlags[1]){VK_PIPELINE_STAGE_TRANSFER_BIT},
+            .pWaitDstStageMask=queue_submit_wait_dst_stages,
             .commandBufferCount=1,
             .pCommandBuffers=&command_buffer,
             .signalSemaphoreCount=1,
             .pSignalSemaphores=&rendering_finished_semaphore
-        }},VK_NULL_HANDLE);
+        }};
+        res=vkQueueSubmit(app->present_queue,1,queue_submit_infos,VK_NULL_HANDLE);
         if(res!=VK_SUCCESS){
             fprintf(stderr,"failed to submit swapchain presentation image\n");
             exit(VULKAN_QUEUE_SUBMIT_FAILURE);
         }
 
+        VkSemaphore present_wait_semaphores[1]={rendering_finished_semaphore};
+        VkSwapchainKHR present_swapchains[1]={app->swapchain};
+        uint32_t present_swapchain_image_indices[1]={next_swapchain_image_index};
         VkPresentInfoKHR swapchain_present_info={
             .sType=VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
             .pNext=NULL,
             .waitSemaphoreCount=1,
-            .pWaitSemaphores=(VkSemaphore[1]){rendering_finished_semaphore},
+            .pWaitSemaphores=present_wait_semaphores,
             .swapchainCount=1,
-            .pSwapchains=(VkSwapchainKHR[1]){app->swapchain},
-            .pImageIndices=(uint32_t[1]){next_swapchain_image_index},
-            NULL
+            .pSwapchains=present_swapchains,
+            .pImageIndices=present_swapchain_image_indices,
+            .pResults=NULL
         };
         res=vkQueuePresentKHR(app->present_queue, &swapchain_present_info);
         switch(res){
@@ -1813,8 +1855,8 @@ void App_run(Application* app){
 
         static const uint64_t FPS=60;
         struct timespec time_to_sleep={
+            .tv_sec=0,
             .tv_nsec=1000000000/FPS,
-            .tv_sec=0
         };
         time_to_sleep.tv_nsec-=(uint32_t)(timespecDiff(last_frame_time, current_frame_time)*1000000000);
         nanosleep(&time_to_sleep, NULL);

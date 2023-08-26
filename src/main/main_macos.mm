@@ -11,7 +11,7 @@
 #import <QuartzCore/QuartzCore.h>
 #import <AppKit/AppKit.h>
 
-#include "app/app.h"
+#include "app/app.hpp"
 
 @interface MyView: NSView
     - (instancetype)init;
@@ -176,7 +176,7 @@ CVReturn display_link_callback(
 @implementation MyAppDelegate
 
     - (void)applicationDidFinishLaunching:(NSNotification *)notification{
-        PlatformHandle* myplatform=malloc(sizeof(PlatformHandle));
+        PlatformHandle* myplatform=(PlatformHandle*)malloc(sizeof(PlatformHandle));
         myplatform->app=self;
         Application* main_app=App_new(myplatform);
 
@@ -227,7 +227,7 @@ PlatformWindow* App_create_window(
     uint16_t width,
     uint16_t height
 ){
-    PlatformWindow* window=malloc(sizeof(PlatformWindow));
+    PlatformWindow* window=(PlatformWindow*)malloc(sizeof(PlatformWindow));
     window->window_height=height;
     window->window_width=width;
     window->window=[

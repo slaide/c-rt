@@ -9,7 +9,8 @@
 
 #include <vulkan/vulkan.h>
 
-#include "app/error.h"
+#include "app/error.hpp"
+#include "app/image.hpp"
 
 /// utility macro
 #define discard (void)
@@ -318,7 +319,6 @@ void App_destroy(Application* app);
 
 typedef struct Texture Texture;
 
-#include "app/image.h"
 /**
  * @brief create a new texture on the gpu for use by a shader
  * 

@@ -1,9 +1,9 @@
-#include <stdint.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include <strings.h>
-#include <math.h>
+#include <cmath>
 #include <pthread.h>
 #include <stdatomic.h>
 
@@ -15,9 +15,14 @@
 
 #include <time.h>
 
-#include "app/app.h"
-#include "app/error.h"
-#include "app/huffman.h"
+#include "app/app.hpp"
+#include "app/error.hpp"
+namespace Huffman {
+#include "app/huffman.hpp"
+};
+
+typedef Huffman::HuffmanCodingTable<uint8_t, Huffman::BITSTREAM_DIRECTION_LEFT_TO_RIGHT, true> HuffmanTable;
+typedef HuffmanTable::BitStream_ BitStream;
 
 typedef int16_t MCU_EL;
 #ifndef USE_FLOAT_PRECISION
@@ -27,59 +32,35 @@ typedef int16_t MCU_EL;
     typedef float OUT_EL;
 #endif
 
+template <typename  T>
 [[gnu::always_inline,gnu::pure,gnu::flatten,gnu::hot]]
-static inline uint32_t max_u32(const uint32_t a,const uint32_t b){
+static inline T max(const T a,const T b){
     return (a>b)?a:b;
 }
+template <typename  T>
 [[gnu::always_inline,gnu::pure,gnu::flatten,gnu::hot]]
-static inline int32_t max_i32(const int32_t a,const int32_t b){
-    return (a>b)?a:b;
-}
-#define max(a,b) (_Generic((a), int32_t: max_i32, uint32_t: max_u32, float:fmaxf, double:fmax)(a,b))
-
-[[gnu::always_inline,gnu::pure,gnu::flatten,gnu::hot]]
-static inline uint32_t min_u32(const uint32_t a,const uint32_t b){
+static inline T min(const T a,const T b){
     return (a<b)?a:b;
 }
-[[gnu::always_inline,gnu::pure,gnu::flatten,gnu::hot]]
-static inline int32_t min_i32(const int32_t a,const int32_t b){
-    return (a<b)?a:b;
-}
-#define min(a,b) (_Generic((a), int32_t: min_i32, uint32_t: min_u32, float:fminf, double:fmin)(a,b))
 
+template <typename  T>
 [[gnu::always_inline,gnu::pure,gnu::flatten,gnu::hot,maybe_unused]]
-static inline float clamp_f32(const float v_min,const float v_max,const float v){
-    return fmaxf(v_min, fminf(v_max, v));
-}
-[[gnu::always_inline,gnu::pure,gnu::flatten,maybe_unused]]
-static inline int32_t clamp_i32(const int32_t v_min,const int32_t v_max, const int32_t v){
+static inline T clamp(const T v_min,const T v_max,const T v){
     return max(v_min, min(v_max, v));
 }
-#define clamp(v_min,v_max,v) (_Generic((v), float: clamp_f32, int32_t: clamp_i32)(v_min,v_max,v))
 
+template <typename  T>
 [[gnu::always_inline,gnu::pure,gnu::flatten,gnu::hot]]
-static inline int32_t twos_complement_32(const uint32_t magnitude, const int32_t value){
-    int32_t threshold=1<<(magnitude-1);
+static inline T twos_complement(const T magnitude, const T value){
+    T threshold=(T)(1<<(magnitude-1));
     if (value<threshold){
-        int32_t ret=value+1;
+        T ret=value+1;
         ret-=1<<magnitude;
         return ret;
     }
 
     return value;
 }
-[[gnu::always_inline,gnu::pure,gnu::flatten,gnu::hot]]
-static inline int16_t twos_complement_16(const uint16_t magnitude, const int16_t value){
-    int16_t threshold=(int16_t)(1<<(magnitude-1));
-    if (value<threshold){
-        int16_t ret=value+1;
-        ret-=1<<magnitude;
-        return ret;
-    }
-
-    return value;
-}
-#define twos_complement(a,b) (_Generic(a, uint32_t:twos_complement_32,uint16_t:twos_complement_16)((a),(b)))
 
 typedef enum JpegSegmentType{
     JPEG_SEGMENT_SOI=0xFFD8,
@@ -239,24 +220,24 @@ typedef struct ImageComponent{
 
 [[gnu::flatten,gnu::hot]]
 static inline void decode_dc(
-    MCU_EL* const restrict block_mem,
+    MCU_EL* const  block_mem,
 
-    const HuffmanCodingTable* const restrict dc_table,
-    MCU_EL* const restrict diff_dc,
+    const HuffmanTable* const  dc_table,
+    MCU_EL* const  diff_dc,
 
-    BitStream* const restrict stream,
+    BitStream* const  stream,
 
     const uint8_t successive_approximation_bit_low
 ){
-    uint8_t dc_magnitude=HuffmanCodingTable_lookup(dc_table, stream);
+    uint8_t dc_magnitude=(uint8_t)HuffmanTable::HuffmanCodingTable_lookup(dc_table, stream);
 
-    const MCU_EL lookahead_dc_value_bits=(MCU_EL)BitStream_get_bits(stream, 12);
+    const MCU_EL lookahead_dc_value_bits=(MCU_EL)BitStream::BitStream_get_bits(stream, 12);
 
     if (dc_magnitude>0) {
         const MCU_EL dc_value_bits=lookahead_dc_value_bits>>(12-dc_magnitude);
-        BitStream_advance_unsafe(stream, dc_magnitude);
+        HuffmanTable::BitStream_::BitStream_advance_unsafe(stream, dc_magnitude);
         
-        MCU_EL dc_value=(MCU_EL)twos_complement((uint16_t)dc_magnitude, dc_value_bits);
+        MCU_EL dc_value=(MCU_EL)twos_complement((MCU_EL)dc_magnitude, dc_value_bits);
 
         *diff_dc+=dc_value;
     }
@@ -276,39 +257,39 @@ static inline void decode_dc(
  */
 [[gnu::always_inline,gnu::flatten,gnu::hot]]
 static inline void decode_block_ac(
-    MCU_EL* const restrict block_mem,
+    MCU_EL* const  block_mem,
 
-    const HuffmanCodingTable* const restrict ac_table,
+    const HuffmanTable* const  ac_table,
 
     const uint8_t spectral_selection_start,
     const uint8_t spectral_selection_end,
 
-    BitStream* const restrict stream,
+    BitStream* const  stream,
 
     const uint8_t successive_approximation_bit_low,
 
-    uint64_t* const restrict eob_run
+    uint64_t* const  eob_run
 ){
     for(
-        register int spec_sel=spectral_selection_start;
+        int spec_sel=spectral_selection_start;
         spec_sel<=spectral_selection_end;
     ){
-        const uint8_t ac_bits=HuffmanCodingTable_lookup(ac_table, stream);
+        const auto ac_bits=HuffmanTable::HuffmanCodingTable_lookup(ac_table, stream);
 
         if (ac_bits==0) {
             break;
         }
 
-        const uint8_t num_zeros=ac_bits>>4;
-        const uint8_t ac_magnitude=ac_bits&0xF;
+        const auto num_zeros=ac_bits>>4;
+        const auto ac_magnitude=ac_bits&0xF;
 
         if (ac_magnitude==0) {
             if (num_zeros==15) {
                 spec_sel+=16;
                 continue;
             }else{
-                *eob_run=get_mask_u32(num_zeros);
-                *eob_run+=BitStream_get_bits_advance(stream, num_zeros);
+                *eob_run=Huffman::get_mask_u32(num_zeros);
+                *eob_run+=BitStream::BitStream_get_bits_advance(stream, (uint8_t)num_zeros);
 
                 break;
             }
@@ -319,9 +300,9 @@ static inline void decode_block_ac(
             break;
         }
 
-        const MCU_EL ac_value_bits=(MCU_EL)BitStream_get_bits_advance(stream,ac_magnitude);
+        const MCU_EL ac_value_bits=(MCU_EL)BitStream::BitStream_get_bits_advance(stream,(uint8_t)ac_magnitude);
 
-        const MCU_EL ac_value=(MCU_EL)twos_complement((uint16_t)ac_magnitude,ac_value_bits);
+        const MCU_EL ac_value=(MCU_EL)twos_complement((MCU_EL)ac_magnitude,ac_value_bits);
 
         block_mem[spec_sel++]=(MCU_EL)(ac_value<<successive_approximation_bit_low);
     }
@@ -329,9 +310,9 @@ static inline void decode_block_ac(
 
 [[gnu::flatten,gnu::hot]]
 static inline uint8_t refine_block(
-    MCU_EL* const restrict block_mem,
+    MCU_EL* const  block_mem,
 
-    BitStream* const restrict bit_stream,
+    BitStream* const  bit_stream,
 
     const uint8_t range_start,
     const uint8_t range_end,
@@ -347,7 +328,7 @@ static inline uint8_t refine_block(
 
             num_zeros -= 1;
         }else{
-            uint64_t next_bit=BitStream_get_bits_advance(bit_stream,1);
+            uint64_t next_bit=BitStream::BitStream_get_bits_advance(bit_stream,1);
             if(next_bit==1 && (block_mem[index]&bit) == 0){
                 if(block_mem[index]>0){
                     block_mem[index] += bit;
@@ -374,25 +355,25 @@ static inline uint8_t refine_block(
  */
 [[gnu::flatten,gnu::hot]]
 static inline void decode_block_with_sbh(
-    MCU_EL* const restrict block_mem,
+    MCU_EL* const  block_mem,
 
-    const HuffmanCodingTable* const restrict ac_table,
+    const HuffmanTable* const  ac_table,
 
     const uint8_t spectral_selection_start,
     const uint8_t spectral_selection_end,
 
-    BitStream* const restrict bit_stream,
+    BitStream* const  bit_stream,
 
     const MCU_EL succ_approx_bit_shifted,
 
-    uint64_t* const restrict eob_run
+    uint64_t* const  eob_run
 ){
     uint8_t next_pixel_index=spectral_selection_start;
     for(;next_pixel_index <= spectral_selection_end;){
-        const uint8_t ac_bits=HuffmanCodingTable_lookup(ac_table, bit_stream);
+        const auto ac_bits=HuffmanTable::HuffmanCodingTable_lookup(ac_table, bit_stream);
 
         // 4 most significant bits are number of zero-value bytes inserted before actual value (may be zero)
-        uint8_t num_zeros=ac_bits>>4;
+        auto num_zeros=ac_bits>>4;
         // no matter number of '0' bytes inserted, last 4 bits in ac value denote (additional) pixel value
         const uint32_t ac_magnitude=ac_bits&0xF;
 
@@ -404,8 +385,8 @@ static inline void decode_block_with_sbh(
                     break; // num_zeros is 15, value is zero => 16 zeros written already
                 default:
                     {
-                        uint32_t eob_run_bits=(uint32_t)BitStream_get_bits_advance(bit_stream,num_zeros);
-                        *eob_run=get_mask_u32(num_zeros) + eob_run_bits;
+                        uint32_t eob_run_bits=(uint32_t)BitStream::BitStream_get_bits_advance(bit_stream,(uint8_t)num_zeros);
+                        *eob_run=Huffman::get_mask_u32(num_zeros) + eob_run_bits;
                     }
                     num_zeros=64;
                     break;
@@ -414,7 +395,7 @@ static inline void decode_block_with_sbh(
                     num_zeros=64;
             }
         }else{
-            if(BitStream_get_bits_advance(bit_stream,1)==1){
+            if(BitStream::BitStream_get_bits_advance(bit_stream,1)==1){
                 value = succ_approx_bit_shifted;
             }else{
                 value = -succ_approx_bit_shifted;
@@ -428,7 +409,7 @@ static inline void decode_block_with_sbh(
             next_pixel_index, 
             spectral_selection_end, 
 
-            num_zeros, 
+            (uint8_t)num_zeros, 
             succ_approx_bit_shifted
         );
 
@@ -459,7 +440,7 @@ typedef struct IDCTMaskSet {
     OUT_EL idct_element_masks[64][64];
 } IDCTMaskSet;
 static inline void IDCTMaskSet_generate(
-    IDCTMaskSet* const restrict mask_set
+    IDCTMaskSet* const  mask_set
 ){
     for(uint32_t mask_index = 0;mask_index<64;mask_index++){
         for(uint32_t ix = 0;ix<8;ix++){
@@ -503,8 +484,8 @@ typedef struct JpegParser{
     uint32_t current_byte_position;
 
     QuantizationTable quant_tables[4];
-    HuffmanCodingTable ac_coding_tables[4];
-    HuffmanCodingTable dc_coding_tables[4];
+    HuffmanTable ac_coding_tables[4];
+    HuffmanTable dc_coding_tables[4];
 
     uint8_t max_component_vert_sample_factor;
     uint8_t max_component_horz_sample_factor;
@@ -520,7 +501,7 @@ typedef struct JpegParser{
     uint32_t color_space;
 }JpegParser;
 
-void JpegParser_init_empty(JpegParser* restrict parser){
+void JpegParser_init_empty(JpegParser*  parser){
     parser->file_size=0;
     parser->file_contents=NULL;
     parser->current_byte_position=0;
@@ -585,7 +566,7 @@ static uint32_t tzcnt_32(const uint32_t v){
 
 [[gnu::flatten,gnu::nonnull(1)]]
 static void JpegParser_process_channel(
-    const JpegParser* const restrict parser,
+    const JpegParser* const  parser,
     const uint8_t c,
     const uint32_t scan_id_start,
     const uint32_t scan_id_end
@@ -595,7 +576,7 @@ static void JpegParser_process_channel(
 
     // -- reverse idct and quantization table application
 
-    OUT_EL* const restrict out_block_downsampled=parser->image_components[c].out_block_downsampled;
+    OUT_EL* const  out_block_downsampled=parser->image_components[c].out_block_downsampled;
 
     const uint32_t num_blocks_in_scan=parser->image_components[c].num_blocks_in_scan;
 
@@ -609,7 +590,7 @@ static void JpegParser_process_channel(
     for(int i=64;i<80;i++) in_block[i]=0;
 
     for (uint32_t scan_id=scan_id_start; scan_id<scan_id_end; scan_id++) {
-        const MCU_EL* const restrict scan_mem=parser->image_components[c].scan_memory[scan_id];
+        const MCU_EL* const  scan_mem=parser->image_components[c].scan_memory[scan_id];
 
         for (uint32_t block_id=0; block_id<num_blocks_in_scan; block_id++) {
 
@@ -650,16 +631,16 @@ static void JpegParser_process_channel(
 
                         cosine_index+=tzcnt_32(elements_nonzero)/2;
                     #elifdef VK_USE_PLATFORM_METAL_EXT
-                        const int16x8_t mask_strengths=vld1q_s16((void*)(&in_block[cosine_index]));
+                        const int16x8_t mask_strengths=vld1q_s16((int16_t*)(&in_block[cosine_index]));
                         const int16x8_t elements_zero_result=vceqq_s16(mask_strengths, vdupq_n_s16(0));
                         uint64_t elements_nonzero=0;
-                        vst1_s8((void*)&elements_nonzero,vqmovn_s16(elements_zero_result));
+                        vst1_s8((int8_t*)&elements_nonzero,vqmovn_s16(elements_zero_result));
                         elements_nonzero=UINT64_MAX-elements_nonzero;
 
                         //printf("mask %16llx\n",elements_nonzero);
 
                         const uint32_t num_cosines_remaining=64-cosine_index;
-                        const uint32_t num_cosines_remaining_in_current_iteration=min_u32(8,num_cosines_remaining);
+                        const uint32_t num_cosines_remaining_in_current_iteration=min(8u,num_cosines_remaining);
 
                         const uint64_t all_elements_mask=mask_u64((num_cosines_remaining_in_current_iteration-1)*8+1);
                         elements_nonzero&=all_elements_mask;
@@ -681,7 +662,7 @@ static void JpegParser_process_channel(
                 const MCU_EL pre_quantized_mask_strength=in_block[cosine_index];
 
                 const OUT_EL cosine_mask_strength=pre_quantized_mask_strength*component_quant_table[cosine_index];
-                const OUT_EL* const restrict idct_mask=idct_mask_set[cosine_index];
+                const OUT_EL* const  idct_mask=idct_mask_set[cosine_index];
                 
                 for(uint32_t pixel_index = 0;pixel_index<64;pixel_index++){
                     out_block[pixel_index]+=idct_mask[pixel_index]*cosine_mask_strength;
@@ -709,7 +690,7 @@ void* JpegParser_process_channel_pthread(struct JpegParser_process_channel_argse
 struct SomeData{
     JpegParser* parser;
     uint8_t channel;
-    _Atomic uint32_t num_scans_parsed;
+    atomic_uint32_t num_scans_parsed;
     ImageData* image_data;
 };
 void* ProcessIncomingScans_pthread(struct SomeData* somedata){
@@ -750,27 +731,27 @@ struct ScanComponent{
 
     uint32_t num_horz_blocks;
 
-    HuffmanCodingTable* ac_table;
-    HuffmanCodingTable* dc_table;
+    HuffmanTable* ac_table;
+    HuffmanTable* dc_table;
 
     MCU_EL** scan_memory;
 };
 
 [[gnu::hot,gnu::flatten,gnu::nonnull(3,4,6,7)]]
 static inline void process_mcu_baseline(
-    const struct ScanComponent* const restrict component,
+    const struct ScanComponent* const  component,
     const uint32_t mcu_col,
-    BitStream* const restrict stream,
-    MCU_EL* const restrict diff_dc,
+    BitStream* const  stream,
+    MCU_EL* const  diff_dc,
     const uint8_t successive_approximation_bit_low,
-    MCU_EL* const restrict mcu_memory,
-    uint64_t* const restrict eob_run
+    MCU_EL* const  mcu_memory,
+    uint64_t* const  eob_run
 ){
     const uint32_t vert_sample_factor=component->vert_sample_factor;
     const uint32_t horz_sample_factor=component->horz_sample_factor;
 
-    const HuffmanCodingTable* const ac_table=component->ac_table;
-    const HuffmanCodingTable* const dc_table=component->dc_table;
+    const HuffmanTable* const ac_table=component->ac_table;
+    const HuffmanTable* const dc_table=component->dc_table;
 
     for (uint32_t vert_sid=0; vert_sid<vert_sample_factor; vert_sid++) {
         for (uint32_t horz_sid=0; horz_sid<horz_sample_factor; horz_sid++) {
@@ -795,24 +776,24 @@ static inline void process_mcu_baseline(
 
 [[gnu::flatten,gnu::nonnull(3,4,6,11)]]
 static inline void process_mcu_generic(
-    const struct ScanComponent* const restrict component,
+    const struct ScanComponent* const  component,
     uint32_t const mcu_col,
-    BitStream* const restrict stream,
-    MCU_EL* const restrict diff_dc,
+    BitStream* const  stream,
+    MCU_EL* const  diff_dc,
     uint8_t const successive_approximation_bit_low,
-    MCU_EL* const restrict mcu_memory,
+    MCU_EL* const  mcu_memory,
     bool is_interleaved,
     uint8_t const spectral_selection_start,
     uint8_t const spectral_selection_end,
     uint8_t const successive_approximation_bit_high,
-    uint64_t* const restrict eob_run,
+    uint64_t* const  eob_run,
     MCU_EL const succ_approx_bit_shifted
 ){
     const uint32_t vert_sample_factor=component->vert_sample_factor;
     const uint32_t horz_sample_factor=component->horz_sample_factor;
 
-    const HuffmanCodingTable* const ac_table=component->ac_table;
-    const HuffmanCodingTable* const dc_table=component->dc_table;
+    const HuffmanTable* const ac_table=component->ac_table;
+    const HuffmanTable* const dc_table=component->dc_table;
 
     for (uint32_t vert_sid=0; vert_sid<vert_sample_factor; vert_sid++) {
         for (uint32_t horz_sid=0; horz_sid<horz_sample_factor; horz_sid++) {
@@ -853,24 +834,24 @@ static inline void process_mcu_generic(
                 
                 // decode ac's
                 const uint8_t sse=spectral_selection_end;
-                register uint8_t spec_sel=scan_start;
+                uint8_t spec_sel=scan_start;
                 for (; spec_sel<=sse;) {
-                    const uint8_t ac_bits=HuffmanCodingTable_lookup(ac_table, stream);
+                    const auto ac_bits=HuffmanTable::HuffmanCodingTable_lookup(ac_table, stream);
 
                     if (ac_bits==0) {
                         break;
                     }
 
-                    const uint8_t num_zeros=ac_bits>>4;
-                    const uint8_t ac_magnitude=ac_bits&0xF;
+                    const auto num_zeros=ac_bits>>4;
+                    const auto ac_magnitude=ac_bits&0xF;
 
                     if (ac_magnitude==0) {
                         if (num_zeros==15) {
                             spec_sel+=16;
                             continue;
                         }else {
-                            *eob_run=get_mask_u32(num_zeros);
-                            *eob_run+=BitStream_get_bits_advance(stream, num_zeros);
+                            *eob_run=Huffman::get_mask_u32(num_zeros);
+                            *eob_run+=BitStream::BitStream_get_bits_advance(stream, (uint8_t)num_zeros);
 
                             break;
                         }
@@ -881,15 +862,15 @@ static inline void process_mcu_generic(
                         break;
                     }
 
-                    const MCU_EL ac_value_bits=(MCU_EL)BitStream_get_bits_advance(stream,ac_magnitude);
+                    const MCU_EL ac_value_bits=(MCU_EL)BitStream::BitStream_get_bits_advance(stream,(uint8_t)ac_magnitude);
 
-                    const MCU_EL ac_value=(MCU_EL)twos_complement((uint16_t)ac_magnitude,ac_value_bits);
+                    const MCU_EL ac_value=(MCU_EL)twos_complement((MCU_EL)ac_magnitude,ac_value_bits);
 
                     block_mem[spec_sel++]=(MCU_EL)(ac_value<<successive_approximation_bit_low);
                 }
             }else{
                 if(spectral_selection_start == 0){
-                    const uint64_t test_bit=BitStream_get_bits_advance(stream, 1);
+                    const uint64_t test_bit=BitStream::BitStream_get_bits_advance(stream, 1);
                     if(test_bit){
                         block_mem[0] += succ_approx_bit_shifted;
                     }
@@ -931,13 +912,13 @@ static inline void process_mcu_generic(
     }
 }
 
-uint8_t JpegParer_nextFileByte(JpegParser* const restrict parser){
+uint8_t JpegParer_nextFileByte(JpegParser* const  parser){
     return parser->file_contents[parser->current_byte_position++];
 }
-uint8_t JpegParer_next_u8(JpegParser* const restrict parser){
+uint8_t JpegParer_next_u8(JpegParser* const  parser){
     return JpegParer_nextFileByte(parser);
 }
-uint16_t JpegParer_next_u16(JpegParser* const restrict parser){
+uint16_t JpegParer_next_u16(JpegParser* const  parser){
     uint16_t ret=0;
     ret = (uint16_t)(ret<<8) | (uint16_t)JpegParer_nextFileByte(parser);
     ret = (uint16_t)(ret<<8) | (uint16_t)JpegParer_nextFileByte(parser);
@@ -946,8 +927,8 @@ uint16_t JpegParer_next_u16(JpegParser* const restrict parser){
 
 [[gnu::nonnull(1,2)]]
 void JpegParser_parse_file(
-    JpegParser* const restrict parser,
-    ImageData* const restrict image_data,
+    JpegParser* const  parser,
+    ImageData* const  image_data,
     const bool parallel
 ){
     #define GET_NB JpegParer_nextFileByte(parser)
@@ -1015,7 +996,7 @@ void JpegParser_parse_file(
 
                     const uint32_t comment_length=segment_size-2;
 
-                    char* const comment_str=malloc(comment_length+1);
+                    char* const comment_str=(char*)malloc(comment_length+1);
                     comment_str[comment_length]=0;
 
                     memcpy(comment_str,&parser->file_contents[parser->current_byte_position],comment_length);
@@ -1102,7 +1083,7 @@ void JpegParser_parse_file(
                         const uint8_t table_index=LB_U8(table_index_and_class);
                         const uint8_t table_class=HB_U8(table_index_and_class);
 
-                        HuffmanCodingTable* target_table=NULL;
+                        HuffmanTable* target_table=NULL;
                         switch (table_class) {
                             case  0:
                                 target_table=&parser->dc_coding_tables[table_index];
@@ -1126,8 +1107,10 @@ void JpegParser_parse_file(
 
                         segment_bytes_read+=17;
 
-                        uint8_t values[260];
-                        memcpy(values,&parser->file_contents[parser->current_byte_position],total_num_values);
+                        HuffmanTable::VALUE_ values[260];
+                        for(uint32_t i=0;i<total_num_values;i++)
+                            values[i]=parser->file_contents[parser->current_byte_position+i];
+                        
                         parser->current_byte_position+=total_num_values;
 
                         uint8_t value_code_lengths[260];
@@ -1141,9 +1124,9 @@ void JpegParser_parse_file(
                         segment_bytes_read+=value_index;
 
                         // destroy previous table, if there was one
-                        HuffmanCodingTable_destroy(target_table);
+                        HuffmanTable::HuffmanCodingTable_destroy(target_table);
 
-                        HuffmanCodingTable_new(
+                        HuffmanTable::HuffmanCodingTable_new(
                             target_table,
                             num_values_of_length,
                             total_num_values,
@@ -1215,10 +1198,10 @@ void JpegParser_parse_file(
                         const uint32_t component_num_scans=parser->image_components[i].vert_samples/parser->image_components[i].vert_sample_factor/8;
                         const uint32_t component_num_scan_elements=parser->image_components[i].horz_samples*parser->image_components[i].vert_sample_factor*8;
 
-                        parser->image_components[i].scan_memory=malloc(sizeof(MCU_EL*)*component_num_scans);
+                        parser->image_components[i].scan_memory=(MCU_EL**)malloc(sizeof(MCU_EL*)*component_num_scans);
 
                         uint32_t per_scan_memory_size=ROUND_UP(component_num_scan_elements*sizeof(MCU_EL),4096);
-                        MCU_EL* const total_scan_memory=calloc(component_num_scans,per_scan_memory_size);
+                        MCU_EL* const total_scan_memory=(MCU_EL*)calloc(component_num_scans,per_scan_memory_size);
                         for (uint32_t s=0; s<component_num_scans; s++) {
                             parser->image_components[i].scan_memory[s]=total_scan_memory+s*per_scan_memory_size/sizeof(MCU_EL);
                             //parser->image_components[i].scan_memory[s]=calloc(1,component_num_scan_elements*sizeof(MCU_EL));
@@ -1227,7 +1210,7 @@ void JpegParser_parse_file(
                         parser->image_components[i].num_scans=component_num_scans;
                         parser->image_components[i].num_blocks_in_scan=component_num_scan_elements/64;
 
-                        parser->image_components[i].out_block_downsampled=aligned_alloc(64,ROUND_UP(sizeof(OUT_EL)*(component_data_size+16),64));
+                        parser->image_components[i].out_block_downsampled=(OUT_EL*)aligned_alloc(64,ROUND_UP(sizeof(OUT_EL)*(component_data_size+16),64));
 
                         parser->image_components[i].total_num_blocks=parser->image_components[i].vert_samples*parser->image_components[i].horz_samples/64;
 
@@ -1241,7 +1224,7 @@ void JpegParser_parse_file(
 
                     // pre-calculate indices to re-order pixel data from block-orientation to row-column orientation
                     for (uint32_t i=0; i<parser->Nf; i++) {
-                        parser->image_components[i].conversion_indices=malloc(sizeof(uint32_t)*num_pixels_per_scan);
+                        parser->image_components[i].conversion_indices=(uint32_t*)malloc(sizeof(uint32_t)*num_pixels_per_scan);
                         uint32_t* const conversion_indices=parser->image_components[i].conversion_indices;
 
                         uint32_t ci=0;
@@ -1270,7 +1253,7 @@ void JpegParser_parse_file(
 
                     // overallocate for simd access overflows
                     static  const uint32_t OVERALLOCATE_NUM_BYTES=256;
-                    image_data->data=malloc(sizeof(uint8_t)*total_num_pixels_in_image*4+OVERALLOCATE_NUM_BYTES);
+                    image_data->data=(uint8_t*)malloc(sizeof(uint8_t)*total_num_pixels_in_image*4+OVERALLOCATE_NUM_BYTES);
 
                     parser->current_byte_position=segment_end_position;
                 }
@@ -1308,8 +1291,8 @@ void JpegParser_parse_file(
                     MCU_EL differential_dc[3]={0,0,0};
 
                     BitStream _bit_stream;
-                    BitStream* const restrict stream=&_bit_stream;
-                    BitStream_new(stream, &parser->file_contents[parser->current_byte_position], BITSTREAM_DIRECTION_LEFT_TO_RIGHT, true);
+                    BitStream* const  stream=&_bit_stream;
+                    BitStream::BitStream_new(stream, &parser->file_contents[parser->current_byte_position]);
 
                     const uint32_t mcu_cols=parser->image_components[0].horz_samples/parser->image_components[0].horz_sample_factor/8;
                     const uint32_t mcu_rows=parser->image_components[0].vert_samples/parser->image_components[0].vert_sample_factor/8;
@@ -1376,7 +1359,7 @@ void JpegParser_parse_file(
                     uint64_t eob_run=0;
 
                     for (uint32_t mcu_row=0;mcu_row<mcu_rows;mcu_row++) {
-                        MCU_EL* const restrict scan_memories[3]={
+                        MCU_EL* const  scan_memories[3]={
                             scan_components[0].scan_memory[mcu_row],
                             scan_components[1].scan_memory[mcu_row],
                             scan_components[2].scan_memory[mcu_row],
@@ -1438,7 +1421,7 @@ void JpegParser_parse_file(
                 break;
 
             default:
-                fprintf(stderr,"unhandled segment %s ( %X ) \n",Image_jpeg_segment_type_name(next_header),next_header);
+                fprintf(stderr,"unhandled segment %s ( %X ) \n",Image_jpeg_segment_type_name((JpegSegmentType)next_header),next_header);
                 exit(-40);
         }
     }
@@ -1477,7 +1460,7 @@ void* JpegParser_convert_colorspace_pthread(struct JpegParser_convert_colorspace
 
 ImageParseResult Image_read_jpeg(
     const char* const filepath,
-    ImageData* const restrict image_data
+    ImageData* const  image_data
 ){
     FILE* const file=fopen(filepath, "rb");
     if (!file) {
@@ -1500,7 +1483,7 @@ ImageParseResult Image_read_jpeg(
     parser.file_size=(uint64_t)ftell_res;
     rewind(file);
 
-    parser.file_contents=aligned_alloc(64,ROUND_UP(parser.file_size,64));
+    parser.file_contents=(uint8_t*)aligned_alloc(64,ROUND_UP(parser.file_size,64));
     discard fread(parser.file_contents, 1, parser.file_size, file);
     
     fclose(file);
@@ -1524,8 +1507,8 @@ ImageParseResult Image_read_jpeg(
         case 0x123:
             {
                 if(num_threads>1){
-                    struct JpegParser_convert_colorspace_argset* const thread_args=malloc(num_threads*sizeof(struct JpegParser_convert_colorspace_argset));
-                    pthread_t* const threads=malloc(num_threads*sizeof(pthread_t));
+                    struct JpegParser_convert_colorspace_argset* const thread_args=(struct JpegParser_convert_colorspace_argset*)malloc(num_threads*sizeof(struct JpegParser_convert_colorspace_argset));
+                    pthread_t* const threads=(pthread_t*)malloc(num_threads*sizeof(pthread_t));
 
                     const uint32_t num_scans_per_thread=parser.image_components[0].num_scans/num_threads;
                     for(uint32_t i=0;i<num_threads;i++){
@@ -1570,7 +1553,7 @@ ImageParseResult Image_read_jpeg(
 
     if(parser.X!=parser.real_X || parser.Y!=parser.real_Y){
         uint8_t* const old_data=image_data->data;
-        uint8_t* const real_data=aligned_alloc(64,ROUND_UP(parser.real_X*parser.real_Y*4,64));
+        uint8_t* const real_data=(uint8_t*)aligned_alloc(64,ROUND_UP(parser.real_X*parser.real_Y*4,64));
 
         for (uint32_t y=0; y<parser.real_Y; y++) {
             for(uint32_t x=0; x<parser.real_X; x++) {
@@ -1597,8 +1580,8 @@ ImageParseResult Image_read_jpeg(
     free(parser.file_contents);
 
     for(int i=0;i<4;i++){
-        HuffmanCodingTable_destroy(&parser.ac_coding_tables[i]);
-        HuffmanCodingTable_destroy(&parser.dc_coding_tables[i]);
+        HuffmanTable::HuffmanCodingTable_destroy(&parser.ac_coding_tables[i]);
+        HuffmanTable::HuffmanCodingTable_destroy(&parser.dc_coding_tables[i]);
     }
 
     for(int c=0;c<3;c++){

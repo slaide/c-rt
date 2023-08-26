@@ -22,6 +22,7 @@ PLATFORM ?= $(DEFAULT_PLATFORM)
 CC := clang
 CXX := clang++ -nostdlib -fno-exceptions
 OBJCC := clang
+OBJCXX := clang++ -nostdlib -fno-exceptions
 CSTD := -std=gnu2x
 CXXSTD := -std=gnu++2b
 LINK_FLAGS := -lvulkan -pthread
@@ -63,7 +64,12 @@ $(REQUIRED_DIRS) |:
 define compile_objc
 BUILD_OBJS += $(1)
 $(1): $(2) | $(REQUIRED_DIRS)
-	$(OBJCC) $(COMPILE_FLAGS) $(CDEF) $(CINCLUDE) -c -o $(1) $(2)
+	$(OBJCC) $(CSTD) $(COMPILE_FLAGS) $(CDEF) $(CINCLUDE) -c -o $(1) $(2)
+endef
+define compile_objcxx
+BUILD_OBJS += $(1)
+$(1): $(2) | $(REQUIRED_DIRS)
+	$(OBJCXX) $(CXXSTD) $(COMPILE_FLAGS) $(CDEF) $(CINCLUDE) -c -o $(1) $(2)
 endef
 
 define compile_c
@@ -140,18 +146,18 @@ LIBJPEG_TEST_COMPILE_FLAGS += -I/opt/homebrew/include -L/opt/homebrew/lib
 CDEF += -DVK_USE_PLATFORM_METAL_EXT
 CINCLUDE += -I/opt/vulkansdk/macOS/include
 
-$(eval $(call compile_objc, $(BUILD_DIR)/main.o, src/main/main_macos.m))
+$(eval $(call compile_objcxx, $(BUILD_DIR)/main.o, src/main/main_macos.mm))
 else
 $(error Invalid platform: $(PLATFORM) (valid options are { linux | macos }))
 endif
 
 # Usage of the function
-$(eval $(call compile_c, $(BUILD_DIR)/app.o, src/app.c))
-$(eval $(call compile_c, $(BUILD_DIR)/app_mesh.o, src/app_mesh.c))
-$(eval $(call compile_c, $(BUILD_DIR)/huffman.o, src/huffman.c))
+$(eval $(call compile_cpp, $(BUILD_DIR)/app.o, src/app.cpp))
+$(eval $(call compile_cpp, $(BUILD_DIR)/app_mesh.o, src/app_mesh.cpp))
+# $(eval $(call compile_c, $(BUILD_DIR)/huffman.o, src/huffman.c))
 
-$(eval $(call compile_c, $(BUILD_DIR)/image/jpeg.o, src/image/jpeg.c))
-$(eval $(call compile_c, $(BUILD_DIR)/image/png.o, src/image/png.c))
+$(eval $(call compile_cpp, $(BUILD_DIR)/image/jpeg.o, src/image/jpeg.cpp))
+$(eval $(call compile_cpp, $(BUILD_DIR)/image/png.o, src/image/png.cpp))
 
 $(eval $(call compile_glsl, $(BIN_DIR)/vertshader.spv, shaders/vertshader.vert))
 $(eval $(call compile_glsl, $(BIN_DIR)/fragshader.spv, shaders/fragshader.frag))
