@@ -24,7 +24,7 @@ CXX := clang++
 OBJCC := clang
 OBJCXX := clang++
 CSTD := -std=gnu2x
-CXXSTD := -std=gnu++20
+CXXSTD := -std=gnu++2b
 LINK_FLAGS := -lvulkan -pthread
 COMPILE_FLAGS := -Wall -Werror -Wpedantic -Wextra -Wno-sequence-point -Wconversion -MMD -MP
 CINCLUDE := -Iinclude
@@ -188,7 +188,7 @@ $(BUILD_OBJS): $(BUILD_FLAGS)
 
 # link 'main' for compile mode
 $(BUILD_DIR)/main: $(BUILD_OBJS)
-	$(CC) $(OPT_FLAGS) $(CSTD) $(CDEF) $(CINCLUDE) $(LINK_FLAGS) $(COMPILE_FLAGS) -o $@ $^
+	$(CXX) $(OPT_FLAGS) $(CSTD) $(CDEF) $(CINCLUDE) $(LINK_FLAGS) $(COMPILE_FLAGS) -o $@ $^
 
 MAIN_FILE := $(BIN_DIR)/main
 

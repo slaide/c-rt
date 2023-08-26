@@ -5,14 +5,13 @@
 #include <cmath>
 #include <thread>
 #include <atomic>
+#include <ctime>
 
 #ifdef VK_USE_PLATFORM_METAL_EXT
     #include <arm_neon.h>
 #elif VK_USE_PLATFORM_XCB_KHR
     #include <x86intrin.h>
 #endif
-
-#include <time.h>
 
 #include "app/app.hpp"
 #include "app/error.hpp"
