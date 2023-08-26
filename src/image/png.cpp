@@ -274,7 +274,7 @@ ImageParseResult Image_read_png(
     // the data spread across the IDAT chunks is combined into a single bitstream, defined by RFC 1950 (e.g. https://datatracker.ietf.org/doc/html/rfc1950)
 
     BitStream _bit_stream;
-    BitStream* const  stream=&_bit_stream;
+    BitStream* const stream=&_bit_stream;
     BitStream::BitStream_new(stream, data_buffer);
 
     /// combined cm+cinfo flag across 2 bytes is used to verify data integrity
@@ -311,6 +311,9 @@ ImageParseResult Image_read_png(
         fprintf(stderr,"TODO unimplemented: using preset dictionary\n");
         exit(FATAL_UNEXPECTED_ERROR);
     }
+
+    HuffmanTable literal_alphabet;
+    HuffmanTable distance_alphabet;
 
     // remaining bitstream is formatted according to RFC 1951 (deflate/zlib) (e.g. https://datatracker.ietf.org/doc/html/rfc1951)
     bool keep_parsing=true;
@@ -351,138 +354,137 @@ ImageParseResult Image_read_png(
                 break;
             case 2:
                 {
-                printf("compression with dynamic huffman codes\n");
-                
-                uint64_t num_literal_codes=257+stream->get_bits_advance(5);
-                printf("num_literal_codes %" PRIu64 "\n",num_literal_codes);
-                if(num_literal_codes>286){
-                    fprintf(stderr,"too many huffman codes (literals) %" PRIu64 "\n",num_literal_codes);
-                    exit(FATAL_UNEXPECTED_ERROR);
-                }
-                uint64_t num_distance_codes=1+stream->get_bits_advance(5);
-                printf("num_distance_codes %" PRIu64 "\n",num_distance_codes);
-                if(num_distance_codes>30){
-                    fprintf(stderr,"too many huffman codes (distance) %" PRIu64 "\n",num_distance_codes);
-                    exit(FATAL_UNEXPECTED_ERROR);
-                }
+                    printf("compression with dynamic huffman codes\n");
+                    
+                    uint64_t num_literal_codes=257+stream->get_bits_advance(5);
+                    printf("num_literal_codes %" PRIu64 "\n",num_literal_codes);
+                    if(num_literal_codes>286){
+                        fprintf(stderr,"too many huffman codes (literals) %" PRIu64 "\n",num_literal_codes);
+                        exit(FATAL_UNEXPECTED_ERROR);
+                    }
+                    uint64_t num_distance_codes=1+stream->get_bits_advance(5);
+                    printf("num_distance_codes %" PRIu64 "\n",num_distance_codes);
+                    if(num_distance_codes>30){
+                        fprintf(stderr,"too many huffman codes (distance) %" PRIu64 "\n",num_distance_codes);
+                        exit(FATAL_UNEXPECTED_ERROR);
+                    }
 
-                // the number of elements in this table can be 4-19. the code length codes not present in the table are specified to not occur (i.e. zero bits)
-                uint8_t num_huffman_codes=4+(uint8_t)stream->get_bits_advance(4);
-                printf("num_huffman_codes %d\n",num_huffman_codes);
+                    // the number of elements in this table can be 4-19. the code length codes not present in the table are specified to not occur (i.e. zero bits)
+                    uint8_t num_huffman_codes=4+(uint8_t)stream->get_bits_advance(4);
+                    printf("num_huffman_codes %d\n",num_huffman_codes);
 
-                // parse code sizes for each entry in the huffman code table
+                    // parse code sizes for each entry in the huffman code table
 
-                // parse all code lengths in one go
-                uint8_t code_length_code_lengths[NUM_CODE_LENGTH_CODES];
-                memset(code_length_code_lengths,0,NUM_CODE_LENGTH_CODES);
+                    // parse all code lengths in one go
+                    uint8_t code_length_code_lengths[NUM_CODE_LENGTH_CODES];
+                    memset(code_length_code_lengths,0,NUM_CODE_LENGTH_CODES);
 
-                for(uint64_t code_size_index=0;code_size_index<num_huffman_codes;code_size_index++){
-                    code_length_code_lengths[CODE_LENGTH_CODE_CHARACTERS[code_size_index]]=(uint8_t)stream->get_bits_advance(3);
-                }
+                    for(uint64_t code_size_index=0;code_size_index<num_huffman_codes;code_size_index++){
+                        code_length_code_lengths[CODE_LENGTH_CODE_CHARACTERS[code_size_index]]=(uint8_t)stream->get_bits_advance(3);
+                    }
 
-                uint8_t num_values_of_length[MAX_HUFFMAN_TABLE_CODE_LENGTH];
-                memset(num_values_of_length,0,MAX_HUFFMAN_TABLE_CODE_LENGTH);
-                num_values_of_length[3]=num_huffman_codes;
+                    uint8_t num_values_of_length[MAX_HUFFMAN_TABLE_CODE_LENGTH];
+                    memset(num_values_of_length,0,MAX_HUFFMAN_TABLE_CODE_LENGTH);
+                    num_values_of_length[3]=num_huffman_codes;
 
-                uint8_t values[NUM_CODE_LENGTH_CODES];
-                memset(values,0,NUM_CODE_LENGTH_CODES);
-                for(uint8_t i=0;i<NUM_CODE_LENGTH_CODES;i++)
-                    values[i]=i;
+                    uint16_t values[NUM_CODE_LENGTH_CODES];
+                    memset(values,0,NUM_CODE_LENGTH_CODES);
+                    for(uint8_t i=0;i<NUM_CODE_LENGTH_CODES;i++)
+                        values[i]=i;
 
-                /*HuffmanCodingTable code_length_code_alphabet;
-                HuffmanCodingTable_new(
-                    &code_length_code_alphabet, 
-                    num_values_of_length, 
-                    num_huffman_codes, 
-                    code_length_code_lengths, 
-                    const uint8_t *values
-                );*/
-                /*let code_length_code_alphabet:CODE_LENGTH_ALPHABET=HuffmanAlphabet(
-                    value_len_map: code_length_codes.enumerated().map{
-                        (index,code_len) in return (UInt8(index),CODE_LENGTH_ALPHABET.CODE_LEN(code_len))
-                    },
-                    max_bits: code_length_codes.max()!
-                )
+                    HuffmanTable code_length_code_alphabet;
+                    HuffmanTable::CodingTable_new(
+                        &code_length_code_alphabet, 
+                        code_length_code_lengths, 
+                        values
+                    );
 
-                // then read literal and distance alphabet code lengths in one pass, since they use the same alphabet
-                let combined_code_lengths=Array<UInt8>(unsafeUninitializedCapacity: 288+33){(ptr,len) in
-                    var combined_code_index:UInt32=0
-                    while combined_code_index<(num_literal_codes+num_distance_codes){
-                        let value_parsed=code_length_code_alphabet.parse(stream:self.bitStream)
-                        switch value_parsed{
-                            case 0...15:
-                                ptr[Int(combined_code_index)]=value_parsed
-                                combined_code_index+=1
+                    // then read literal and distance alphabet code lengths in one pass, since they use the same alphabet
+                    uint8_t literal_plus_distance_code_lengths[288+33];
+                    for(uint64_t i=0;i<num_literal_codes+num_distance_codes;i++){
+                        auto value=code_length_code_alphabet.lookup(stream);
+                        switch (value) {
                             case 16:
-                                //Copy the previous code length 3 - 6 times.
-                                //The next 2 bits indicate repeat length
-                                //        (0 = 3, ... , 3 = 6)
-                                let num_reps=3+self.bitStream.nbits(2)
-                                for rep in 0..<num_reps{
-                                    ptr[Int(combined_code_index)+Int(rep)]=ptr[Int(combined_code_index-1)]
+                                {
+                                    //Copy the previous code length 3 - 6 times.
+                                    //The next 2 bits indicate repeat length
+                                    //        (0 = 3, ... , 3 = 6)
+                                    uint64_t num_reps=3+stream->get_bits_advance(2);
+                                    for(uint64_t rep=0;rep<num_reps;rep++){
+                                        literal_plus_distance_code_lengths[i+rep]=literal_plus_distance_code_lengths[i-1];
+                                    }
+                                    i+=num_reps;
                                 }
-                                combined_code_index+=UInt32(num_reps)
+                                break;
                             case 17:
-                                //Repeat a code length of 0 for 3 - 10 times.
-                                //   (3 bits of length)
-                                let num_reps=3+self.bitStream.nbits(3)
-                                for rep in 0..<num_reps{
-                                    ptr[Int(combined_code_index)+Int(rep)]=0
+                                {
+                                    //Repeat a code length of 0 for 3 - 10 times.
+                                    //   (3 bits of length)
+                                    auto num_reps=3+stream->get_bits_advance(3);
+                                    for(uint64_t rep=0;rep<num_reps;rep++){
+                                        literal_plus_distance_code_lengths[i+rep]=0;
+                                    }
+                                    i+=num_reps;
                                 }
-                                combined_code_index+=UInt32(num_reps)
+                                break;
                             case 18:
-                                // Repeat a code length of 0 for 11 - 138 times
-                                //   (7 bits of length)
-                                let num_reps=11+self.bitStream.nbits(7)
-                                for rep in 0..<num_reps{
-                                    ptr[Int(combined_code_index)+Int(rep)]=0
+                                {
+                                    // Repeat a code length of 0 for 11 - 138 times
+                                    //   (7 bits of length)
+                                    auto num_reps=11+stream->get_bits_advance(7);
+                                    for(uint64_t rep=0;rep<num_reps;rep++){
+                                        literal_plus_distance_code_lengths[i+rep]=0;
+                                    }
+                                    i+=num_reps;
                                 }
-                                combined_code_index+=UInt32(num_reps)
+                                break;
                             default:
-                                fatalError("unreachable")
+                                if (value>15) {
+                                    fprintf(stderr,"unexpected value %d\n",value);
+                                    exit(FATAL_UNEXPECTED_ERROR);
+                                }
+                                literal_plus_distance_code_lengths[i]=(uint8_t)value;
                         }
                     }
-                    len=Int(combined_code_index)
-                }
 
-                // split combined alphabet
-                let literal_code_lengths: [UInt8]=Array(unsafeUninitializedCapacity: 288){(ptr,len) in
-                    len=288
-                    for i in 0..<Int(num_literal_codes){
-                        ptr[i]=combined_code_lengths[i]
+                    // split combined alphabet
+                    uint8_t literal_code_lengths[288];
+                    for(uint64_t i=0;i<num_literal_codes;i++){
+                        literal_code_lengths[i]=literal_plus_distance_code_lengths[i];
                     }
-                    for i in Int(num_literal_codes)..<len{
-                        ptr[i]=0
+                    for(uint64_t i=num_literal_codes;i<288;i++){
+                        literal_code_lengths[i]=0;
                     }
-                }
 
-                let distance_code_lengths: [UInt8]=Array(unsafeUninitializedCapacity: 33){(ptr,len) in
-                    len=33
-                    for i in 0..<Int(num_distance_codes){
-                        ptr[i]=combined_code_lengths[i+Int(num_literal_codes)]
+                    uint8_t distance_code_lengths[33];
+                    for(uint64_t i=0;i<num_distance_codes;i++){
+                        distance_code_lengths[i]=literal_plus_distance_code_lengths[i+num_literal_codes];
                     }
-                    for i in Int(num_distance_codes)..<len{
-                        ptr[i]=0
+                    for(uint64_t i=num_distance_codes;i<288;i++){
+                        distance_code_lengths[i]=0;
                     }
-                }
 
-                // construct literal alphabet from compressed alphabet lengths
-                literal_alphabet=LITERAL_ALPHABET(
-                    value_len_map: literal_code_lengths.enumerated().map{
-                        (UInt16($0),LITERAL_ALPHABET.CODE_LEN($1))
-                    },
-                    max_bits: LITERAL_ALPHABET.CODE_LEN(literal_code_lengths.max()!)
-                )
+                    // construct literal alphabet from compressed alphabet lengths
+                    HuffmanTable::VALUE_ literal_alphabet_values[288];
+                    for(HuffmanTable::VALUE_ i=0;i<288;i++)
+                        literal_alphabet_values[i]=i;
 
-                // construct distance alphabet from compressed alphabet lengths
-                distance_alphabet=DISTANCE_ALPHABET(
-                    value_len_map: distance_code_lengths.enumerated().map{
-                        (index,code_len) in return (UInt16(index),DISTANCE_ALPHABET.CODE_LEN(code_len))
-                    },
-                    max_bits: DISTANCE_ALPHABET.CODE_LEN(distance_code_lengths.max()!)
-                )*/
+                    HuffmanTable::CodingTable_new(
+                        &literal_alphabet, 
+                        literal_code_lengths, 
+                        literal_alphabet_values
+                    );
 
-                // TODO parse codes
+                    // construct distance alphabet from compressed alphabet lengths
+                    HuffmanTable::VALUE_ distance_alphabet_values[33];
+                    for(HuffmanTable::VALUE_ i=0;i<33;i++)
+                        distance_alphabet_values[i]=i;
+
+                    HuffmanTable::CodingTable_new(
+                        &distance_alphabet, 
+                        distance_code_lengths, 
+                        distance_alphabet_values
+                    );
 
                 }
 
@@ -493,12 +495,51 @@ ImageParseResult Image_read_png(
                 exit(FATAL_UNEXPECTED_ERROR);
         }
 
+        uint8_t *output_buffer=(uint8_t*)malloc(ihdr_data.height*ihdr_data.width*4);
+        int out_offset=0;
+
+        bool block_done=false;
+        while(!block_done){
+            auto literal_value=literal_alphabet.lookup(stream);
+            if (literal_value<=255) {
+                output_buffer[out_offset++]=uint8_t(literal_value);
+            }else if (literal_value==255) {
+                break;
+            // 255 < literal_value < 286
+            }else{
+                auto table_offset=literal_value-257;
+                auto length=DEFLATE_BASE_LENGTH_OFFSET[table_offset];
+                auto extra_bits=DEFLATE_EXTRA_BITS[table_offset];
+                if (extra_bits>0) {
+                    length+=(uint16_t)stream->get_bits_advance(extra_bits);
+                }
+                if (length>258) {
+                    fprintf(stderr,"length too large %d\n",length);
+                    exit(FATAL_UNEXPECTED_ERROR);
+                }
+                auto backward_distance_symbol=distance_alphabet.lookup(stream);
+                auto backward_extra_bits=DEFLATE_BACKWARD_EXTRA_BIT[backward_distance_symbol];
+                auto backward_distance=DEFLATE_BACKWARD_LENGTH_OFFSET[backward_distance_symbol];
+                if(backward_extra_bits>0){
+                    auto backward_extra_distance=(uint16_t)stream->get_bits_advance(backward_extra_bits);
+                    backward_distance+=backward_extra_distance;
+                }
+
+                for(int l=0;l<length;l++){
+                    auto base_offset=out_offset+l;
+                    output_buffer[base_offset]=output_buffer[base_offset-backward_distance];
+                }
+                out_offset+=length;
+            }
+        }
+
         if(bfinal){
             break;
         }
     }
 
-    // TODO parse the file
+    // TODO process decoded DEFLATE stream
+    println("TODO process decoded DEFLATE stream");
     exit(FATAL_UNEXPECTED_ERROR);
 
     return IMAGE_PARSE_RESULT_OK;

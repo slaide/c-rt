@@ -1094,11 +1094,9 @@ void JpegParser_parse_file(
 
                         uint32_t total_num_values=0;
                         uint8_t num_values_of_length[16];
+                        for(int i=0;i<16;i++){
+                            num_values_of_length[i]=parser->file_contents[parser->current_byte_position++];
 
-                        memcpy(num_values_of_length,&parser->file_contents[parser->current_byte_position],16);
-                        parser->current_byte_position+=16;
-
-                        for (int i=0; i<16; i++) {
                             total_num_values+=num_values_of_length[i];
                         }
 
@@ -1106,16 +1104,15 @@ void JpegParser_parse_file(
 
                         HuffmanTable::VALUE_ values[260];
                         for(uint32_t i=0;i<total_num_values;i++)
-                            values[i]=parser->file_contents[parser->current_byte_position+i];
-                        
-                        parser->current_byte_position+=total_num_values;
+                            values[i]=parser->file_contents[parser->current_byte_position++];
 
                         uint8_t value_code_lengths[260];
+                        memset(value_code_lengths,0,sizeof(value_code_lengths));
 
                         uint32_t value_index=0;
                         for (uint8_t code_length=0; code_length<16; code_length++) {
-                            memset(&value_code_lengths[value_index],code_length+1,num_values_of_length[code_length]);
-                            value_index+=num_values_of_length[code_length];
+                            for(uint32_t i=0;i<num_values_of_length[code_length];i++)
+                                value_code_lengths[value_index++]=code_length+1;
                         }
 
                         segment_bytes_read+=value_index;
@@ -1125,8 +1122,6 @@ void JpegParser_parse_file(
 
                         HuffmanTable::CodingTable_new(
                             target_table,
-                            num_values_of_length,
-                            total_num_values,
                             value_code_lengths,
                             values
                         );
