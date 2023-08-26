@@ -206,15 +206,17 @@ PROFILE_CACHEGRIND_OUT_FILE := cachegrind.out
 PROFILE_CACHEGRIND_ANNOTATION_FILE := cachegrind.out.annotation
 
 # valgrind is only available on linux
+ifeq ($(OS),Linux)
 profile:
-	ifeq ($(OS),Linux)
 	make -Bj fresh MODE=debugrelease
-	valgrind --tool=cachegrind --cachegrind-out-file=$(PROFILE_CACHEGRIND_OUT_FILE) ./$(MAIN_FILE)
+	valgrind --tool=cachegrind --cachegrind-out-file=$(PROFILE_CACHEGRIND_OUT_FILE) ./$(MAIN_FILE) images/cat2.jpg
 	callgrind_annotate $(PROFILE_CACHEGRIND_OUT_FILE) > $(PROFILE_CACHEGRIND_ANNOTATION_FILE)
 	less $(PROFILE_CACHEGRIND_ANNOTATION_FILE)
-	else
-	$(error valgrind is only available on Linux, but you are using $(PLATFORM))
-	endif
+else
+
+profile:
+	$(error valgrind is only available on Linux, but you are using '$(PLATFORM)')
+endif
 
 disasm-jpeg:
 	make -Bj fresh MODE=debugrelease
@@ -236,8 +238,6 @@ test: all $(BIN_DIR)/libjpeg_test
 	cd $(BIN_DIR) ; \
 	./main $$(ls images/*.jp*g)
 
-main: main.c
-
 .PHONY: clean fresh doc
 doc:
 	doxygen Doxyfile
@@ -245,4 +245,4 @@ clean:
 	$(RM_CMD) $(BUILD_BASE_DIR) $(BIN_DIR)/libjpeg_test $(BIN_DIR)/main* $(BIN_DIR)/*.spv $(PROFILE_CACHEGRIND_OUT_FILE) $(PROFILE_CACHEGRIND_ANNOTATION_FILE)
 fresh:
 	make clean
-	make main
+	make all
