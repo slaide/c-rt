@@ -24,7 +24,7 @@ CXX := clang++
 OBJCC := clang
 OBJCXX := clang++
 CSTD := -std=gnu2x
-CXXSTD := -std=gnu++2b
+CXXSTD := -std=gnu++20
 LINK_FLAGS := -lvulkan -pthread
 COMPILE_FLAGS := -Wall -Werror -Wpedantic -Wextra -Wno-sequence-point -Wconversion -MMD -MP
 CINCLUDE := -Iinclude

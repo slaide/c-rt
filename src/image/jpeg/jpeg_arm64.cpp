@@ -1,4 +1,4 @@
-#include <stdint.h>
+#include <cstdint>
 #include <arm_neon.h>
 
 #include "app/image.hpp"

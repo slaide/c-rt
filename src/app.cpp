@@ -6,7 +6,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <ctime>
-#include <inttypes.h>
+#include <cinttypes>
 #include <cstdint>
 #include <cstdio>
 #include <unistd.h>

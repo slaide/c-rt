@@ -1,4 +1,4 @@
-#include <stdint.h>
+#include <cstdint>
 #include <x86intrin.h>
 
 #ifdef USE_FLOAT_PRECISION

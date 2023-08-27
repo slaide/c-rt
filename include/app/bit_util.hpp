@@ -164,16 +164,16 @@ void uint_to_str(T v,char s[sizeof(T)*8]){
 * @param len 
 * @return int 
 */
-template <typename T>
+template <typename T, typename L>
 [[maybe_unused]]
 static inline T reverse_bits(
     const T bits,
-    const T len
+    const L len
 ){
     T ret=0;
-    for (T i=0; i<len; i++) {
+    for (L i=0; i<len; i++) {
         T nth_bit=(bits&(1<<i))>>i;
-        ret|=nth_bit<<(len-1-i);
+        ret|=nth_bit<<(len-1-(T)i);
     }
     return ret;
 }
