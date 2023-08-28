@@ -1,8 +1,13 @@
+#include <cstdint>
+#include <arm_neon.h>
+
+#include "app/image.hpp"
+
 #ifdef USE_FLOAT_PRECISION
 
 [[gnu::hot,gnu::flatten,gnu::nonnull(1)]]
 static inline void scan_ycbcr_to_rgb_neon_float(
-    const JpegParser* const restrict parser,
+    const JpegParser* const  parser,
     const uint32_t mcu_row
 ){
     const ImageComponent image_components[3]={
@@ -17,9 +22,9 @@ static inline void scan_ycbcr_to_rgb_neon_float(
     uint8_t* const image_data_data=parser->image_data->data+scan_offset*4;
 
     const uint32_t rescale_factor[3]={
-        parser->max_component_horz_sample_factor*parser->max_component_vert_sample_factor/(image_components[0].horz_sample_factor*image_components[0].vert_sample_factor),
-        parser->max_component_horz_sample_factor*parser->max_component_vert_sample_factor/(image_components[1].horz_sample_factor*image_components[1].vert_sample_factor),
-        parser->max_component_horz_sample_factor*parser->max_component_vert_sample_factor/(image_components[2].horz_sample_factor*image_components[2].vert_sample_factor)
+        (uint32_t)parser->max_component_horz_sample_factor*parser->max_component_vert_sample_factor/(image_components[0].horz_sample_factor*image_components[0].vert_sample_factor),
+        (uint32_t)parser->max_component_horz_sample_factor*parser->max_component_vert_sample_factor/(image_components[1].horz_sample_factor*image_components[1].vert_sample_factor),
+        (uint32_t)parser->max_component_horz_sample_factor*parser->max_component_vert_sample_factor/(image_components[2].horz_sample_factor*image_components[2].vert_sample_factor)
     };
 
     const OUT_EL* const y[[gnu::aligned(16)]]=image_components[0].out_block_downsampled+scan_offset/rescale_factor[0];
@@ -37,11 +42,11 @@ static inline void scan_ycbcr_to_rgb_neon_float(
 
         // -- convert ycbcr to rgb
 
-        register float32x4_t r_simd=y_simd+1.402f*cr_simd;
-        register float32x4_t b_simd=y_simd+1.772f*cb_simd;
-        register float32x4_t g_simd=y_simd-(0.343f * cb_simd + 0.718f * cr_simd );
+        float32x4_t r_simd=y_simd+1.402f*cr_simd;
+        float32x4_t b_simd=y_simd+1.772f*cb_simd;
+        float32x4_t g_simd=y_simd-(0.343f * cb_simd + 0.718f * cr_simd );
 
-        register float32x4_t v_simd;
+        float32x4_t v_simd;
 
         v_simd=vdupq_n_f32(128.0);
         r_simd+=v_simd;
@@ -95,7 +100,7 @@ static inline void scan_ycbcr_to_rgb_neon_float(
 
 [[gnu::hot,gnu::flatten,gnu::nonnull(1)]]
 static inline void scan_ycbcr_to_rgb_neon_fixed(
-    const JpegParser* const restrict parser,
+    const JpegParser* const  parser,
     const uint32_t mcu_row
 ){
     const ImageComponent image_components[3]={
@@ -110,9 +115,9 @@ static inline void scan_ycbcr_to_rgb_neon_fixed(
     uint8_t* const image_data_data=parser->image_data->data+scan_offset*4;
 
     const uint32_t rescale_factor[3]={
-        parser->max_component_horz_sample_factor*parser->max_component_vert_sample_factor/(image_components[0].horz_sample_factor*image_components[0].vert_sample_factor),
-        parser->max_component_horz_sample_factor*parser->max_component_vert_sample_factor/(image_components[1].horz_sample_factor*image_components[1].vert_sample_factor),
-        parser->max_component_horz_sample_factor*parser->max_component_vert_sample_factor/(image_components[2].horz_sample_factor*image_components[2].vert_sample_factor)
+        (uint32_t)parser->max_component_horz_sample_factor*parser->max_component_vert_sample_factor/(image_components[0].horz_sample_factor*image_components[0].vert_sample_factor),
+        (uint32_t)parser->max_component_horz_sample_factor*parser->max_component_vert_sample_factor/(image_components[1].horz_sample_factor*image_components[1].vert_sample_factor),
+        (uint32_t)parser->max_component_horz_sample_factor*parser->max_component_vert_sample_factor/(image_components[2].horz_sample_factor*image_components[2].vert_sample_factor)
     };
 
     const OUT_EL* const y[[gnu::aligned(16)]]=image_components[0].out_block_downsampled+scan_offset/rescale_factor[0];
@@ -138,7 +143,7 @@ static inline void scan_ycbcr_to_rgb_neon_fixed(
         int16x8_t b_simd = vaddq_s16(y_simd, vshrq_n_s16(vmulq_n_s16(cb_simd, 113), 6));
         int16x8_t g_simd = vsubq_s16(y_simd, vshrq_n_s16(vaddq_s16(vmulq_n_s16(cb_simd, 11), vmulq_n_s16(cr_simd, 23)), 5));
 
-        register int16x8_t v_simd;
+        int16x8_t v_simd;
 
         v_simd=vdupq_n_s16(128);
         r_simd+=v_simd;

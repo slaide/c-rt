@@ -1,24 +1,39 @@
 #pragma once
 
-#include <stdint.h>
-#include <stdio.h>
-#include <memory.h>
-#include <string.h>
-#include <stdlib.h>
-#include <time.h>
+#include <cstdint>
+#include <cstdio>
+#include <cstring>
+#include <cstdlib>
+#include <ctime>
+#include <csignal>
 
 #include <vulkan/vulkan.h>
 
-#include "app/error.h"
+#include "app/error.hpp"
+#include "app/image.hpp"
 
 /// utility macro
 #define discard (void)
 
-#define println(...) {\
-    printf("%s : %d | ",__FILE__,__LINE__);\
-    printf(__VA_ARGS__);\
-    printf("\n");\
+#define fprintln(stream,...) { \
+    fprintf(stream,"%s : %d | ",__FILE__,__LINE__); \
+    fprintf(stream,__VA_ARGS__); \
+    fprintf(stream,"\n"); \
 }
+#define println(...) { \
+    fprintln(stdout,__VA_ARGS__); \
+}
+#define bail(ERROR_CODE,...) { \
+    fprintln(stderr,__VA_ARGS__); \
+    exit(ERROR_CODE); \
+}
+#ifdef DEBUG
+    #define BREAKPOINT { \
+        raise(SIGTRAP); \
+    }
+#else
+    #define BREAKPOINT
+#endif
 
 typedef void*(*pthread_callback)(void*);
 
@@ -29,7 +44,7 @@ typedef void*(*pthread_callback)(void*);
  * 
  * @return double 
  */
-double current_time();
+double current_time(void);
 
 #define ROUND_UP(VALUE,MULTIPLE_OF) (((VALUE) + ((MULTIPLE_OF)-1)) / (MULTIPLE_OF)) * (MULTIPLE_OF)
 #define MASK(LENGTH) ((1<<(LENGTH))-1)
@@ -318,7 +333,6 @@ void App_destroy(Application* app);
 
 typedef struct Texture Texture;
 
-#include "app/image.h"
 /**
  * @brief create a new texture on the gpu for use by a shader
  * 

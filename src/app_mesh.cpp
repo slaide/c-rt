@@ -1,4 +1,5 @@
-#include "app/app.h"
+#include "app/app.hpp"
+#include <vulkan/vulkan.h>
 
 Mesh* App_upload_mesh(
     Application* app,
@@ -8,7 +9,7 @@ Mesh* App_upload_mesh(
     uint32_t num_vertices,
     VertexData* vertex_data
 ){
-    Mesh* mesh=malloc(sizeof(Mesh));
+    Mesh* mesh=static_cast<Mesh*>(malloc(sizeof(Mesh)));
 
     VkDeviceSize mesh_memory_size=num_vertices*sizeof(VertexData);
 
@@ -113,7 +114,7 @@ void App_upload_data(
             .pNext=NULL,
             .flags=0,
             .size=memory_size,
-            .usage=VK_BUFFER_USAGE_TRANSFER_DST_BIT|buffer_usage_flags,
+            .usage=static_cast<VkBufferUsageFlags>(VK_BUFFER_USAGE_TRANSFER_DST_BIT|buffer_usage_flags),
             .sharingMode=VK_SHARING_MODE_EXCLUSIVE,
             .queueFamilyIndexCount=0,
             .pQueueFamilyIndices=NULL

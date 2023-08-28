@@ -1,4 +1,4 @@
-#include <stdint.h>
+#include <cstdint>
 #include <stdio.h>
 
 #include <stdlib.h>
@@ -6,7 +6,7 @@
 #include <xcb/xcb.h>
 #include <xcb/xcb_util.h>
 
-#include <app/app.h>
+#include <app/app.hpp>
 
 struct PlatformHandle{
     xcb_connection_t* connection;
@@ -280,7 +280,7 @@ int App_get_input_event(Application* app,InputEvent* input_event){
 }
 
 PlatformHandle* Platform_new(){
-    PlatformHandle* platform=malloc(sizeof(PlatformHandle));
+    PlatformHandle* platform=(PlatformHandle*)malloc(sizeof(PlatformHandle));
 
     platform->connection=xcb_connect(NULL,NULL);
     int xcb_connection_error_state=xcb_connection_has_error(platform->connection);
@@ -310,7 +310,7 @@ PlatformWindow* App_create_window(
     const xcb_setup_t* setup=xcb_get_setup(app->platform_handle->connection);
     xcb_screen_iterator_t screens=xcb_setup_roots_iterator(setup);
 
-    PlatformWindow* window=malloc(sizeof(PlatformWindow));
+    PlatformWindow* window=(PlatformWindow*)malloc(sizeof(PlatformWindow));
     window->window_height=height;
     window->window_width=width;
     
@@ -369,7 +369,7 @@ PlatformWindow* App_create_window(
 
     uint32_t new_window_id=app->platform_handle->num_open_windows;
     app->platform_handle->num_open_windows+=1;
-    app->platform_handle->open_windows=realloc(app->platform_handle->open_windows, app->platform_handle->num_open_windows*sizeof(PlatformWindow*));
+    app->platform_handle->open_windows=(PlatformWindow**)realloc(app->platform_handle->open_windows, app->platform_handle->num_open_windows*sizeof(PlatformWindow*));
 
     app->platform_handle->open_windows[new_window_id]=window;
 
@@ -384,7 +384,7 @@ void App_destroy_window(Application *app, PlatformWindow *window){
     if(app->platform_handle->num_open_windows>0){
         app->platform_handle->num_open_windows-=1;
         if(app->platform_handle->num_open_windows>0){
-            app->platform_handle->open_windows=realloc(app->platform_handle->open_windows,app->platform_handle->num_open_windows*sizeof(PlatformWindow*));
+            app->platform_handle->open_windows=(PlatformWindow**)realloc(app->platform_handle->open_windows,app->platform_handle->num_open_windows*sizeof(PlatformWindow*));
         }else{
             free(app->platform_handle->open_windows);
         }
