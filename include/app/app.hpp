@@ -5,6 +5,7 @@
 #include <cstring>
 #include <cstdlib>
 #include <ctime>
+#include <csignal>
 
 #include <vulkan/vulkan.h>
 
@@ -14,11 +15,25 @@
 /// utility macro
 #define discard (void)
 
-#define println(...) {\
-    printf("%s : %d | ",__FILE__,__LINE__);\
-    printf(__VA_ARGS__);\
-    printf("\n");\
+#define fprintln(stream,...) { \
+    fprintf(stream,"%s : %d | ",__FILE__,__LINE__); \
+    fprintf(stream,__VA_ARGS__); \
+    fprintf(stream,"\n"); \
 }
+#define println(...) { \
+    fprintln(stdout,__VA_ARGS__); \
+}
+#define bail(ERROR_CODE,...) { \
+    fprintln(stderr,__VA_ARGS__); \
+    exit(ERROR_CODE); \
+}
+#ifdef DEBUG
+    #define BREAKPOINT { \
+        raise(SIGTRAP); \
+    }
+#else
+    #define BREAKPOINT
+#endif
 
 typedef void*(*pthread_callback)(void*);
 
