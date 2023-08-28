@@ -1,11 +1,13 @@
 #pragma once
 
 #include <cstdlib>
-#include <inttypes.h>
+#include <cinttypes>
 #include <cstdint>
 #include <cstdio>
 
+#include "app/app.hpp"
 #include "app/bit_util.hpp"
+#include "app/error.hpp"
 
 namespace bitStream {
 enum Direction{
@@ -19,6 +21,8 @@ template <Direction DIRECTION,bool REMOVE_JPEG_BYTE_STUFFING>
 class BitStream{
     public:
         uint8_t* data;
+        uint64_t data_size;
+
         uint64_t next_data_index;
 
         uint64_t buffer;
@@ -31,7 +35,7 @@ class BitStream{
     * @param data 
     * @param direction
     */
-    static void BitStream_new(BitStream* stream,void* const data)noexcept;
+    static void BitStream_new(BitStream* stream,void* const data,const uint64_t data_size)noexcept;
 
     /**
     * @brief advance stream
@@ -162,8 +166,9 @@ class BitStream{
 };
 
 template <Direction DIR,bool REM_JPG_STUFF>
-void BitStream<DIR,REM_JPG_STUFF>::BitStream_new(BitStream* stream,void* const data)noexcept{
+void BitStream<DIR,REM_JPG_STUFF>::BitStream_new(BitStream* stream,void* const data,const uint64_t data_size)noexcept{
     stream->data=static_cast<uint8_t*>(data);
+    stream->data_size=data_size;
     stream->next_data_index=0;
     stream->buffer=0;
     stream->buffer_bits_filled=0;
@@ -178,7 +183,11 @@ template <Direction DIRECTION,bool REMOVE_JPEG_BYTE_STUFFING>
 [[gnu::hot,gnu::flatten]]
 inline void BitStream<DIRECTION,REMOVE_JPEG_BYTE_STUFFING>::fill_buffer(
 )noexcept{
-    const uint64_t num_bytes_missing = (64-this->buffer_bits_filled)/8;
+    uint64_t num_bytes_missing = (64-this->buffer_bits_filled)/8;
+
+    if(this->next_data_index+num_bytes_missing>this->data_size){
+        num_bytes_missing=this->data_size-this->next_data_index;
+    }
 
     if constexpr(DIRECTION==BITSTREAM_DIRECTION_RIGHT_TO_LEFT){
         uint64_t new_bytes=0;

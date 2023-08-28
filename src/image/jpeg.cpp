@@ -18,7 +18,7 @@
 #include "app/huffman.hpp"
 #include "app/bit_util.hpp"
 
-typedef huffman::CodingTable<uint8_t, false, bitStream::BITSTREAM_DIRECTION_LEFT_TO_RIGHT, true> HuffmanTable;
+typedef huffman::CodingTable<uint8_t, bitStream::BITSTREAM_DIRECTION_LEFT_TO_RIGHT, true> HuffmanTable;
 typedef HuffmanTable::BitStream_ BitStream;
 
 typedef int16_t MCU_EL;
@@ -1122,6 +1122,7 @@ void JpegParser_parse_file(
 
                         HuffmanTable::CodingTable_new(
                             target_table,
+                            (int)total_num_values,
                             value_code_lengths,
                             values
                         );
@@ -1284,7 +1285,7 @@ void JpegParser_parse_file(
 
                     BitStream _bit_stream;
                     BitStream* const  stream=&_bit_stream;
-                    BitStream::BitStream_new(stream, &parser->file_contents[parser->current_byte_position]);
+                    BitStream::BitStream_new(stream, &parser->file_contents[parser->current_byte_position],parser->file_size-parser->current_byte_position);
 
                     const uint32_t mcu_cols=parser->image_components[0].horz_samples/parser->image_components[0].horz_sample_factor/8;
                     const uint32_t mcu_rows=parser->image_components[0].vert_samples/parser->image_components[0].vert_sample_factor/8;

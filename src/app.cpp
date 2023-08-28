@@ -1490,7 +1490,9 @@ void App_run(Application* app){
 
             ImageParseResult image_parse_res;
             if(strncmp(PNG_FILE_ENDING,&file_path[file_path_len-PNG_FILE_ENDING_LEN],PNG_FILE_ENDING_LEN)==0){
+                auto start_time=current_time();
                 image_parse_res=Image_read_png(file_path,image_data);
+                println("parsed %s in %.3fms",file_path,(current_time()-start_time)*1e3);
             }else{
                 image_parse_res=Image_read_jpeg(file_path,image_data);
             }
