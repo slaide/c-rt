@@ -11,7 +11,12 @@ void main() {
   if(o_Color.a==0){
     int x_ind=int(v_Texcoord.x*20   );
     int y_ind=int(v_Texcoord.y*20 +1);
-    o_Color.rgb=vec3(0.2);
-    o_Color.rgb+=vec3(0.2)*float((x_ind+y_ind)%2);
+    o_Color.rgb+=vec3(0.2)+vec3(0.2)*float((x_ind+y_ind)%2);
+  }else if(o_Color.a<1){
+    int x_ind=int(v_Texcoord.x*20   );
+    int y_ind=int(v_Texcoord.y*20 +1);
+    vec3 orig_rgb=o_Color.rgb;
+    float alpha=o_Color.a;
+    o_Color.rgb*=vec3(1)-vec3(alpha)*0.2*float((x_ind+y_ind)%2);
   }
 }
