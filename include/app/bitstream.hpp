@@ -5,7 +5,7 @@
 #include <cstdint>
 #include <cstdio>
 
-#include "app/app.hpp"
+#include "app/macros.hpp"
 #include "app/bit_util.hpp"
 #include "app/error.hpp"
 

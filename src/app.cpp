@@ -1461,7 +1461,7 @@ void App_run(Application* app){
 
     Mesh* quadmesh=NULL;
 
-    static const int MAX_NUM_SWAPCHAIN_IMAGES=8;
+    static const int MAX_NUM_SWAPCHAIN_IMAGES=32;
 
     if (num_images>MAX_NUM_SWAPCHAIN_IMAGES) {
         fprintf(stderr,"too many images in swapchain\n");
@@ -1487,20 +1487,23 @@ void App_run(Application* app){
 
             static const char* const PNG_FILE_ENDING=".png";
             static const uint64_t PNG_FILE_ENDING_LEN=strlen(PNG_FILE_ENDING);
+            static const char* const JPEG_FILE_ENDING=".jpg";
+            static const uint64_t JPEG_FILE_ENDING_LEN=strlen(JPEG_FILE_ENDING);
 
             ImageParseResult image_parse_res;
+            auto start_time=current_time();
             if(strncmp(PNG_FILE_ENDING,&file_path[file_path_len-PNG_FILE_ENDING_LEN],PNG_FILE_ENDING_LEN)==0){
-                auto start_time=current_time();
                 image_parse_res=Image_read_png(file_path,image_data);
-                println("parsed %s in %.3fms",file_path,(current_time()-start_time)*1e3);
-            }else{
+                if (image_parse_res!=IMAGE_PARSE_RESULT_OK)
+                    bail(-31, "failed to parse png");
+            }else if(strncmp(JPEG_FILE_ENDING,&file_path[file_path_len-JPEG_FILE_ENDING_LEN],JPEG_FILE_ENDING_LEN)==0){
                 image_parse_res=Image_read_jpeg(file_path,image_data);
+                if (image_parse_res!=IMAGE_PARSE_RESULT_OK)
+                    bail(-31, "failed to parse jpeg");
+            }else{
+                bail(FATAL_UNEXPECTED_ERROR,"invalid file ending of supposed image file %s",file_path);
             }
-
-            if (image_parse_res!=IMAGE_PARSE_RESULT_OK) {
-                fprintf(stderr, "failed to parse jpeg\n");
-                exit(-31);
-            }
+            println("parsed %s in %.3fms",file_path,(current_time()-start_time)*1e3);
         }
 
         image_textures[image_index]=App_create_texture(app,image_data);

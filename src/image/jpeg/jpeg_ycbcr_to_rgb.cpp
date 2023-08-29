@@ -46,9 +46,9 @@ static inline void scan_ycbcr_to_rgb(
 
             // -- deinterlace and convert to uint8
 
-            image_data_data[i* 4 + 0] = (uint8_t)clamp(0.0f,255.0f,R+128.0f);
-            image_data_data[i* 4 + 1] = (uint8_t)clamp(0.0f,255.0f,G+128.0f);
-            image_data_data[i* 4 + 2] = (uint8_t)clamp(0.0f,255.0f,B+128.0f);
+            image_data_data[i* 4 + 0] = static_cast<uint8_t>(bitUtil::clamp(0.0f,255.0f,R+128.0f));
+            image_data_data[i* 4 + 1] = static_cast<uint8_t>(bitUtil::clamp(0.0f,255.0f,G+128.0f));
+            image_data_data[i* 4 + 2] = static_cast<uint8_t>(bitUtil::clamp(0.0f,255.0f,B+128.0f));
             image_data_data[i* 4 + 3] = UINT8_MAX;
         #else
             // -- re-order from block-orientation to final image orientation
@@ -65,9 +65,9 @@ static inline void scan_ycbcr_to_rgb(
 
             // -- deinterlace and convert to uint8
 
-            image_data_data[i* 4 + 0] = (uint8_t)clamp(0,255,R+128);
-            image_data_data[i* 4 + 1] = (uint8_t)clamp(0,255,G+128);
-            image_data_data[i* 4 + 2] = (uint8_t)clamp(0,255,B+128);
+            image_data_data[i* 4 + 0] = static_cast<uint8_t>(bitUtil::clamp(0,255,R+128));
+            image_data_data[i* 4 + 1] = static_cast<uint8_t>(bitUtil::clamp(0,255,G+128));
+            image_data_data[i* 4 + 2] = static_cast<uint8_t>(bitUtil::clamp(0,255,B+128));
             image_data_data[i* 4 + 3] = UINT8_MAX;
         #endif
     }
