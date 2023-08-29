@@ -19,10 +19,10 @@ endif
 
 PLATFORM ?= $(DEFAULT_PLATFORM)
 
-CC := clang
-CXX := clang++
-OBJCC := clang
-OBJCXX := clang++
+CC ?= clang
+CXX ?= clang++
+OBJCC ?= clang
+OBJCXX ?= clang++
 CSTD := -std=gnu2x
 CXXSTD := -std=gnu++20
 LINK_FLAGS := -lvulkan -pthread
@@ -183,6 +183,10 @@ $(eval $(call add_build_flag,DECODE_PARALLEL))
 $(eval $(call add_build_flag,USEAVX))
 $(eval $(call add_build_flag,JEMALLOC))
 $(eval $(call add_build_flag,IMAGE_BENCHMARK_NUM_REPEATS))
+$(eval $(call add_build_flag,CC))
+$(eval $(call add_build_flag,CXX))
+$(eval $(call add_build_flag,OBJCC))
+$(eval $(call add_build_flag,OBJCXX))
 
 $(BUILD_OBJS): $(BUILD_FLAGS)
 
