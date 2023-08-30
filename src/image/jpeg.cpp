@@ -886,7 +886,7 @@ class JpegParser: public FileParser{
                             //printf("mask %16llx\n",elements_nonzero);
 
                             const uint32_t num_cosines_remaining=64-cosine_index;
-                            const uint32_t num_cosines_remaining_in_current_iteration=min(8u,num_cosines_remaining);
+                            const uint32_t num_cosines_remaining_in_current_iteration=bitUtil::min(8u,num_cosines_remaining);
 
                             const uint64_t all_elements_mask=mask_u64((num_cosines_remaining_in_current_iteration-1)*8+1);
                             elements_nonzero&=all_elements_mask;
