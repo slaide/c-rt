@@ -53,9 +53,9 @@ static inline void scan_ycbcr_to_rgb(
         #else
             // -- re-order from block-orientation to final image orientation
 
-            const OUT_EL Y=y[image_components[0].conversion_indices[i]]>>PRECISION;
-            const OUT_EL Cr=(cr[image_components[1].conversion_indices[i]]-128)>>PRECISION;
-            const OUT_EL Cb=(cb[image_components[2].conversion_indices[i]]-128)>>PRECISION;
+            const OUT_EL Y= static_cast<OUT_EL>( y [image_components[0].conversion_indices[i]]     >>PRECISION);
+            const OUT_EL Cr=static_cast<OUT_EL>((cr[image_components[1].conversion_indices[i]]-128)>>PRECISION);
+            const OUT_EL Cb=static_cast<OUT_EL>((cb[image_components[2].conversion_indices[i]]-128)>>PRECISION);
 
             // -- convert ycbcr to rgb
 

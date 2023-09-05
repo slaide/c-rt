@@ -95,7 +95,7 @@ ifeq ($(MODE), debug)
 CDEF += -DDEBUG
 COMPILE_FLAGS += -g
 COMPILE_FLAGS += -fno-omit-frame-pointer -fno-inline
-OPT_FLAGS := -O0
+OPT_FLAGS := -Og
 
 ifeq ($(PLATFORM), linux)
 COMPILE_FLAGS += -fsanitize=address

@@ -583,7 +583,7 @@ class PngParser:public FileParser{
                 case PNG_SCANLINE_FILTER_AVERAGE:
                     // println("filter: average");
                     for(uint32_t index=0;index<this->scanline_width-1;index++){
-                        out_line[index]=this->raw(index) + (this->previous_rev(index)+this->above_rev(index))/2;
+                        out_line[index]=this->raw(index) + static_cast<uint8_t>(this->previous_rev(index)+this->above_rev(index))/2;
                     }
                     break;
                 case PNG_SCANLINE_FILTER_PAETH:

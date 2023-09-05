@@ -81,13 +81,17 @@ class FileParser{
         this->current_file_content_index=0;
     }
 
+    uint8_t* data_ptr()const noexcept{
+        return this->file_contents+this->current_file_content_index;
+    }
+
     enum TestSignatureResult{
         TEST_SIGNATURE_FAILURE=0,
         TEST_SIGNATURE_SUCCESS=1,
     };
 
-    enum TestSignatureResult test_signature(const uint8_t* signature,const uint64_t signature_len){
-        if(memcmp(signature, this->file_contents+this->current_file_content_index, signature_len)!=0){
+    enum TestSignatureResult test_signature(const uint8_t* signature,const uint64_t signature_len)const{
+        if(memcmp(signature, this->data_ptr(), signature_len)!=0){
             return TEST_SIGNATURE_FAILURE;
         }
         return TEST_SIGNATURE_SUCCESS;
@@ -105,14 +109,10 @@ class FileParser{
     template<typename T,bool ADVANCE=true>
     T get_mem(){
         T ret;
-        memcpy(&ret,this->file_contents+this->current_file_content_index,sizeof(T));
+        memcpy(&ret,this->data_ptr(),sizeof(T));
         if constexpr(ADVANCE)
             this->current_file_content_index+=sizeof(T);
         return ret;
-    }
-
-    uint8_t* data_ptr()const noexcept{
-        return this->file_contents+this->current_file_content_index;
     }
 };
 

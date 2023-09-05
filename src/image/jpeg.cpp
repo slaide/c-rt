@@ -591,8 +591,8 @@ class ScanComponent{
                                 break;
                             }
 
-                            const auto num_zeros=ac_bits>>4;
-                            const auto ac_magnitude=ac_bits&0xF;
+                            const auto num_zeros=static_cast<uint8_t>(ac_bits>>4);
+                            const auto ac_magnitude=static_cast<uint8_t>(ac_bits&0xF);
 
                             if (ac_magnitude==0) {
                                 if (num_zeros==15) {
@@ -611,9 +611,9 @@ class ScanComponent{
                                 break;
                             }
 
-                            const MCU_EL ac_value_bits=static_cast<MCU_EL>(stream->get_bits_advance((uint8_t)ac_magnitude));
+                            const MCU_EL ac_value_bits=static_cast<MCU_EL>(stream->get_bits_advance(ac_magnitude));
 
-                            const MCU_EL ac_value=bitUtil::twos_complement((MCU_EL)ac_magnitude,ac_value_bits);
+                            const MCU_EL ac_value=bitUtil::twos_complement(static_cast<MCU_EL>(ac_magnitude),ac_value_bits);
 
                             block_mem[spec_sel++]=static_cast<MCU_EL>(ac_value<<successive_approximation_bit_low);
                         }
@@ -937,7 +937,7 @@ class JpegParser: public FileParser{
     }
     template<>
     void parse_segment<JpegSegmentType::COM>(){
-        const uint16_t segment_size=this->next_u16();
+        const uint32_t segment_size=this->next_u16();
         
         const uint32_t segment_end_position=static_cast<uint32_t>(this->current_file_content_index)+segment_size-2;
 
@@ -954,7 +954,7 @@ class JpegParser: public FileParser{
     }
     template<>
     void parse_segment<JpegSegmentType::DQT>(){
-        const uint16_t segment_size=this->next_u16();
+        const uint32_t segment_size=this->next_u16();
         const uint32_t segment_end_position=static_cast<uint32_t>(this->current_file_content_index)+segment_size-2;
 
         uint32_t segment_bytes_read=0;
@@ -981,7 +981,7 @@ class JpegParser: public FileParser{
     }
     template<>
     void parse_segment<JpegSegmentType::DHT>(){
-        const uint16_t segment_size=this->next_u16();
+        const uint32_t segment_size=this->next_u16();
         const uint32_t segment_end_position=static_cast<uint32_t>(this->current_file_content_index)+segment_size-2;
 
         uint32_t segment_bytes_read=0;
