@@ -158,6 +158,7 @@ $(eval $(call compile_cpp, $(BUILD_DIR)/app_mesh.o, src/app_mesh.cpp))
 
 $(eval $(call compile_cpp, $(BUILD_DIR)/image/jpeg.o, src/image/jpeg.cpp))
 $(eval $(call compile_cpp, $(BUILD_DIR)/image/png.o, src/image/png.cpp))
+$(eval $(call compile_cpp, $(BUILD_DIR)/image/gif.o, src/image/gif.cpp))
 
 $(eval $(call compile_glsl, $(BIN_DIR)/vertshader.spv, shaders/vertshader.vert))
 $(eval $(call compile_glsl, $(BIN_DIR)/fragshader.spv, shaders/fragshader.frag))

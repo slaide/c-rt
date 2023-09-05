@@ -1489,6 +1489,8 @@ void App_run(Application* app){
             static const uint64_t PNG_FILE_ENDING_LEN=strlen(PNG_FILE_ENDING);
             static const char* const JPEG_FILE_ENDING=".jpg";
             static const uint64_t JPEG_FILE_ENDING_LEN=strlen(JPEG_FILE_ENDING);
+            static const char* const GIF_FILE_ENDING=".gif";
+            static const uint64_t GIF_FILE_ENDING_LEN=strlen(GIF_FILE_ENDING);
 
             ImageParseResult image_parse_res;
             auto start_time=current_time();
@@ -1500,6 +1502,10 @@ void App_run(Application* app){
                 image_parse_res=Image_read_jpeg(file_path,image_data);
                 if (image_parse_res!=IMAGE_PARSE_RESULT_OK)
                     bail(-31, "failed to parse jpeg");
+            }else if(strncmp(GIF_FILE_ENDING,&file_path[file_path_len-GIF_FILE_ENDING_LEN],GIF_FILE_ENDING_LEN)==0){
+                image_parse_res=Image_read_gif(file_path,image_data);
+                if (image_parse_res!=IMAGE_PARSE_RESULT_OK)
+                    bail(-31, "failed to parse gif");
             }else{
                 bail(FATAL_UNEXPECTED_ERROR,"invalid file ending of supposed image file %s",file_path);
             }
