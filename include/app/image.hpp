@@ -120,3 +120,4 @@ ImageParseResult Image_read_jpeg(const char* filepath,ImageData* image_data);
 ImageParseResult Image_read_png(const char* const filepath,ImageData* const image_data);
 
 
+ImageParseResult Image_read_webp(const char* const filepath,ImageData* const  image_data);
