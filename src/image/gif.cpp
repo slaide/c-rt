@@ -1,25 +1,26 @@
 #include <cstdint>
+#include <cstring>
 
 #include "app/bitstream.hpp"
 #include "app/macros.hpp"
 #include "app/error.hpp"
 #include "app/image.hpp"
 
-enum class PngVersion{
+enum class GIFVersion{
     V87a,
     V89a,
 };
 
-enum class PngBlockSignature:uint8_t{
+enum class GIFBlockSignature:uint8_t{
     /// section 20
     ImageDescriptor=0x2c,
-    /// see PngBlockLabel
+    /// see GIFBlockLabel
     Extension=0x21,
     /// this block indicates the end of the GIF data stream
     Trailer=0x3b,
 };
 /// specifically for extensions
-enum class PngBlockLabel:uint8_t{
+enum class GIFBlockLabel:uint8_t{
     /// section 23
     GraphicControl=0xf9,
     /// section 25
@@ -28,7 +29,7 @@ enum class PngBlockLabel:uint8_t{
     Application=0xff,
 };
 /// Indicates the way in which the graphic is to be treated after being displayed.
-enum class PngDisposalMethod{
+enum class GIFDisposalMethod{
     /// No disposal specified. The decoder is not required to take any action.
     NoDisposal=0,
     /// Do not dispose. The graphic is to be left in place.
@@ -74,9 +75,254 @@ class ExtensionInformation{
                 uint16_t num_loops;
         }netscape_looping_extension;
 };
+
+template<bitStream::Direction = bitStream::BITSTREAM_DIRECTION_RIGHT_TO_LEFT>
+class BitStreamWriter{
+    public:
+        /// in bits
+        uint64_t data_len;
+        uint8_t* data;
+
+        uint64_t data_buffer_len;
+        uint64_t data_buffer;
+        BitStreamWriter(){
+            this->data_len=0;
+            this->data=nullptr;
+            this->data_buffer_len=0;
+            this->data_buffer=0;
+        }
+
+        template<bool EXACT=false>
+        void flush_1_byte(){
+            this->data=(uint8_t*)realloc(this->data, this->data_len/8+1);
+            this->data[this->data_len/8]=static_cast<uint8_t>(this->data_buffer&0xFF);
+            if constexpr(EXACT) {
+                if(this->data_buffer_len>8){
+                    this->data_len+=8;
+                    this->data_buffer_len-=8;
+                }else{
+                    this->data_len+=this->data_buffer_len;
+                    this->data_buffer_len-=this->data_buffer_len;
+                }
+            }else{
+                this->data_len+=8;
+                this->data_buffer_len-=8;
+            }
+
+            this->data_buffer>>=8;
+        }
+        void flush_bytes(){
+            int num_bytes_in_buffer=static_cast<int>(this->data_buffer_len/8);
+            for(int i=0;i<num_bytes_in_buffer;i++){
+                this->flush_1_byte();
+            }
+        }
+        void flush_complete(){
+            this->flush_bytes();
+            if (this->data_buffer_len>0) {
+                // flush a full byte, which may underflow the data_buffer_len calculation
+                this->flush_1_byte<true>();
+
+                // correct potential data_buffer_len underflow
+                this->data_buffer_len=0;
+            }
+        }
+        void write(uint64_t data, uint64_t num_bits){
+            uint64_t space_left_in_buffer=64-this->data_buffer_len;
+            if (space_left_in_buffer<num_bits) {
+                this->flush_bytes();
+            }
+
+            this->data_buffer|=data<<this->data_buffer_len;
+            this->data_buffer_len+=num_bits;
+        }
+};
+
+namespace LZW{
+    constexpr static const char* const alphabet="ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+
+    typedef struct DictionaryEntry{
+        uint64_t index_in_dictionary;
+
+        int sym_len;
+        char* sym;
+
+        uint32_t bit_len;
+        uint32_t bits;
+    }DictionaryEntry;
+
+    class Encoder{
+        public:
+            uint32_t code_length;
+
+            template<bool EARLY_INCREASE=false>
+            Encoder(
+                BitStreamWriter<>& writer,
+                const char* const encode_str,
+                uint32_t initial_code_length,
+                uint64_t initial_dictionary_size
+            ):code_length(initial_code_length){
+                const char terminator='#';
+                int data_len=(int)strlen(encode_str);
+
+                int current_symbol_len=1;
+                uint64_t current_dictionary_size=initial_dictionary_size;
+
+                uint32_t next_code=1;
+                DictionaryEntry* dictionary=(DictionaryEntry*)malloc(sizeof(DictionaryEntry)*current_dictionary_size);
+                for(int i=0;i<26;i++){
+                    dictionary[i].index_in_dictionary=static_cast<uint64_t>(i+1);
+
+                    dictionary[i].sym_len=current_symbol_len;
+                    dictionary[i].sym=(char*)alphabet+i;
+
+                    dictionary[i].bit_len=this->code_length;
+                    dictionary[i].bits=next_code++;
+                }
+
+                for(int i=0;i<data_len;){
+                    uint64_t largest_dict_match_index=0;
+
+                    for(uint64_t d_i=0;d_i<current_dictionary_size;d_i++){
+                        if(largest_dict_match_index!=0 && dictionary[d_i].sym_len<dictionary[largest_dict_match_index].sym_len)
+                            continue;
+
+                        if(strncmp(dictionary[d_i].sym,encode_str+i,(uint32_t)dictionary[d_i].sym_len)==0){
+                            largest_dict_match_index=d_i;
+                        }
+                    }
+
+                    if(largest_dict_match_index==0)
+                        throw FATAL_UNEXPECTED_ERROR;
+
+                    // insert new value into alphabet
+
+                    uint64_t realloc_size=sizeof(DictionaryEntry)*(current_dictionary_size+1);
+                    dictionary=(DictionaryEntry*)realloc(dictionary,realloc_size);
+
+                    DictionaryEntry* new_entry=dictionary+current_dictionary_size;
+                    DictionaryEntry* largest_dict_match=dictionary+largest_dict_match_index;
+
+                    bool should_increase_code_size=false;
+                    if((next_code+1)>(1<<this->code_length)){
+                        should_increase_code_size=true;
+                    }
+
+                    if(EARLY_INCREASE&&should_increase_code_size)
+                        this->code_length++;
+
+                    new_entry->bit_len=this->code_length;
+
+                    if((!EARLY_INCREASE)&&should_increase_code_size)
+                        this->code_length++;
+
+                    new_entry->sym=(char*)encode_str+i;
+                    new_entry->sym_len=largest_dict_match->sym_len+1;
+                    new_entry->bits=next_code++;
+                    new_entry->index_in_dictionary=current_dictionary_size+1;
+
+                    writer.write(largest_dict_match->index_in_dictionary,new_entry->bit_len);
+                    println(
+                        "wrote value %2" PRIu64 " for sym %3.*s",
+                        largest_dict_match->index_in_dictionary,
+                        largest_dict_match->sym_len,
+                        largest_dict_match->sym
+                    );
+
+                    if(encode_str[i+largest_dict_match->sym_len]==terminator)
+                        break;
+                    
+                    i+=new_entry->sym_len-1;
+                    current_dictionary_size+=1;
+                }
+                // write terminator (a number of 0 bits at current code length)
+                writer.write(0,this->code_length);
+                writer.flush_complete();
+                println("done after writing %" PRIu64 " bits",writer.data_len);
+            }
+    };
+    class Decoder{
+        public:
+            typedef bitStream::BitStream<bitStream::BITSTREAM_DIRECTION_RIGHT_TO_LEFT,false> BitStream;
+            
+            uint32_t code_length;
+
+            template<bool EARLY_INCREASE=false>
+            Decoder(
+                BitStream& stream,
+                const uint32_t initial_code_length,
+                const uint64_t initial_dictionary_size
+            ):code_length(initial_code_length){
+                auto dictionary_size=initial_dictionary_size;
+
+                DictionaryEntry* dictionary=(DictionaryEntry*)malloc(sizeof(DictionaryEntry)*initial_dictionary_size);
+                for(uint64_t i=0;i<initial_dictionary_size;i++){
+                    dictionary[i].index_in_dictionary=i+1;
+                    dictionary[i].sym=(char*)alphabet+i;
+                    dictionary[i].sym_len=1;
+                    dictionary[i].bits=(uint32_t)i+1;
+                    dictionary[i].bit_len=this->code_length;
+                }
+
+                DictionaryEntry prev_match;
+                prev_match.sym=nullptr;
+
+                uint64_t somebits;
+                do {
+                    if ((dictionary_size+2)>(1<<this->code_length)) {
+                        this->code_length++;
+                    }
+
+                    somebits=stream.get_bits_advance((uint8_t)this->code_length);
+
+                    DictionaryEntry dict_match;
+                    for (uint64_t i=0; i<dictionary_size; i++) {
+                        if(dictionary[i].bits==somebits){
+                            dict_match=dictionary[i];
+                        }
+                    }
+
+                    if (somebits==0) {
+                        break;
+                    }
+                    println("got val %" PRIu64 " of len %d (cur len %d) for sym %.*s",somebits,dict_match.bit_len,this->code_length,dict_match.sym_len,dict_match.sym);
+
+                    if(prev_match.sym!=nullptr){
+                        dictionary=(DictionaryEntry*)realloc(dictionary, sizeof(DictionaryEntry)*(dictionary_size+1));
+                        DictionaryEntry* new_entry=dictionary+dictionary_size;
+
+                        new_entry->index_in_dictionary=dictionary_size+1;
+                        new_entry->bit_len=this->code_length;
+                        new_entry->bits=(uint32_t)dictionary_size+1;
+                        new_entry->sym_len=prev_match.sym_len+1;
+                        new_entry->sym=(char*)malloc(sizeof(char)*(uint64_t)(new_entry->sym_len));
+
+                        memcpy(
+                            (void*)new_entry->sym,
+                            prev_match.sym,
+                            (uint64_t)prev_match.sym_len
+                        );
+                        memcpy(
+                            (void*)(new_entry->sym+prev_match.sym_len),
+                            dict_match.sym,
+                            1
+                        );
+
+                        //println("created dict %d entry %.*s",new_entry->bits,new_entry->sym_len,new_entry->sym);
+
+                        dictionary_size++;
+                    }
+                    if (stream.next_data_index>=stream.data_size) {
+                        break;
+                    }
+                    prev_match=dict_match;
+                } while(somebits!=0);
+            }
+    };
+}
 class GifParser:public FileParser{
     public:
-        PngVersion version;
+        GIFVersion version;
 
         uint32_t num_entries_in_global_color_table;
         uint8_t global_color_table[3*265];
@@ -92,125 +338,28 @@ class GifParser:public FileParser{
 
         }
 
-        class LZWEncoder{
-            constexpr static const char* const alphabet="ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-            public:
-                int code_length;
-
-                template<bool EARLY_INCREASE=false>
-                LZWEncoder(
-                    const char* const encode_str,
-                    int initial_code_length,
-                    uint64_t initial_dictionary_size
-                ):code_length(initial_code_length){
-                    const char terminator='#';
-                    int data_len=(int)strlen(encode_str);
-
-                    int num_bits_output=0;
-
-                    int current_symbol_len=1;
-                    uint64_t current_dictionary_size=initial_dictionary_size;
-                    typedef struct DictionaryEntry{
-                        int sym_len;
-                        const char* val;
-                        int bit_len;
-                        int bits;
-                    }DictionaryEntry;
-                    int next_code=1;
-                    DictionaryEntry* dictionary=(DictionaryEntry*)malloc(sizeof(DictionaryEntry)*current_dictionary_size);
-                    for(int i=0;i<26;i++){
-                        dictionary[i].sym_len=current_symbol_len;
-                        dictionary[i].val=alphabet+i;
-                        dictionary[i].bit_len=this->code_length;
-
-                        dictionary[i].bits=next_code++;
-                    }
-
-                    for(int i=0;i<data_len;){
-                        int dictionary_longest_match_found=0;
-                        for(uint64_t d_i=0;d_i<current_dictionary_size;d_i++){
-                            if(dictionary[d_i].sym_len<dictionary_longest_match_found)
-                                continue;
-
-                            if(strncmp(dictionary[d_i].val,encode_str+i,(uint32_t)dictionary[d_i].sym_len)==0){
-                                dictionary_longest_match_found=dictionary[d_i].sym_len;
-                            }
-                        }
-
-                        // insert new value into alphabet
-
-                        uint64_t realloc_size=sizeof(DictionaryEntry)*(current_dictionary_size+1);
-                        dictionary=(DictionaryEntry*)realloc(dictionary,realloc_size);
-
-                        DictionaryEntry* new_entry=dictionary+current_dictionary_size;
-
-                        bool should_increase_code_size=false;
-                        if((next_code+1)>(1<<this->code_length)){
-                            should_increase_code_size=true;
-                        }
-
-                        if(EARLY_INCREASE&&should_increase_code_size)
-                            this->code_length++;
-
-                        new_entry->bit_len=this->code_length;
-
-                        if((!EARLY_INCREASE)&&should_increase_code_size)
-                            this->code_length++;
-
-                        new_entry->val=encode_str+i;
-                        new_entry->sym_len=dictionary_longest_match_found+1;
-                        new_entry->bits=next_code++;
-
-                        num_bits_output+=new_entry->bit_len;
-
-                        if(encode_str[i+dictionary_longest_match_found]==terminator)
-                            break;
-
-                        println("%.*s inserted",
-                            new_entry->sym_len,
-                            new_entry->val
-                        );
-                        
-                        i+=new_entry->sym_len-1;
-                        current_dictionary_size+=1;
-                    }
-                    // write terminator (a number of 0 bits at current code length)
-                    num_bits_output+=this->code_length;
-                    println("done after writing %d bits",num_bits_output);
-                }
-        };
-
-        /*class LZWDecoder{
-            static const char* const alphabet="ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-            int current_code_length;
-            int current_dictionary_size=0;
-            char** dictionary=nullptr;
-
-            LZWDecoder(
-                char*data,
-                int data_length,
-                int initial_code_length
-            ){
-                this->current_code_length=initial_code_length;
-
-                bitStream::BitStream<bitStream::BITSTREAM_DIRECTION_RIGHT_TO_LEFT, false> stream((uint8_t*)data,(uint64_t)data_length);
-
-            }
-        };*/
-
-        PngBlockSignature parse_next_block(){
+        GIFBlockSignature parse_next_block(){
+            BitStreamWriter<> writer;
             const char* const somedata="TOBEORNOTTOBEORTOBEORNOT#";
-            LZWEncoder test_enc(somedata,5,26);
-            //LZWDecoder test(somedata,strlen(somedata));
+            LZW::Encoder test_enc(writer,somedata,5,26);
 
-            PngBlockSignature next_block_signature{this->get_mem<uint8_t>()};
+            LZW::Decoder::BitStream stream;
+            LZW::Decoder::BitStream::BitStream_new(&stream,writer.data,writer.data_len);
+            LZW::Decoder(stream,5,26);
+
+            throw "whatever";
+
+
+
+
+            GIFBlockSignature next_block_signature{this->get_mem<uint8_t>()};
             switch(next_block_signature){
-                case PngBlockSignature::Extension:
+                case GIFBlockSignature::Extension:
                     {
                         println("extension block");
-                        PngBlockLabel extension_type{this->get_mem<uint8_t>()};
+                        GIFBlockLabel extension_type{this->get_mem<uint8_t>()};
                         switch(extension_type){
-                            case PngBlockLabel::GraphicControl:
+                            case GIFBlockLabel::GraphicControl:
                                 println("graphic control");
                                 {
                                     uint8_t block_size=this->get_mem<uint8_t>();
@@ -228,7 +377,7 @@ class GifParser:public FileParser{
                                     this->expect_signature(BLOCK_TERMINATOR, 1);
                                 }
                                 break;
-                            case PngBlockLabel::Application:
+                            case GIFBlockLabel::Application:
                                 println("application");
                                 {
                                     uint8_t block_size=this->get_mem<uint8_t>();
@@ -280,7 +429,7 @@ class GifParser:public FileParser{
                         }
                     }
                     break;
-                case PngBlockSignature::ImageDescriptor:
+                case GIFBlockSignature::ImageDescriptor:
                     println("image descriptor");
                     {
                         uint16_t image_left_position=this->get_mem<uint16_t>();
@@ -331,9 +480,9 @@ ImageParseResult Image_read_gif(
     char png_version_str[3];
     memcpy(png_version_str,parser.data_ptr(),3);
     if(memcmp(png_version_str,"87a",3)==0){
-        parser.version=PngVersion::V87a;
+        parser.version=GIFVersion::V87a;
     }else if(memcmp(png_version_str,"89a",3)==0){
-        parser.version=PngVersion::V89a;
+        parser.version=GIFVersion::V89a;
     }else{
         bail(FATAL_UNEXPECTED_ERROR,"png file has unknown version %.3s",png_version_str);
     }
@@ -398,7 +547,7 @@ ImageParseResult Image_read_gif(
         parser.num_entries_in_global_color_table=0;
     }
 
-    while(parser.parse_next_block()!=PngBlockSignature::Trailer)
+    while(parser.parse_next_block()!=GIFBlockSignature::Trailer)
         ;
 
     bail(FATAL_UNEXPECTED_ERROR,"unimplemented");
