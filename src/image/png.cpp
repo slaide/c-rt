@@ -515,44 +515,33 @@ class PngParser:public FileParser{
             return this->out_line_prev[index-this->bpp];
         }
 
-        template<typename T>
         [[gnu::hot,gnu::flatten]]
-        inline static T abs_sub(T a,T b)noexcept{
-            T diff=a-b;
+        inline static int abs_sub(const int a,const int b)noexcept{
+            int diff=a-b;
             if(diff<0)
                 return -diff;
             return diff;
         }
-        [[gnu::hot,gnu::flatten]]
-        inline static uint16_t abs_sub(uint16_t a,uint16_t b)noexcept{
-            int32_t diff=(int32_t)a-(int32_t)b;
-            if(diff<0)
-                return (uint16_t)-diff;
-            return (uint16_t)diff;
-        }
 
         [[gnu::hot,gnu::flatten]]
-        inline uint8_t paethPredictor_rev(uint32_t index)const noexcept{
-            uint16_t a = this->previous_rev(index); // left
-            uint16_t b = this->above_rev(index); // above
-            uint16_t c = this->previousAbove_rev(index); // upper left
+        inline uint8_t paethPredictor_rev(const uint32_t index)const noexcept{
+            const auto a = this->previous_rev(index);
+            const auto b = this->above_rev(index);
+            const auto c = this->previousAbove_rev(index);
 
-            // from lodepng::paethPredictor (which i dont quite understand)
-            auto pa=abs_sub(b,c);
-            auto pb=abs_sub(a,c);
-            auto pc=abs_sub(a+b,c+c);
+            // from stb_image.h
+            const auto p=a+b-c;
+            const auto pa=abs_sub(p,a);
+            const auto pb=abs_sub(p,b);
+            const auto pc=abs_sub(p,c);
 
-            if(pb < pa){
-                a=b;
-                pa=pb;
-            }
+            if(pa<=pb && pa<=pc)
+                return a;
 
-            auto pr_c=pc < pa;
-            if(pr_c){
-                return (uint8_t)c;
-            } else {
-                return (uint8_t)a;
-            }
+            if(pb<=pc)
+                return b;
+
+            return c;
         }
 
         [[gnu::hot,gnu::flatten]]
@@ -563,31 +552,26 @@ class PngParser:public FileParser{
             PNGScanlineFilter scanline_filter=(PNGScanlineFilter)scanline_filter_byte;
             switch(scanline_filter){
                 case PNG_SCANLINE_FILTER_NONE:
-                    // println("filter: none");
                     for(uint32_t index=0;index<this->scanline_width-1;index++){
                         out_line[index]=this->raw(index);
                     }
                     break;
                 case PNG_SCANLINE_FILTER_SUB:
-                    // println("filter: sub");
                     for(uint32_t index=0;index<this->scanline_width-1;index++){
                         out_line[index]=this->raw(index) + this->previous_rev(index);
                     }
                     break;
                 case PNG_SCANLINE_FILTER_UP:
-                    // println("filter: up");
                     for(uint32_t index=0;index<this->scanline_width-1;index++){
                         out_line[index]=this->raw(index) + this->above_rev(index);
                     }
                     break;
                 case PNG_SCANLINE_FILTER_AVERAGE:
-                    // println("filter: average");
                     for(uint32_t index=0;index<this->scanline_width-1;index++){
-                        out_line[index]=this->raw(index) + static_cast<uint8_t>(this->previous_rev(index)+this->above_rev(index))/2;
+                        out_line[index]=this->raw(index) + static_cast<uint8_t>((this->previous_rev(index)+this->above_rev(index))/2);
                     }
                     break;
                 case PNG_SCANLINE_FILTER_PAETH:
-                    // println("filter: paeth");
                     for(uint32_t index=0;index<this->scanline_width-1;index++){
                         uint8_t res=this->raw(index) + this->paethPredictor_rev(index);
 

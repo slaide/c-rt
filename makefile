@@ -192,7 +192,7 @@ $(BUILD_OBJS): $(BUILD_FLAGS)
 
 # link 'main' for compile mode
 $(BUILD_DIR)/main: $(BUILD_OBJS)
-	$(CXX) $(OPT_FLAGS) $(CSTD) $(CDEF) $(CINCLUDE) $(LINK_FLAGS) $(COMPILE_FLAGS) -o $@ $^
+	$(CXX) $(OPT_FLAGS) $(CXXSTD) $(CDEF) $(CINCLUDE) $(COMPILE_FLAGS) $(LINK_FLAGS) -o $@ $^
 
 MAIN_FILE := $(BIN_DIR)/main
 
