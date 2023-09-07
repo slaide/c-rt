@@ -412,7 +412,7 @@ namespace ProcessBlock{
 class IDCTMaskSet {
     private:
         [[gnu::pure,gnu::hot]]
-        static inline float coeff(const uint32_t u){
+        constexpr static inline float coeff(const uint32_t u){
             if(u==0){
                 return 1.0f/(float)M_SQRT2;
             }else{

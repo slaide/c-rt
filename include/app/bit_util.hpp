@@ -15,7 +15,7 @@ namespace bitUtil {
 #define mask_u64(n) (((UINT64_1)<<(uint64_t)(n))-UINT64_1)
 
 [[maybe_unused]]
-static const uint64_t MASKS_U64[64]={
+constexpr static const uint64_t MASKS_U64[64]={
     mask_u64(0),
     mask_u64(1),
     mask_u64(2),
@@ -82,7 +82,7 @@ static const uint64_t MASKS_U64[64]={
     mask_u64(63),
 };
 [[maybe_unused]]
-static const uint32_t MASKS_U32[32]={
+constexpr static const uint32_t MASKS_U32[32]={
     mask_u32(0),
     mask_u32(1),
     mask_u32(2),
@@ -117,13 +117,21 @@ static const uint32_t MASKS_U32[32]={
     mask_u32(31)
 };
 
-template <typename T>
-static uint32_t get_mask_u32(T num_bits){
-    return MASKS_U32[num_bits];
+template <typename T,bool USE_LOOKUP_TABLE=false>
+[[gnu::hot,gnu::always_inline]]
+constexpr static inline uint32_t get_mask_u32(T num_bits){
+    if constexpr(USE_LOOKUP_TABLE)
+        return MASKS_U32[num_bits];
+    else
+        return mask_u32(num_bits);
 }
-template <typename T>
-static uint64_t get_mask_u64(T num_bits){
-    return MASKS_U64[num_bits];
+template <typename T,bool USE_LOOKUP_TABLE=false>
+[[gnu::hot,gnu::always_inline]]
+constexpr static inline uint64_t get_mask_u64(T num_bits){
+    if constexpr(USE_LOOKUP_TABLE)
+        return MASKS_U64[num_bits];
+    else
+        return mask_u64(num_bits);
 }
 
 /**
@@ -184,8 +192,8 @@ static inline T reverse_bits(
 }
 
 #ifdef VK_USE_PLATFORM_XCB_KHR
-[[maybe_unused]]
-static uint32_t tzcnt_32(const uint32_t v){
+[[maybe_unused,gnu::hot]]
+constexpr static inline uint32_t tzcnt_32(const uint32_t v){
     #ifdef __clang__
         return (uint32_t)_mm_tzcnt_32(v);
     #elif defined(__GNUC__)
@@ -195,7 +203,7 @@ static uint32_t tzcnt_32(const uint32_t v){
 #endif
 
 template<typename T>
-static inline T byteswap(T v, uint8_t num_bytes){
+constexpr static inline T byteswap(T v, uint8_t num_bytes){
     union B4{
         uint8_t bytes[sizeof(T)];
         T v;
@@ -226,24 +234,24 @@ static inline T byteswap(T v, uint8_t num_bytes){
 
 template <typename  T>
 [[gnu::always_inline,gnu::pure,gnu::flatten,gnu::hot]]
-static inline T max(const T a,const T b){
+constexpr static inline T max(const T a,const T b){
     return (a>b)?a:b;
 }
 template <typename  T>
 [[gnu::always_inline,gnu::pure,gnu::flatten,gnu::hot]]
-static inline T min(const T a,const T b){
+constexpr static inline T min(const T a,const T b){
     return (a<b)?a:b;
 }
 
 template <typename  T>
 [[gnu::always_inline,gnu::pure,gnu::flatten,gnu::hot,maybe_unused]]
-static inline T clamp(const T v_min,const T v_max,const T v){
+constexpr static inline T clamp(const T v_min,const T v_max,const T v){
     return max(v_min, min(v_max, v));
 }
 
 template <typename  T>
 [[gnu::always_inline,gnu::pure,gnu::flatten,gnu::hot]]
-static inline T twos_complement(const T magnitude, const T value){
+constexpr static inline T twos_complement(const T magnitude, const T value){
     T threshold=(T)(1<<(magnitude-1));
     if (value<threshold){
         T ret=value+1;
