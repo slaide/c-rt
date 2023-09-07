@@ -449,7 +449,13 @@ class IDCTMaskSet {
                 }
             }
         }
+
+        template<typename T>
+        const OUT_EL* operator[](const T index)const noexcept{
+            return (OUT_EL*)this->idct_element_masks[index];
+        }
 };
+static const IDCTMaskSet IDCT_MASK_SET;
 
 class ScanComponent{
     public:
@@ -698,8 +704,6 @@ class JpegParser: public FileParser{
     uint32_t Nf;
     uint32_t real_X,real_Y;
 
-    IDCTMaskSet idct_mask_set;
-
     uint32_t component_label;
     uint32_t color_space;
 
@@ -826,10 +830,7 @@ class JpegParser: public FileParser{
 
         const uint32_t num_blocks_in_scan=this->image_components[c].num_blocks_in_scan;
 
-        OUT_EL idct_mask_set[64][64];
-        memcpy(idct_mask_set,this->idct_mask_set.idct_element_masks,sizeof(idct_mask_set));
-
-        const OUT_EL idct_m0_v0=idct_mask_set[0][0];
+        const OUT_EL idct_m0_v0=IDCT_MASK_SET.idct_element_masks[0][0];
 
         // local cache, with expanded size to allow simd instructions reading past the real content
         MCU_EL in_block[80];
@@ -908,10 +909,10 @@ class JpegParser: public FileParser{
                     const MCU_EL pre_quantized_mask_strength=in_block[cosine_index];
 
                     const OUT_EL cosine_mask_strength=pre_quantized_mask_strength*component_quant_table[cosine_index];
-                    const OUT_EL* const  idct_mask=idct_mask_set[cosine_index];
+                    const OUT_EL* const idct_mask=IDCT_MASK_SET[cosine_index];
                     
                     for(uint32_t pixel_index = 0;pixel_index<64;pixel_index++){
-                        out_block[pixel_index]+=idct_mask[pixel_index]*cosine_mask_strength;
+                        out_block[pixel_index]+=static_cast<OUT_EL>(idct_mask[pixel_index]*cosine_mask_strength);
                     }
 
                     cosine_index++;
@@ -925,121 +926,6 @@ class JpegParser: public FileParser{
     template<JpegSegmentType SEGMENT_TYPE>
     void parse_segment(){
         bail(FATAL_UNEXPECTED_ERROR,"unimplemented segment %s",Image_jpeg_segment_type_name(SEGMENT_TYPE));
-    }
-
-    template<>
-    void parse_segment<JpegSegmentType::SOI>(){
-        {}
-    }
-    template<>
-    void parse_segment<JpegSegmentType::EOI>(){
-        this->parsing_done=true;
-    }
-    template<>
-    void parse_segment<JpegSegmentType::COM>(){
-        const uint32_t segment_size=this->next_u16();
-        
-        const uint32_t segment_end_position=static_cast<uint32_t>(this->current_file_content_index)+segment_size-2;
-
-        const uint32_t comment_length=segment_size-2;
-
-        char* const comment_str=(char*)malloc(comment_length+1);
-        comment_str[comment_length]=0;
-
-        memcpy(comment_str,&this->file_contents[this->current_file_content_index],comment_length);
-
-        image_data->image_file_metadata.file_comment=comment_str;
-
-        this->current_file_content_index=segment_end_position;
-    }
-    template<>
-    void parse_segment<JpegSegmentType::DQT>(){
-        const uint32_t segment_size=this->next_u16();
-        const uint32_t segment_end_position=static_cast<uint32_t>(this->current_file_content_index)+segment_size-2;
-
-        uint32_t segment_bytes_read=0;
-        while(segment_bytes_read<segment_size-2){
-            const uint8_t destination_and_precision=this->get_mem<uint8_t>();
-            const uint8_t destination=LB_U8(destination_and_precision);
-            const uint8_t precision=HB_U8(destination_and_precision);
-            if (precision!=0)
-                bail(-45, "jpeg quant table precision is not 0 - it is %d\n",precision);
-
-            uint8_t table_entries[64];
-            memcpy(table_entries,&this->file_contents[this->current_file_content_index],64);
-            this->current_file_content_index+=64;
-
-            segment_bytes_read+=65;
-
-            for (int i=0; i<64; i++) {
-                this->quant_tables[destination][i]=table_entries[i];
-            }
-
-        }
-
-        this->current_file_content_index=segment_end_position;
-    }
-    template<>
-    void parse_segment<JpegSegmentType::DHT>(){
-        const uint32_t segment_size=this->next_u16();
-        const uint32_t segment_end_position=static_cast<uint32_t>(this->current_file_content_index)+segment_size-2;
-
-        uint32_t segment_bytes_read=0;
-        while(segment_bytes_read<segment_size-2){
-            uint8_t table_index_and_class=this->get_mem<uint8_t>();
-
-            const uint8_t table_index=LB_U8(table_index_and_class);
-            const uint8_t table_class=HB_U8(table_index_and_class);
-
-            HuffmanTable* target_table=NULL;
-            switch (table_class) {
-                case  0:
-                    target_table=&this->dc_coding_tables[table_index];
-                    break;
-                case  1:
-                    target_table=&this->ac_coding_tables[table_index];
-                    break;
-                default:
-                    exit(FATAL_UNEXPECTED_ERROR);
-            }
-
-            uint32_t total_num_values=0;
-            uint8_t num_values_of_length[16];
-            for(int i=0;i<16;i++){
-                num_values_of_length[i]=this->file_contents[this->current_file_content_index++];
-
-                total_num_values+=num_values_of_length[i];
-            }
-
-            segment_bytes_read+=17;
-
-            HuffmanTable::VALUE_ values[260];
-            for(uint32_t i=0;i<total_num_values;i++)
-                values[i]=this->file_contents[this->current_file_content_index++];
-
-            uint8_t value_code_lengths[260];
-            memset(value_code_lengths,0,sizeof(value_code_lengths));
-
-            uint32_t value_index=0;
-            for (uint8_t code_length=0; code_length<16; code_length++) {
-                for(uint32_t i=0;i<num_values_of_length[code_length];i++)
-                    value_code_lengths[value_index++]=code_length+1;
-            }
-
-            segment_bytes_read+=value_index;
-
-            // destroy previous table, if there was one
-            target_table->destroy();
-
-            HuffmanTable::CodingTable_new(
-                target_table,
-                (int)total_num_values,
-                value_code_lengths,
-                values
-            );
-        }
-
-        this->current_file_content_index=segment_end_position;
     }
 
     template<EncodingMethod ENCODING_METHOD>
@@ -1097,7 +983,7 @@ class JpegParser: public FileParser{
 
             this->image_components[i].scan_memory=(MCU_EL**)malloc(sizeof(MCU_EL*)*component_num_scans);
 
-            uint32_t per_scan_memory_size=ROUND_UP(component_num_scan_elements*sizeof(MCU_EL),4096);
+            uint32_t per_scan_memory_size=ROUND_UP<uint32_t>(component_num_scan_elements*sizeof(MCU_EL),4096);
             MCU_EL* const total_scan_memory=(MCU_EL*)calloc(component_num_scans,per_scan_memory_size);
             for (uint32_t s=0; s<component_num_scans; s++) {
                 this->image_components[i].scan_memory[s]=total_scan_memory+s*per_scan_memory_size/sizeof(MCU_EL);
@@ -1151,17 +1037,6 @@ class JpegParser: public FileParser{
         image_data->data=(uint8_t*)malloc(sizeof(uint8_t)*total_num_pixels_in_image*4+OVERALLOCATE_NUM_BYTES);
 
         this->current_file_content_index=segment_end_position;
-    }
-
-    /// baseline encoding
-    template<>
-    void parse_segment<JpegSegmentType::SOF0>(){
-        this->parse_sof<EncodingMethod::Baseline>();
-    }
-    /// progressive encoding
-    template<>
-    void parse_segment<JpegSegmentType::SOF2>(){
-        this->parse_sof<EncodingMethod::Progressive>();
     }
 
     template<EncodingMethod ENCODING_METHOD>
@@ -1317,20 +1192,6 @@ class JpegParser: public FileParser{
         this->current_file_content_index+=bytes_read_from_stream;
     }
 
-    template<>
-    void parse_segment<JpegSegmentType::SOS>(){
-        switch(this->encoding_method){
-            case EncodingMethod::Baseline:
-                this->parse_sos<EncodingMethod::Baseline>();
-                break;
-            case EncodingMethod::Progressive:
-                this->parse_sos<EncodingMethod::Progressive>();
-                break;
-            case EncodingMethod::UNDEFINED:
-                bail(FATAL_UNEXPECTED_ERROR,"this is a bug.");
-        }
-    }
-
     /// skip segment body (if it exists), based on the encoded segment size
     void skip_segment(JpegSegmentType segment_type){
         if(JpegSegmentType_hasSegmentBody(segment_type)){
@@ -1368,6 +1229,144 @@ class JpegParser: public FileParser{
         }
     }
 };
+
+template<>
+void JpegParser::parse_segment<JpegSegmentType::SOI>(){
+    {}
+}
+template<>
+void JpegParser::parse_segment<JpegSegmentType::EOI>(){
+    this->parsing_done=true;
+}
+template<>
+void JpegParser::parse_segment<JpegSegmentType::COM>(){
+    const uint32_t segment_size=this->next_u16();
+    
+    const uint32_t segment_end_position=static_cast<uint32_t>(this->current_file_content_index)+segment_size-2;
+
+    const uint32_t comment_length=segment_size-2;
+
+    char* const comment_str=(char*)malloc(comment_length+1);
+    comment_str[comment_length]=0;
+
+    memcpy(comment_str,&this->file_contents[this->current_file_content_index],comment_length);
+
+    image_data->image_file_metadata.file_comment=comment_str;
+
+    this->current_file_content_index=segment_end_position;
+}
+template<>
+void JpegParser::parse_segment<JpegSegmentType::DQT>(){
+    const uint32_t segment_size=this->next_u16();
+    const uint32_t segment_end_position=static_cast<uint32_t>(this->current_file_content_index)+segment_size-2;
+
+    uint32_t segment_bytes_read=0;
+    while(segment_bytes_read<segment_size-2){
+        const uint8_t destination_and_precision=this->get_mem<uint8_t>();
+        const uint8_t destination=LB_U8(destination_and_precision);
+        const uint8_t precision=HB_U8(destination_and_precision);
+        if (precision!=0)
+            bail(-45, "jpeg quant table precision is not 0 - it is %d\n",precision);
+
+        uint8_t table_entries[64];
+        memcpy(table_entries,&this->file_contents[this->current_file_content_index],64);
+        this->current_file_content_index+=64;
+
+        segment_bytes_read+=65;
+
+        for (int i=0; i<64; i++) {
+            this->quant_tables[destination][i]=table_entries[i];
+        }
+
+    }
+
+    this->current_file_content_index=segment_end_position;
+}
+template<>
+void JpegParser::parse_segment<JpegSegmentType::DHT>(){
+    const uint32_t segment_size=this->next_u16();
+    const uint32_t segment_end_position=static_cast<uint32_t>(this->current_file_content_index)+segment_size-2;
+
+    uint32_t segment_bytes_read=0;
+    while(segment_bytes_read<segment_size-2){
+        uint8_t table_index_and_class=this->get_mem<uint8_t>();
+
+        const uint8_t table_index=LB_U8(table_index_and_class);
+        const uint8_t table_class=HB_U8(table_index_and_class);
+
+        HuffmanTable* target_table=NULL;
+        switch (table_class) {
+            case  0:
+                target_table=&this->dc_coding_tables[table_index];
+                break;
+            case  1:
+                target_table=&this->ac_coding_tables[table_index];
+                break;
+            default:
+                exit(FATAL_UNEXPECTED_ERROR);
+        }
+
+        uint32_t total_num_values=0;
+        uint8_t num_values_of_length[16];
+        for(int i=0;i<16;i++){
+            num_values_of_length[i]=this->file_contents[this->current_file_content_index++];
+
+            total_num_values+=num_values_of_length[i];
+        }
+
+        segment_bytes_read+=17;
+
+        HuffmanTable::VALUE_ values[260];
+        for(uint32_t i=0;i<total_num_values;i++)
+            values[i]=this->file_contents[this->current_file_content_index++];
+
+        uint8_t value_code_lengths[260];
+        memset(value_code_lengths,0,sizeof(value_code_lengths));
+
+        uint32_t value_index=0;
+        for (uint8_t code_length=0; code_length<16; code_length++) {
+            for(uint32_t i=0;i<num_values_of_length[code_length];i++)
+                value_code_lengths[value_index++]=code_length+1;
+        }
+
+        segment_bytes_read+=value_index;
+
+        // destroy previous table, if there was one
+        target_table->destroy();
+
+        HuffmanTable::CodingTable_new(
+            target_table,
+            (int)total_num_values,
+            value_code_lengths,
+            values
+        );
+    }
+
+    this->current_file_content_index=segment_end_position;
+}
+/// baseline encoding
+template<>
+void JpegParser::parse_segment<JpegSegmentType::SOF0>(){
+    this->parse_sof<EncodingMethod::Baseline>();
+}
+/// progressive encoding
+template<>
+void JpegParser::parse_segment<JpegSegmentType::SOF2>(){
+    this->parse_sof<EncodingMethod::Progressive>();
+}
+template<>
+void JpegParser::parse_segment<JpegSegmentType::SOS>(){
+    switch(this->encoding_method){
+        case EncodingMethod::Baseline:
+            this->parse_sos<EncodingMethod::Baseline>();
+            break;
+        case EncodingMethod::Progressive:
+            this->parse_sos<EncodingMethod::Progressive>();
+            break;
+        case EncodingMethod::UNDEFINED:
+            bail(FATAL_UNEXPECTED_ERROR,"this is a bug.");
+    }
+}
 
 struct JpegParser_process_channel_argset{
     JpegParser* parser;

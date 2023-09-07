@@ -59,9 +59,9 @@ static inline void scan_ycbcr_to_rgb(
 
             // -- convert ycbcr to rgb
 
-            const OUT_EL R = Y + ((            45 * Cr ) >> 5 );
-            const OUT_EL B = Y + (( 113 * Cb           ) >> 6 );
-            const OUT_EL G = Y - ((  11 * Cb + 23 * Cr ) >> 5 );
+            const OUT_EL R = static_cast<OUT_EL>(Y + ((            45 * Cr ) >> 5 ));
+            const OUT_EL B = static_cast<OUT_EL>(Y + (( 113 * Cb           ) >> 6 ));
+            const OUT_EL G = static_cast<OUT_EL>(Y - ((  11 * Cb + 23 * Cr ) >> 5 ));
 
             // -- deinterlace and convert to uint8
 

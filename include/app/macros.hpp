@@ -25,4 +25,8 @@
     #define BREAKPOINT
 #endif
 
-#define ROUND_UP(VALUE,MULTIPLE_OF) (((VALUE) + ((MULTIPLE_OF)-1)) / (MULTIPLE_OF)) * (MULTIPLE_OF)
+template<typename T,typename M>
+inline T ROUND_UP(const T value,const M multiple)noexcept{
+    const T multiple_t=static_cast<T>(multiple);
+    return  (((value) + (multiple_t-1)) / multiple_t) * multiple_t;
+}

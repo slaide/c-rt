@@ -28,7 +28,7 @@ CXXSTD := -std=gnu++20
 LINK_FLAGS := -lvulkan -pthread
 COMPILE_FLAGS := -Wall -Werror -Wpedantic -Wextra -Wno-sequence-point -Wconversion -MMD -MP
 CINCLUDE := -Iinclude
-CDEF = -DIMAGE_BENCHMARK_NUM_REPEATS=$(strip $(IMAGE_BENCHMARK_NUM_REPEATS))
+CDEF := -DIMAGE_BENCHMARK_NUM_REPEATS=$(strip $(IMAGE_BENCHMARK_NUM_REPEATS))
 CDEF += -D__STDC_FORMAT_MACROS=1
 
 LIBJPEG_TEST_COMPILE_FLAGS := $(CSTD) -O3 -ffast-math -flto=full -ljpeg
@@ -105,6 +105,11 @@ CDEF += -DDEBUG -DRELEASE
 COMPILE_FLAGS += -g
 COMPILE_FLAGS += -fno-omit-frame-pointer -fno-inline
 OPT_FLAGS := -O3 -ffast-math
+ifeq ($(PLATFORM),linux)
+ifneq ($(CXX),clang++)
+COMPILE_FLAGS += -mlzcnt
+endif
+endif
 else ifeq ($(MODE), release)
 CDEF += -DRELEASE
 OPT_FLAGS := -O3 -ffast-math 

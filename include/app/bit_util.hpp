@@ -188,7 +188,7 @@ static inline T reverse_bits(
 static uint32_t tzcnt_32(const uint32_t v){
     #ifdef __clang__
         return (uint32_t)_mm_tzcnt_32(v);
-    #elif defined( __GNUC__)
+    #elif defined(__GNUC__)
         return __builtin_ia32_lzcnt_u32(v);
     #endif
 }
@@ -247,7 +247,7 @@ static inline T twos_complement(const T magnitude, const T value){
     T threshold=(T)(1<<(magnitude-1));
     if (value<threshold){
         T ret=value+1;
-        ret-=1<<magnitude;
+        ret-=static_cast<T>(1<<magnitude);
         return ret;
     }
 

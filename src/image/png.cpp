@@ -66,13 +66,13 @@ enum PNGFilterMethod{
     PNG_FILTER_METHOD_ADAPTIVE=0
 };
 struct [[gnu::packed]] IHDR{
-    uint32_t width;
-    uint32_t height;
-    uint8_t bit_depth;
-    uint8_t color_type;
-    uint8_t compression_method;
-    uint8_t filter_method;
-    uint8_t interlace_method;
+    uint32_t width=0;
+    uint32_t height=0;
+    uint8_t bit_depth=0;
+    uint8_t color_type=0;
+    uint8_t compression_method=0;
+    uint8_t filter_method=0;
+    uint8_t interlace_method=0;
 };
 enum PNGScanlineFilter{
     PNG_SCANLINE_FILTER_NONE=0,
@@ -87,7 +87,7 @@ enum PNGInterlace{
 };
 
 [[maybe_unused]]
-static const uint8_t DEFLATE_EXTRA_BITS[]={
+constexpr static const uint8_t DEFLATE_EXTRA_BITS[]={
     0,0,0,0, 0,0,0,0,// 257...264
     1,1,1,1,// 265...268
     2,2,2,2,// 269...272
@@ -97,7 +97,7 @@ static const uint8_t DEFLATE_EXTRA_BITS[]={
     0 // 285
 };
 [[maybe_unused]]
-static const uint16_t DEFLATE_BASE_LENGTH_OFFSET[]={
+constexpr static const uint16_t DEFLATE_BASE_LENGTH_OFFSET[]={
     3,   4,      5,        6,      7,  8,  9,  10, // 257...264
     11,  11+2,   11+2*2,   11+2*3, // 265...268
     19,  19+4,   19+4*2,   19+4*3, // 269...272
@@ -107,7 +107,7 @@ static const uint16_t DEFLATE_BASE_LENGTH_OFFSET[]={
     258 // 285
 };
 [[maybe_unused]]
-static const uint8_t DEFLATE_BACKWARD_EXTRA_BIT[]={
+constexpr static const uint8_t DEFLATE_BACKWARD_EXTRA_BIT[]={
     0,  0,  0,  0,
     1,  1,
     2,  2,
@@ -124,7 +124,7 @@ static const uint8_t DEFLATE_BACKWARD_EXTRA_BIT[]={
     13, 13
 };
 [[maybe_unused]]
-static const uint16_t DEFLATE_BACKWARD_LENGTH_OFFSET[]={
+constexpr static const uint16_t DEFLATE_BACKWARD_LENGTH_OFFSET[]={
     1,     2,    3,    4,
     5,     7,
     9,     13,
@@ -145,7 +145,7 @@ static const uint16_t DEFLATE_BACKWARD_LENGTH_OFFSET[]={
 /// this table in turn is also hufmann encoded, so:
 /// per spec, there are 19 code length codes (0-15 denote code length of this many bits, 16-19 are special)
 /// the sequence in which the number of bits used for each code length code appear in this table is specified to the following:
-static const uint8_t CODE_LENGTH_CODE_CHARACTERS[NUM_CODE_LENGTH_CODES]={16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15};
+constexpr static const uint8_t CODE_LENGTH_CODE_CHARACTERS[NUM_CODE_LENGTH_CODES]={16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15};
 
 /// decode zlib-compressed data
 ///
