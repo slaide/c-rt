@@ -10,6 +10,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <unistd.h>
+#include <array>
 
 double current_time(){
     struct timespec current_time;
@@ -916,12 +917,11 @@ Application* App_new(PlatformHandle* platform){
         create_instance_flags |= VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR;
     #endif
 
-    const char* instance_layers[1]={
+    std::array instance_layers={
         "VK_LAYER_KHRONOS_validation"
     };
-    uint32_t num_instance_layers=1;
 
-    const char* instance_extensions[]={
+    std::array instance_extensions={
         "VK_KHR_surface",
 
         #ifdef VK_USE_PLATFORM_XCB_KHR
@@ -932,12 +932,6 @@ Application* App_new(PlatformHandle* platform){
             "VK_KHR_get_physical_device_properties2"
         #endif
     };
-    uint32_t num_instance_extensions=1;
-    #ifdef VK_USE_PLATFORM_XCB_KHR
-        num_instance_extensions+=1;
-    #elif defined( VK_USE_PLATFORM_METAL_EXT)
-        num_instance_extensions+=3;
-    #endif
 
     VkApplicationInfo application_info={
         .sType=VK_STRUCTURE_TYPE_APPLICATION_INFO,
@@ -953,10 +947,10 @@ Application* App_new(PlatformHandle* platform){
         .pNext=NULL,
         .flags=create_instance_flags,
         .pApplicationInfo=&application_info,
-        .enabledLayerCount=num_instance_layers,
-        .ppEnabledLayerNames=instance_layers,
-        .enabledExtensionCount=num_instance_extensions,
-        .ppEnabledExtensionNames=instance_extensions
+        .enabledLayerCount=instance_layers.size(),
+        .ppEnabledLayerNames=instance_layers.data(),
+        .enabledExtensionCount=instance_extensions.size(),
+        .ppEnabledExtensionNames=instance_extensions.data()
     };
     VkResult res=vkCreateInstance(&instance_create_info,app->vk_allocator,&app->instance);
     if(res!=VK_SUCCESS){
@@ -1083,21 +1077,16 @@ Application* App_new(PlatformHandle* platform){
         queue_create_infos[1].pQueuePriorities=queue_priorities+1;
     };
 
-    uint32_t num_device_layers=1;
-    const char *device_layers[]={
+    std::array device_layers={
         "VK_LAYER_KHRONOS_validation"
     };
-    uint32_t num_device_extensions=1;
-    const char *device_extensions[]={
+    std::array device_extensions={
         "VK_KHR_swapchain"
         #ifdef VK_USE_PLATFORM_METAL_EXT
         ,
         "VK_KHR_portability_subset"
         #endif
     };
-    #ifdef VK_USE_PLATFORM_METAL_EXT
-        num_device_extensions+=1;
-    #endif
 
     VkPhysicalDeviceFeatures device_features;
     memset(&device_features,VK_FALSE,sizeof(VkPhysicalDeviceFeatures));
@@ -1107,10 +1096,10 @@ Application* App_new(PlatformHandle* platform){
         .flags=0,
         .queueCreateInfoCount=num_queue_create_infos,
         .pQueueCreateInfos=queue_create_infos,
-        .enabledLayerCount=num_device_layers,
-        .ppEnabledLayerNames=device_layers,
-        .enabledExtensionCount=num_device_extensions,
-        .ppEnabledExtensionNames=device_extensions,
+        .enabledLayerCount=device_layers.size(),
+        .ppEnabledLayerNames=device_layers.data(),
+        .enabledExtensionCount=device_extensions.size(),
+        .ppEnabledExtensionNames=device_extensions.data(),
         .pEnabledFeatures=&device_features
     };
     res=vkCreateDevice(app->physical_device,&device_create_info,app->vk_allocator,&app->device);
@@ -1133,8 +1122,7 @@ Application* App_new(PlatformHandle* platform){
     PlatformWindow_set_render_area_width(app->platform_window,(uint16_t)swapchain_create_info.imageExtent.width);
     PlatformWindow_set_render_area_height(app->platform_window,(uint16_t)swapchain_create_info.imageExtent.height);
 
-    uint32_t num_render_pass_attachments=1;
-    VkAttachmentDescription render_pass_attachments[1]={
+    std::array<VkAttachmentDescription,1> render_pass_attachments={{
         {
             /*VkAttachmentDescriptionFlags*/    .flags=0,
             /*VkFormat*/                        .format=app->swapchain_format.format,
@@ -1146,27 +1134,28 @@ Application* App_new(PlatformHandle* platform){
             /*VkImageLayout*/                   .initialLayout=VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
             /*VkImageLayout*/                   .finalLayout=VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
         }
-    };
-    uint32_t num_render_pass_subpass=1;
-    VkAttachmentReference render_subpass_attachment_references[1]={{
-        /*uint32_t*/         .attachment=0,
-        /*VkImageLayout*/    .layout=VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
     }};
-    VkSubpassDescription render_pass_subpasses[1]={
+    std::array<VkAttachmentReference, 1> render_subpass_color_attachment_references = {{
+        {
+            /*uint32_t*/         .attachment = 0,
+            /*VkImageLayout*/    .layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL
+        }
+    }};
+    std::array<VkSubpassDescription,1> render_pass_subpasses={{
         {
             /*VkSubpassDescriptionFlags */      .flags=0,
             /*VkPipelineBindPoint */            .pipelineBindPoint=VK_PIPELINE_BIND_POINT_GRAPHICS,
             /*uint32_t */                       .inputAttachmentCount=0,
             /*const VkAttachmentReference**/    .pInputAttachments=NULL,
-            /*uint32_t */                       .colorAttachmentCount=1,
-            /*const VkAttachmentReference**/    .pColorAttachments=render_subpass_attachment_references,
+            /*uint32_t */                       .colorAttachmentCount=render_subpass_color_attachment_references.size(),
+            /*const VkAttachmentReference**/    .pColorAttachments=render_subpass_color_attachment_references.data(),
             /*const VkAttachmentReference**/    .pResolveAttachments=NULL,
             /*const VkAttachmentReference**/    .pDepthStencilAttachment=NULL,
             /*uint32_t */                       .preserveAttachmentCount=0,
             /*const uint32_t**/                 .pPreserveAttachments=NULL,
         }
-    };
-    VkSubpassDependency render_subpass_dependencies[2]={
+    }};
+    std::array<VkSubpassDependency,2> render_subpass_dependencies={{
         {
             .srcSubpass= VK_SUBPASS_EXTERNAL,
             .dstSubpass= 0,
@@ -1185,17 +1174,17 @@ Application* App_new(PlatformHandle* platform){
             .dstAccessMask= VK_ACCESS_MEMORY_READ_BIT, 
             .dependencyFlags= VK_DEPENDENCY_BY_REGION_BIT
         }
-    };
+    }};
     VkRenderPassCreateInfo render_pass_create_info={
         .sType=VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
         .pNext=NULL,
         .flags=0,
-        .attachmentCount=num_render_pass_attachments,
-        .pAttachments=render_pass_attachments,
-        .subpassCount=num_render_pass_subpass,
-        .pSubpasses=render_pass_subpasses,
-        .dependencyCount=2,
-        .pDependencies=render_subpass_dependencies
+        .attachmentCount=render_pass_attachments.size(),
+        .pAttachments=render_pass_attachments.data(),
+        .subpassCount=render_pass_subpasses.size(),
+        .pSubpasses=render_pass_subpasses.data(),
+        .dependencyCount=render_subpass_dependencies.size(),
+        .pDependencies=render_subpass_dependencies.data()
     };
     res=vkCreateRenderPass(app->device,&render_pass_create_info,app->vk_allocator,&app->render_pass);
     if(res!=VK_SUCCESS){

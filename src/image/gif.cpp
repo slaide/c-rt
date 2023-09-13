@@ -1,4 +1,5 @@
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
 
 #include "app/bitstream.hpp"
@@ -151,62 +152,102 @@ namespace LZW{
         uint32_t bits;
     }DictionaryEntry;
 
-    class Encoder{
-        public:
-            uint32_t code_length;
+    typedef bitStream::BitStream<bitStream::BITSTREAM_DIRECTION_RIGHT_TO_LEFT,false> BitStream;
 
-            template<bool EARLY_INCREASE=false>
+    template<bool EARLY_INCREASE=false>
+    class Dictionary{
+        public:
+            uint32_t code_length=0;
+            uint32_t initial_code_length=0;
+            uint64_t current_dictionary_size=0;
+            DictionaryEntry* dictionary=nullptr;
+
+            Dictionary(
+                uint32_t initial_code_length,
+                uint64_t initial_dictionary_size
+            ):code_length(initial_code_length),initial_code_length(initial_code_length),current_dictionary_size(initial_dictionary_size){
+                this->dictionary=(DictionaryEntry*)malloc(sizeof(DictionaryEntry)*initial_dictionary_size);
+
+                for(uint64_t i=0;i<initial_dictionary_size;i++){
+                    this->dictionary[i].index_in_dictionary=i+1;
+
+                    this->dictionary[i].sym_len=1;
+                    this->dictionary[i].sym=(char*)alphabet+i;
+
+                    this->dictionary[i].bit_len=this->code_length;
+                    this->dictionary[i].bits=(uint32_t)i+1;
+                }
+            }
+
+            DictionaryEntry* create_new_entry(){
+                uint64_t realloc_size=sizeof(DictionaryEntry)*(this->current_dictionary_size+1);
+                this->dictionary=(DictionaryEntry*)realloc(this->dictionary,realloc_size);
+
+                DictionaryEntry* new_entry=this->dictionary+this->current_dictionary_size;
+
+                return new_entry;
+            }
+
+            DictionaryEntry find_by_str(const char* const str)const{
+                DictionaryEntry dict_match;
+                dict_match.sym=nullptr;
+
+                for(uint64_t d_i=0;d_i<this->current_dictionary_size;d_i++){
+                    if(dict_match.sym!=0 && this->dictionary[d_i].sym_len<dict_match.sym_len)
+                        continue;
+
+                    if(strncmp(this->dictionary[d_i].sym,str,(uint32_t)this->dictionary[d_i].sym_len)==0){
+                        dict_match=this->dictionary[d_i];
+                    }
+                }
+
+                if(dict_match.sym==0)
+                    throw FATAL_UNEXPECTED_ERROR;
+
+                return dict_match;
+            }
+            DictionaryEntry find_by_bits(uint64_t bits)const{
+                DictionaryEntry dict_match;
+                dict_match.sym=nullptr;
+
+                for (uint64_t i=0; i<this->current_dictionary_size; i++) {
+                    if(this->dictionary[i].bits==bits){
+                        dict_match=this->dictionary[i];
+                    }
+                }
+
+                if(dict_match.sym==0)
+                    throw FATAL_UNEXPECTED_ERROR;
+
+                return dict_match;
+            }
+    };
+
+    template <bool EARLY_INCREASE=false>
+    class Encoder:public Dictionary<EARLY_INCREASE>{
+        public:
             Encoder(
                 BitStreamWriter<>& writer,
                 const char* const encode_str,
                 uint32_t initial_code_length,
                 uint64_t initial_dictionary_size
-            ):code_length(initial_code_length){
+            ):Dictionary<>(initial_code_length,initial_dictionary_size){
                 const char terminator='#';
                 int data_len=(int)strlen(encode_str);
 
-                int current_symbol_len=1;
-                uint64_t current_dictionary_size=initial_dictionary_size;
-
-                uint32_t next_code=1;
-                DictionaryEntry* dictionary=(DictionaryEntry*)malloc(sizeof(DictionaryEntry)*current_dictionary_size);
-                for(int i=0;i<26;i++){
-                    dictionary[i].index_in_dictionary=static_cast<uint64_t>(i+1);
-
-                    dictionary[i].sym_len=current_symbol_len;
-                    dictionary[i].sym=(char*)alphabet+i;
-
-                    dictionary[i].bit_len=this->code_length;
-                    dictionary[i].bits=next_code++;
-                }
+                uint32_t next_code=(uint32_t)initial_dictionary_size+1;
 
                 for(int i=0;i<data_len;){
-                    uint64_t largest_dict_match_index=0;
-
-                    for(uint64_t d_i=0;d_i<current_dictionary_size;d_i++){
-                        if(largest_dict_match_index!=0 && dictionary[d_i].sym_len<dictionary[largest_dict_match_index].sym_len)
-                            continue;
-
-                        if(strncmp(dictionary[d_i].sym,encode_str+i,(uint32_t)dictionary[d_i].sym_len)==0){
-                            largest_dict_match_index=d_i;
-                        }
-                    }
-
-                    if(largest_dict_match_index==0)
-                        throw FATAL_UNEXPECTED_ERROR;
+                    const DictionaryEntry dict_match=this->find_by_str(encode_str+i);
 
                     // insert new value into alphabet
 
-                    uint64_t realloc_size=sizeof(DictionaryEntry)*(current_dictionary_size+1);
-                    dictionary=(DictionaryEntry*)realloc(dictionary,realloc_size);
+                    DictionaryEntry* const new_entry=this->create_new_entry();
+                    new_entry->sym_len=dict_match.sym_len+1;
+                    new_entry->bits=next_code++;
+                    new_entry->index_in_dictionary=this->current_dictionary_size+1;
 
-                    DictionaryEntry* new_entry=dictionary+current_dictionary_size;
-                    DictionaryEntry* largest_dict_match=dictionary+largest_dict_match_index;
-
-                    bool should_increase_code_size=false;
-                    if((next_code+1)>(1<<this->code_length)){
-                        should_increase_code_size=true;
-                    }
+                    const bool should_increase_code_size=(next_code)>(1<<this->code_length);
 
                     if(EARLY_INCREASE&&should_increase_code_size)
                         this->code_length++;
@@ -217,23 +258,20 @@ namespace LZW{
                         this->code_length++;
 
                     new_entry->sym=(char*)encode_str+i;
-                    new_entry->sym_len=largest_dict_match->sym_len+1;
-                    new_entry->bits=next_code++;
-                    new_entry->index_in_dictionary=current_dictionary_size+1;
 
-                    writer.write(largest_dict_match->index_in_dictionary,new_entry->bit_len);
+                    writer.write(dict_match.index_in_dictionary,new_entry->bit_len);
                     println(
                         "wrote value %2" PRIu64 " for sym %3.*s",
-                        largest_dict_match->index_in_dictionary,
-                        largest_dict_match->sym_len,
-                        largest_dict_match->sym
+                        dict_match.index_in_dictionary,
+                        dict_match.sym_len,
+                        dict_match.sym
                     );
 
-                    if(encode_str[i+largest_dict_match->sym_len]==terminator)
+                    if(encode_str[i+dict_match.sym_len]==terminator)
                         break;
                     
                     i+=new_entry->sym_len-1;
-                    current_dictionary_size+=1;
+                    this->current_dictionary_size+=1;
                 }
                 // write terminator (a number of 0 bits at current code length)
                 writer.write(0,this->code_length);
@@ -241,60 +279,47 @@ namespace LZW{
                 println("done after writing %" PRIu64 " bits",writer.data_len);
             }
     };
-    class Decoder{
+    template <bool EARLY_INCREASE=false>
+    class Decoder:public Dictionary<EARLY_INCREASE>{
         public:
-            typedef bitStream::BitStream<bitStream::BITSTREAM_DIRECTION_RIGHT_TO_LEFT,false> BitStream;
-            
-            uint32_t code_length;
+            int out_str_len=0;
+            char* out_str=nullptr;
 
-            template<bool EARLY_INCREASE=false>
             Decoder(
                 BitStream& stream,
-                const uint32_t initial_code_length,
-                const uint64_t initial_dictionary_size
-            ):code_length(initial_code_length){
-                auto dictionary_size=initial_dictionary_size;
-
-                DictionaryEntry* dictionary=(DictionaryEntry*)malloc(sizeof(DictionaryEntry)*initial_dictionary_size);
-                for(uint64_t i=0;i<initial_dictionary_size;i++){
-                    dictionary[i].index_in_dictionary=i+1;
-                    dictionary[i].sym=(char*)alphabet+i;
-                    dictionary[i].sym_len=1;
-                    dictionary[i].bits=(uint32_t)i+1;
-                    dictionary[i].bit_len=this->code_length;
-                }
-
+                uint32_t initial_code_length,
+                uint64_t initial_dictionary_size
+            ):Dictionary<>(initial_code_length,initial_dictionary_size){
                 DictionaryEntry prev_match;
                 prev_match.sym=nullptr;
 
                 uint64_t somebits;
                 do {
-                    if ((dictionary_size+2)>(1<<this->code_length)) {
+                    if ((this->current_dictionary_size+2)>(1<<this->code_length)) {
                         this->code_length++;
                     }
 
                     somebits=stream.get_bits_advance((uint8_t)this->code_length);
 
-                    DictionaryEntry dict_match;
-                    for (uint64_t i=0; i<dictionary_size; i++) {
-                        if(dictionary[i].bits==somebits){
-                            dict_match=dictionary[i];
-                        }
-                    }
-
                     if (somebits==0) {
                         break;
                     }
+
+                    DictionaryEntry dict_match=this->find_by_bits(somebits);
+
+                    this->out_str=(char*)realloc(this->out_str,(uint64_t)(this->out_str_len+dict_match.sym_len));
+                    memcpy(this->out_str+this->out_str_len,dict_match.sym,(uint64_t)dict_match.sym_len);
+                    this->out_str_len+=dict_match.sym_len;
+
                     println("got val %" PRIu64 " of len %d (cur len %d) for sym %.*s",somebits,dict_match.bit_len,this->code_length,dict_match.sym_len,dict_match.sym);
 
                     if(prev_match.sym!=nullptr){
-                        dictionary=(DictionaryEntry*)realloc(dictionary, sizeof(DictionaryEntry)*(dictionary_size+1));
-                        DictionaryEntry* new_entry=dictionary+dictionary_size;
+                        DictionaryEntry* new_entry=this->create_new_entry();
 
-                        new_entry->index_in_dictionary=dictionary_size+1;
-                        new_entry->bit_len=this->code_length;
-                        new_entry->bits=(uint32_t)dictionary_size+1;
+                        new_entry->index_in_dictionary=this->current_dictionary_size+1;
                         new_entry->sym_len=prev_match.sym_len+1;
+                        new_entry->bit_len=this->code_length;
+                        new_entry->bits=(uint32_t)this->current_dictionary_size+1;
                         new_entry->sym=(char*)malloc(sizeof(char)*(uint64_t)(new_entry->sym_len));
 
                         memcpy(
@@ -310,7 +335,7 @@ namespace LZW{
 
                         //println("created dict %d entry %.*s",new_entry->bits,new_entry->sym_len,new_entry->sym);
 
-                        dictionary_size++;
+                        this->current_dictionary_size++;
                     }
                     if (stream.next_data_index>=stream.data_size) {
                         break;
@@ -343,12 +368,18 @@ class GifParser:public FileParser{
             const char* const somedata="TOBEORNOTTOBEORTOBEORNOT#";
             LZW::Encoder test_enc(writer,somedata,5,26);
 
-            LZW::Decoder::BitStream stream;
-            LZW::Decoder::BitStream::BitStream_new(&stream,writer.data,writer.data_len);
-            LZW::Decoder(stream,5,26);
+            LZW::BitStream stream;
+            LZW::BitStream::BitStream_new(&stream,writer.data,writer.data_len);
+            LZW::Decoder test_dec(stream,5,26);
 
-            throw "whatever";
+            if(strncmp(somedata, test_dec.out_str, strlen(somedata)-1)!=0){
+                fprintln(stderr,"encoding-decoding scheme failed");
+                throw "encoding-decoding scheme failed";
+            }else {
+                println("LZW implementation is correct!");
+            }
 
+            bail(FATAL_UNEXPECTED_ERROR,"whatever");
 
 
 
@@ -477,27 +508,25 @@ ImageParseResult Image_read_gif(
 
     parser.expect_signature((const uint8_t*)"GIF", 3);
 
-    char png_version_str[3];
-    memcpy(png_version_str,parser.data_ptr(),3);
-    if(memcmp(png_version_str,"87a",3)==0){
+    if(memcmp(parser.data_ptr(),"87a",3)==0){
         parser.version=GIFVersion::V87a;
-    }else if(memcmp(png_version_str,"89a",3)==0){
+    }else if(memcmp(parser.data_ptr(),"89a",3)==0){
         parser.version=GIFVersion::V89a;
     }else{
-        bail(FATAL_UNEXPECTED_ERROR,"png file has unknown version %.3s",png_version_str);
+        bail(FATAL_UNEXPECTED_ERROR,"png file has unknown version %.3s",parser.data_ptr());
     }
-    println("png version: %.3s",png_version_str);
+    println("png version: %.3s",parser.data_ptr());
     parser.current_file_content_index+=3;
 
     const uint16_t logical_screen_width=parser.get_mem<uint16_t>();
     const uint16_t logical_screen_height=parser.get_mem<uint16_t>();
     const uint8_t packed_fields=parser.get_mem<uint8_t>();
+
     /// Index into the Global Color Table for
     ///        the Background Color. The Background Color is the color used for
     ///        those pixels on the screen that are not covered by an image. If the
     ///        Global Color Table Flag is set to (zero), this field should be zero
     ///        and should be ignored.
-
     const uint8_t background_color_index=parser.get_mem<uint8_t>();
     discard background_color_index;
     ///        Aspect Ratio = (Pixel Aspect Ratio + 15) / 64
@@ -513,17 +542,17 @@ ImageParseResult Image_read_gif(
 
     println("width %d height %d aspect ratio %d",logical_screen_width,logical_screen_height,pixel_aspect_ratio);
 
-    ///          Values :    0 -   No Global Color Table follows, the Background
-    ///                          Color Index field is meaningless.
-    ///                    1 -   A Global Color Table will immediately follow, the
-    ///                          Background Color Index field is meaningful.
+    ///  Values :    0 -   No Global Color Table follows, the Background
+    ///                    Color Index field is meaningless.
+    ///              1 -   A Global Color Table will immediately follow, the
+    ///                    Background Color Index field is meaningful.
     const uint8_t global_color_table_flag=packed_fields&0x80>>7;
     /// Number of bits per primary color available
     ///        to the original image, minus 1.
     const uint8_t color_resolution=packed_fields&0x70>>4;
-    ///            Values :    0 -   Not ordered.
-    ///                    1 -   Ordered by decreasing importance, most
-    ///                          important color first.
+    ///   Values :    0 -   Not ordered.
+    ///               1 -   Ordered by decreasing importance, most
+    ///                     important color first.
     const uint8_t sort_flag=packed_fields&0x08>>3;
     /// If the Global Color Table Flag is
     ///         set to 1, the value in this field is used to calculate the number

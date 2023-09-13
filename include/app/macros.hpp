@@ -14,7 +14,7 @@
     fprintln(stdout,__VA_ARGS__); \
 }
 #define bail(ERROR_CODE,...) { \
-    fprintln(stderr,__VA_ARGS__); \
+    fprintln(stderr,"ERROR - bailed : " __VA_ARGS__); \
     exit(ERROR_CODE); \
 }
 #ifdef DEBUG
