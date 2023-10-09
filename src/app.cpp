@@ -188,8 +188,6 @@ struct Texture{
  */
 [[gnu::nonnull(1,2)]]
 Texture* App_create_texture(Application* app, ImageData* image_data){
-    discard image_data;
-
     Texture* texture=new Texture();
 
     auto image_format=image_data->vk_img_format();

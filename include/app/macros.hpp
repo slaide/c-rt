@@ -25,4 +25,9 @@
     #define BREAKPOINT
 #endif
 
-#define ROUND_UP(VALUE,MULTIPLE_OF) (((VALUE) + ((MULTIPLE_OF)-1)) / (MULTIPLE_OF)) * (MULTIPLE_OF)
+template<typename V,typename M>
+[[gnu::always_inline,gnu::flatten]]
+static const inline V ROUND_UP(V VALUE,M MULTIPLE_OF){
+    V ret=((VALUE) + (((V)MULTIPLE_OF)-1)) / (V)MULTIPLE_OF;
+    return ret * (V)MULTIPLE_OF;
+}
