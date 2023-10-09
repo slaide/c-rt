@@ -121,16 +121,17 @@ class BitStream{
         }
     }
 
+    template<typename T = uint64_t>
     [[gnu::always_inline,gnu::flatten]]
-    inline uint64_t get_bits_unsafe(
+    inline T get_bits_unsafe(
         uint8_t n_bits
     )const noexcept{
         if constexpr(DIRECTION==BITSTREAM_DIRECTION_LEFT_TO_RIGHT){
             const uint64_t ret=this->buffer>>(64-n_bits);
-            return ret;
+            return static_cast<T>(ret);
         }else if constexpr(DIRECTION==BITSTREAM_DIRECTION_RIGHT_TO_LEFT){
-            const uint64_t ret=this->buffer & bitUtil::get_mask_u64(n_bits);
-            return ret;
+            const uint64_t ret=this->buffer & bitUtil::get_mask<uint64_t>(n_bits);
+            return static_cast<T>(ret);
         }
     }
 
@@ -143,22 +144,24 @@ class BitStream{
     * @param n_bits 
     * @return int 
     */
+    template<typename T = uint64_t>
     [[gnu::always_inline,gnu::flatten]]
-    inline uint64_t get_bits(
+    inline T get_bits(
         const uint8_t n_bits
     )noexcept{
         this->ensure_filled(n_bits);
 
-        const uint64_t ret=this->get_bits_unsafe(n_bits);
+        const T ret=this->get_bits_unsafe<T>(n_bits);
 
         return ret;
     }
 
+    template<typename T = uint64_t>
     [[gnu::always_inline,gnu::flatten,maybe_unused]]
-    inline uint64_t get_bits_advance(
+    inline T get_bits_advance(
         const uint8_t n_bits
     )noexcept{
-        const uint64_t res=this->get_bits(n_bits);
+        const T res=this->get_bits<T>(n_bits);
         this->advance_unsafe(n_bits);
 
         return res;

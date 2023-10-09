@@ -280,7 +280,7 @@ int App_get_input_event(Application* app,InputEvent* input_event){
 }
 
 PlatformHandle* Platform_new(){
-    PlatformHandle* platform=(PlatformHandle*)malloc(sizeof(PlatformHandle));
+    PlatformHandle* platform=new PlatformHandle();
 
     platform->connection=xcb_connect(NULL,NULL);
     int xcb_connection_error_state=xcb_connection_has_error(platform->connection);
@@ -299,7 +299,7 @@ void Platform_destroy(PlatformHandle* platform){
         free(platform->open_windows);
     }
     xcb_disconnect(platform->connection);
-    free(platform);
+    delete platform;
 }
 
 PlatformWindow* App_create_window(
@@ -310,7 +310,7 @@ PlatformWindow* App_create_window(
     const xcb_setup_t* setup=xcb_get_setup(app->platform_handle->connection);
     xcb_screen_iterator_t screens=xcb_setup_roots_iterator(setup);
 
-    PlatformWindow* window=(PlatformWindow*)malloc(sizeof(PlatformWindow));
+    PlatformWindow* window=new PlatformWindow();
     window->window_height=height;
     window->window_width=width;
     
@@ -379,7 +379,7 @@ void App_destroy_window(Application *app, PlatformWindow *window){
     xcb_unmap_window(app->platform_handle->connection,window->window);
     xcb_destroy_window(app->platform_handle->connection,window->window);
 
-    free(window);
+    delete window;
 
     if(app->platform_handle->num_open_windows>0){
         app->platform_handle->num_open_windows-=1;

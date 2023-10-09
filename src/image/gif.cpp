@@ -166,7 +166,7 @@ namespace LZW{
                 uint32_t initial_code_length,
                 uint64_t initial_dictionary_size
             ):code_length(initial_code_length),initial_code_length(initial_code_length),current_dictionary_size(initial_dictionary_size){
-                this->dictionary=(DictionaryEntry*)malloc(sizeof(DictionaryEntry)*initial_dictionary_size);
+                this->dictionary=new DictionaryEntry[initial_dictionary_size];
 
                 for(uint64_t i=0;i<initial_dictionary_size;i++){
                     this->dictionary[i].index_in_dictionary=i+1;
@@ -319,8 +319,8 @@ namespace LZW{
                         new_entry->index_in_dictionary=this->current_dictionary_size+1;
                         new_entry->sym_len=prev_match.sym_len+1;
                         new_entry->bit_len=this->code_length;
-                        new_entry->bits=(uint32_t)this->current_dictionary_size+1;
-                        new_entry->sym=(char*)malloc(sizeof(char)*(uint64_t)(new_entry->sym_len));
+                        new_entry->bits=static_cast<uint32_t>(this->current_dictionary_size+1);
+                        new_entry->sym= new char[static_cast<std::size_t>(new_entry->sym_len)];
 
                         memcpy(
                             (void*)new_entry->sym,
@@ -378,8 +378,6 @@ class GifParser:public FileParser{
             }else {
                 println("LZW implementation is correct!");
             }
-
-            bail(FATAL_UNEXPECTED_ERROR,"whatever");
 
 
 
@@ -482,11 +480,11 @@ class GifParser:public FileParser{
                             int stop_code=clear_code+1;
                             println("lzw_minimum_code_size %d, stop code %d",lzw_minimum_code_size,stop_code);
 
-                            while(this->get_mem<uint8_t,false>()!=BLOCK_TERMINATOR[0]){
-                                uint8_t block_size=this->get_mem<uint8_t>();
-                                this->current_image_index+=block_size-1;
+                            uint8_t block_size=0;
+                            while((block_size=this->get_mem<uint8_t>())!=BLOCK_TERMINATOR[0]){
+                                println("block size: %d",block_size);
+                                this->current_file_content_index+=block_size-1;
                             }
-                            discard this->get_mem<uint8_t>();
                         }
                     }
                     this->current_image_index++;

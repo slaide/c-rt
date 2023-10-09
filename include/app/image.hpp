@@ -9,6 +9,8 @@
 #include "app/error.hpp"
 #include "app/bitstream.hpp"
 
+#include <vulkan/vulkan.h>
+
 typedef enum PixelFormat{
     PIXEL_FORMAT_Ru8Gu8Bu8Au8
 }PixelFormat;
@@ -16,21 +18,25 @@ struct ImageFileMetadata{
     char* file_comment;
 };
 
-typedef struct ImageData{
-    uint8_t* data;
+class ImageData{
+    public:
 
-    uint32_t height;
-    uint32_t width;
+        uint8_t* data;
 
-    PixelFormat pixel_format;
-    bool interleaved;
+        uint32_t height;
+        uint32_t width;
 
-    struct ImageFileMetadata image_file_metadata;
-}ImageData;
+        PixelFormat pixel_format;
+        bool interleaved;
 
-/// initialise all fields to their zero-equivalent
-void ImageData_initEmpty(struct ImageData* const image_data);
-void ImageData_destroy(struct ImageData* const image_data);
+        struct ImageFileMetadata image_file_metadata;
+
+        /// initialise all fields to their zero-equivalent
+        static void initEmpty(ImageData* const image_data);
+        static void destroy(ImageData* const image_data);
+
+        VkFormat vk_img_format()const noexcept;
+};
 
 typedef enum ImageParseResult{
     IMAGE_PARSE_RESULT_OK,
@@ -62,7 +68,7 @@ class FileParser{
             throw IMAGE_PARSE_RESULT_FILE_NOT_FOUND;
         }
 
-        ImageData_initEmpty(this->image_data);
+        ImageData::initEmpty(this->image_data);
 
         discard fseek(file,0,SEEK_END);
         const long ftell_res=ftell(file);
@@ -116,8 +122,14 @@ class FileParser{
     }
 };
 
-ImageParseResult Image_read_jpeg(const char* filepath,ImageData* image_data);
-ImageParseResult Image_read_png(const char* const filepath,ImageData* const image_data);
+ImageParseResult Image_read_jpeg(
+    const char* const filepath,
+    ImageData* const image_data
+);
+ImageParseResult Image_read_png(
+    const char* const filepath,
+    ImageData* const image_data
+);
 
 ImageParseResult Image_read_gif(
     const char* const filepath,

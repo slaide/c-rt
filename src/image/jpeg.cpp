@@ -275,7 +275,7 @@ namespace ProcessBlock{
                     spec_sel+=16;
                     continue;
                 }else{
-                    *eob_run=bitUtil::get_mask_u32(num_zeros);
+                    *eob_run=bitUtil::get_mask<uint32_t>(num_zeros);
                     *eob_run+=stream->get_bits_advance((uint8_t)num_zeros);
 
                     break;
@@ -373,7 +373,7 @@ namespace ProcessBlock{
                     default:
                         {
                             uint32_t eob_run_bits=static_cast<uint32_t>(stream->get_bits_advance((uint8_t)num_zeros));
-                            *eob_run=bitUtil::get_mask_u32(num_zeros) + eob_run_bits;
+                            *eob_run=bitUtil::get_mask<uint32_t>(num_zeros) + eob_run_bits;
                         }
                         num_zeros=64;
                         break;
@@ -599,8 +599,8 @@ class ScanComponent{
                                     spec_sel+=16;
                                     continue;
                                 }else {
-                                    *eob_run=bitUtil::get_mask_u32(num_zeros);
-                                    *eob_run+=stream->get_bits_advance((uint8_t)num_zeros);
+                                    *eob_run=bitUtil::get_mask<uint32_t>(num_zeros);
+                                    *eob_run+=stream->get_bits_advance(num_zeros);
 
                                     break;
                                 }
@@ -611,7 +611,7 @@ class ScanComponent{
                                 break;
                             }
 
-                            const MCU_EL ac_value_bits=static_cast<MCU_EL>(stream->get_bits_advance(ac_magnitude));
+                            const MCU_EL ac_value_bits=stream->get_bits_advance<MCU_EL>(ac_magnitude);
 
                             const MCU_EL ac_value=bitUtil::twos_complement(static_cast<MCU_EL>(ac_magnitude),ac_value_bits);
 
@@ -867,7 +867,7 @@ class JpegParser: public FileParser{
                             const uint32_t num_cosines_remaining=64-cosine_index;
                             const uint32_t num_cosines_remaining_in_current_iteration=bitUtil::min(8u,num_cosines_remaining);
 
-                            const uint32_t all_elements_mask=mask_u32(num_cosines_remaining_in_current_iteration*2);
+                            const uint32_t all_elements_mask=bitUtil::get_mask<uint32_t>(num_cosines_remaining_in_current_iteration*2);
                             elements_nonzero&=all_elements_mask;
 
                             if(elements_nonzero==0){
@@ -943,14 +943,14 @@ class JpegParser: public FileParser{
 
         const uint32_t comment_length=segment_size-2;
 
-        char* const comment_str=(char*)malloc(comment_length+1);
+        char* const comment_str=new char[comment_length+1];
         comment_str[comment_length]=0;
 
         memcpy(comment_str,&this->file_contents[this->current_file_content_index],comment_length);
 
         image_data->image_file_metadata.file_comment=comment_str;
 
-        this->current_file_content_index=segment_end_position;
+        this->current_file_content_index=static_cast<uint64_t>(segment_end_position);
     }
     template<>
     void parse_segment<JpegSegmentType::DQT>(){
@@ -981,15 +981,15 @@ class JpegParser: public FileParser{
     }
     template<>
     void parse_segment<JpegSegmentType::DHT>(){
-        const uint32_t segment_size=this->next_u16();
-        const uint32_t segment_end_position=static_cast<uint32_t>(this->current_file_content_index)+segment_size-2;
+        const int segment_size=this->next_u16();
+        const int segment_end_position=static_cast<int>(this->current_file_content_index)+segment_size-2;
 
-        uint32_t segment_bytes_read=0;
+        int segment_bytes_read=0;
         while(segment_bytes_read<segment_size-2){
-            uint8_t table_index_and_class=this->get_mem<uint8_t>();
+            int table_index_and_class=this->get_mem<uint8_t>();
 
-            const uint8_t table_index=LB_U8(table_index_and_class);
-            const uint8_t table_class=HB_U8(table_index_and_class);
+            const int table_index=LB_U8(table_index_and_class);
+            const int table_class=HB_U8(table_index_and_class);
 
             HuffmanTable* target_table=NULL;
             switch (table_class) {
@@ -1003,8 +1003,8 @@ class JpegParser: public FileParser{
                     exit(FATAL_UNEXPECTED_ERROR);
             }
 
-            uint32_t total_num_values=0;
-            uint8_t num_values_of_length[16];
+            int total_num_values=0;
+            int num_values_of_length[16];
             for(int i=0;i<16;i++){
                 num_values_of_length[i]=this->file_contents[this->current_file_content_index++];
 
@@ -1014,15 +1014,15 @@ class JpegParser: public FileParser{
             segment_bytes_read+=17;
 
             HuffmanTable::VALUE_ values[260];
-            for(uint32_t i=0;i<total_num_values;i++)
+            for(int i=0;i<total_num_values;i++)
                 values[i]=this->file_contents[this->current_file_content_index++];
 
-            uint8_t value_code_lengths[260];
+            int value_code_lengths[260];
             memset(value_code_lengths,0,sizeof(value_code_lengths));
 
-            uint32_t value_index=0;
-            for (uint8_t code_length=0; code_length<16; code_length++) {
-                for(uint32_t i=0;i<num_values_of_length[code_length];i++)
+            int value_index=0;
+            for (int code_length=0; code_length<16; code_length++) {
+                for(int i=0;i<num_values_of_length[code_length];i++)
                     value_code_lengths[value_index++]=code_length+1;
             }
 
@@ -1033,13 +1033,13 @@ class JpegParser: public FileParser{
 
             HuffmanTable::CodingTable_new(
                 target_table,
-                (int)total_num_values,
+                static_cast<std::size_t>(total_num_values),
                 value_code_lengths,
                 values
             );
         }
 
-        this->current_file_content_index=segment_end_position;
+        this->current_file_content_index=static_cast<uint64_t>(segment_end_position);
     }
 
     template<EncodingMethod ENCODING_METHOD>
@@ -1095,7 +1095,7 @@ class JpegParser: public FileParser{
             const uint32_t component_num_scans=this->image_components[i].vert_samples/this->image_components[i].vert_sample_factor/8;
             const uint32_t component_num_scan_elements=this->image_components[i].horz_samples*this->image_components[i].vert_sample_factor*8;
 
-            this->image_components[i].scan_memory=(MCU_EL**)malloc(sizeof(MCU_EL*)*component_num_scans);
+            this->image_components[i].scan_memory=new MCU_EL*[component_num_scans];
 
             uint32_t per_scan_memory_size=ROUND_UP(component_num_scan_elements*sizeof(MCU_EL),4096);
             MCU_EL* const total_scan_memory=(MCU_EL*)calloc(component_num_scans,per_scan_memory_size);
@@ -1121,7 +1121,7 @@ class JpegParser: public FileParser{
 
         // pre-calculate indices to re-order pixel data from block-orientation to row-column orientation
         for (uint32_t i=0; i<this->Nf; i++) {
-            this->image_components[i].conversion_indices=(uint32_t*)malloc(sizeof(uint32_t)*num_pixels_per_scan);
+            this->image_components[i].conversion_indices=new uint32_t[num_pixels_per_scan];
             uint32_t* const conversion_indices=this->image_components[i].conversion_indices;
 
             uint32_t ci=0;
@@ -1148,7 +1148,7 @@ class JpegParser: public FileParser{
 
         // overallocate for simd access overflows
         static  const uint32_t OVERALLOCATE_NUM_BYTES=256;
-        image_data->data=(uint8_t*)malloc(sizeof(uint8_t)*total_num_pixels_in_image*4+OVERALLOCATE_NUM_BYTES);
+        image_data->data=new uint8_t[total_num_pixels_in_image*4+OVERALLOCATE_NUM_BYTES];
 
         this->current_file_content_index=segment_end_position;
     }
@@ -1504,8 +1504,8 @@ void JpegParser::convert_colorspace(){
         case 0x123:
             {
                 if(this->parallel){
-                    struct JpegParser_convert_colorspace_argset* const thread_args=(struct JpegParser_convert_colorspace_argset*)malloc(JPEG_DECODE_NUM_THREADS*sizeof(struct JpegParser_convert_colorspace_argset));
-                    pthread_t* const threads=(pthread_t*)malloc(JPEG_DECODE_NUM_THREADS*sizeof(pthread_t));
+                    struct JpegParser_convert_colorspace_argset* const thread_args=new struct JpegParser_convert_colorspace_argset[JPEG_DECODE_NUM_THREADS];
+                    pthread_t* const threads=new pthread_t[JPEG_DECODE_NUM_THREADS];
 
                     const uint32_t num_scans_per_thread=this->image_components[0].num_scans/JPEG_DECODE_NUM_THREADS;
                     for(uint32_t i=0;i<JPEG_DECODE_NUM_THREADS;i++){
@@ -1527,8 +1527,8 @@ void JpegParser::convert_colorspace(){
                         }
                     }
 
-                    free(thread_args);
-                    free(threads);
+                    delete[] thread_args;
+                    delete[] threads;
                 }else{
                     JpegParser_convert_colorspace(this,0,this->image_components[0].num_scans);
                 }

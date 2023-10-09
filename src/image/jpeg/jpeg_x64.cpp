@@ -26,17 +26,17 @@ void scan_ycbcr_to_rgb_sse_float(
     };
 
     const OUT_EL* const  y[[gnu::aligned(16)]]=image_components[0].out_block_downsampled+scan_offset/rescale_factor[0];
-    const OUT_EL* const  cr[[gnu::aligned(16)]]=image_components[1].out_block_downsampled+scan_offset/rescale_factor[1];
-    const OUT_EL* const  cb[[gnu::aligned(16)]]=image_components[2].out_block_downsampled+scan_offset/rescale_factor[2];
+    const OUT_EL* const  cb[[gnu::aligned(16)]]=image_components[1].out_block_downsampled+scan_offset/rescale_factor[1];
+    const OUT_EL* const  cr[[gnu::aligned(16)]]=image_components[2].out_block_downsampled+scan_offset/rescale_factor[2];
 
     for (uint32_t i=0; i<pixels_in_scan; i+=4) {
         // -- re-order from block-orientation to final image orientation
 
         __m128 y_simd=_mm_loadu_ps(&y[image_components[0].conversion_indices[i]]);
-        __m128 cr_simd=_mm_loadu_ps(&cr[image_components[1].conversion_indices[i]]);
-        cr_simd=_mm_shuffle_epi32(cr_simd,(1<<4)+(1<<6));
-        __m128 cb_simd=_mm_loadu_ps(&cb[image_components[2].conversion_indices[i]]);
+        __m128 cb_simd=_mm_loadu_ps(&cb[image_components[1].conversion_indices[i]]);
         cb_simd=_mm_shuffle_epi32(cb_simd,(1<<4)+(1<<6));
+        __m128 cr_simd=_mm_loadu_ps(&cr[image_components[2].conversion_indices[i]]);
+        cr_simd=_mm_shuffle_epi32(cr_simd,(1<<4)+(1<<6));
 
         // -- convert ycbcr to rgb
 
@@ -103,15 +103,15 @@ static inline void scan_ycbcr_to_rgb_sse_fixed(
     };
 
     const OUT_EL* const y[[gnu::aligned(16)]]=image_components[0].out_block_downsampled+scan_offset/rescale_factor[0];
-    const OUT_EL* const cr[[gnu::aligned(16)]]=image_components[1].out_block_downsampled+scan_offset/rescale_factor[1];
-    const OUT_EL* const cb[[gnu::aligned(16)]]=image_components[2].out_block_downsampled+scan_offset/rescale_factor[2];
+    const OUT_EL* const cb[[gnu::aligned(16)]]=image_components[1].out_block_downsampled+scan_offset/rescale_factor[1];
+    const OUT_EL* const cr[[gnu::aligned(16)]]=image_components[2].out_block_downsampled+scan_offset/rescale_factor[2];
 
     for (uint32_t i=0; i<pixels_in_scan; i+=8) {
         // -- re-order from block-orientation to final image orientation
 
         const int16_t* y_ptr = &y[image_components[0].conversion_indices[i]];
-        const int16_t* cr_ptr = &cr[image_components[1].conversion_indices[i]];
-        const int16_t* cb_ptr = &cb[image_components[2].conversion_indices[i]];
+        const int16_t* cb_ptr = &cb[image_components[1].conversion_indices[i]];
+        const int16_t* cr_ptr = &cr[image_components[2].conversion_indices[i]];
 
         // Load 8 Y, Cr, and Cb values
         __m128i y_values = _mm_loadu_si128((__m128i*)y_ptr);

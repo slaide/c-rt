@@ -259,24 +259,24 @@ class ZLIBDecoder{
                         break;
                     case 2:
                         {
-                            const uint64_t num_literal_codes=257+stream->get_bits_advance(5);
+                            const std::size_t num_literal_codes=257+stream->get_bits_advance(5);
                             if(num_literal_codes>286)
                                 bail(FATAL_UNEXPECTED_ERROR,"too many huffman codes (literals) %" PRIu64 "\n",num_literal_codes);
 
-                            const uint64_t num_distance_codes=1+stream->get_bits_advance(5);
+                            const std::size_t num_distance_codes=1+stream->get_bits_advance(5);
                             if(num_distance_codes>30)
                                 bail(FATAL_UNEXPECTED_ERROR,"too many huffman codes (distance) %" PRIu64 "\n",num_distance_codes);
 
                             // the number of elements in this table can be 4-19. the code length codes not present in the table are specified to not occur (i.e. zero bits)
-                            const uint8_t num_huffman_codes=4+(uint8_t)stream->get_bits_advance(4);
+                            const int num_huffman_codes=4+stream->get_bits_advance<uint8_t>(4);
 
                             // parse code sizes for each entry in the huffman code table
 
                             // parse all code lengths in one go
-                            uint8_t code_length_codes[NUM_CODE_LENGTH_CODES];
+                            int code_length_codes[NUM_CODE_LENGTH_CODES];
                             memset(code_length_codes,0,sizeof(code_length_codes));
                             for(int code_size_index=0;code_size_index<num_huffman_codes;code_size_index++){
-                                uint8_t new_code_length_code=(uint8_t)stream->get_bits_advance(3);
+                                int new_code_length_code=stream->get_bits_advance<uint8_t>(3);
                                 code_length_codes[CODE_LENGTH_CODE_CHARACTERS[code_size_index]]=new_code_length_code;
                             }
 
@@ -289,8 +289,8 @@ class ZLIBDecoder{
                             );
 
                             // then read literal and distance alphabet code lengths in one pass, since they use the same alphabet
-                            uint8_t literal_plus_distance_code_lengths[288+33];
-                            for(uint64_t i=0;i<num_literal_codes+num_distance_codes;){
+                            int literal_plus_distance_code_lengths[288+33];
+                            for(std::size_t i=0;i<num_literal_codes+num_distance_codes;){
                                 const auto value=code_length_code_alphabet.lookup(stream);
                                 switch (value) {
                                     case 16:
@@ -339,19 +339,19 @@ class ZLIBDecoder{
                             code_length_code_alphabet.destroy();
 
                             // split combined alphabet
-                            uint8_t literal_code_lengths[288];
-                            for(uint64_t i=0;i<num_literal_codes;i++){
+                            int literal_code_lengths[288];
+                            for(std::size_t i=0;i<num_literal_codes;i++){
                                 literal_code_lengths[i]=literal_plus_distance_code_lengths[i];
                             }
-                            for(uint64_t i=num_literal_codes;i<288;i++){
+                            for(std::size_t i=num_literal_codes;i<288;i++){
                                 literal_code_lengths[i]=0;
                             }
 
-                            uint8_t distance_code_lengths[33];
-                            for(uint64_t i=0;i<num_distance_codes;i++){
+                            int distance_code_lengths[33];
+                            for(std::size_t i=0;i<num_distance_codes;i++){
                                 distance_code_lengths[i]=literal_plus_distance_code_lengths[i+num_literal_codes];
                             }
-                            for(uint64_t i=num_distance_codes;i<33;i++){
+                            for(std::size_t i=num_distance_codes;i<33;i++){
                                 distance_code_lengths[i]=0;
                             }
 
@@ -362,7 +362,7 @@ class ZLIBDecoder{
 
                             LiteralTable::CodingTable_new(
                                 &literal_alphabet, 
-                                (int)num_literal_codes,
+                                num_literal_codes,
                                 literal_code_lengths, 
                                 literal_alphabet_values
                             );
@@ -374,7 +374,7 @@ class ZLIBDecoder{
 
                             DistanceTable::CodingTable_new(
                                 &distance_alphabet, 
-                                (int)num_distance_codes,
+                                num_distance_codes,
                                 distance_code_lengths, 
                                 distance_alphabet_values
                             );
@@ -388,8 +388,7 @@ class ZLIBDecoder{
                         exit(FATAL_UNEXPECTED_ERROR);
                 }
 
-                bool block_done=false;
-                while(!block_done){
+                for(;;){
                     const auto literal_value=literal_alphabet.lookup(stream);
                     if (literal_value<=255) {
                         output_buffer[out_offset++]=uint8_t(literal_value);
@@ -557,33 +556,33 @@ class PngParser:public FileParser{
 
         [[gnu::hot,gnu::flatten]]
         inline void process_scanline()noexcept{
-            uint8_t scanline_filter_byte=in_line[0];
-            in_line++;
+            uint8_t scanline_filter_byte=this->in_line[0];
+            this->in_line++;
 
             PNGScanlineFilter scanline_filter=(PNGScanlineFilter)scanline_filter_byte;
             switch(scanline_filter){
                 case PNG_SCANLINE_FILTER_NONE:
                     // println("filter: none");
                     for(uint32_t index=0;index<this->scanline_width-1;index++){
-                        out_line[index]=this->raw(index);
+                        this->out_line[index]=this->raw(index);
                     }
                     break;
                 case PNG_SCANLINE_FILTER_SUB:
                     // println("filter: sub");
                     for(uint32_t index=0;index<this->scanline_width-1;index++){
-                        out_line[index]=this->raw(index) + this->previous_rev(index);
+                        this->out_line[index]=this->raw(index) + this->previous_rev(index);
                     }
                     break;
                 case PNG_SCANLINE_FILTER_UP:
                     // println("filter: up");
                     for(uint32_t index=0;index<this->scanline_width-1;index++){
-                        out_line[index]=this->raw(index) + this->above_rev(index);
+                        this->out_line[index]=this->raw(index) + this->above_rev(index);
                     }
                     break;
                 case PNG_SCANLINE_FILTER_AVERAGE:
                     // println("filter: average");
                     for(uint32_t index=0;index<this->scanline_width-1;index++){
-                        out_line[index]=this->raw(index) + static_cast<uint8_t>(this->previous_rev(index)+this->above_rev(index))/2;
+                        this->out_line[index]=this->raw(index) + static_cast<uint8_t>((this->previous_rev(index)+this->above_rev(index))/2);
                     }
                     break;
                 case PNG_SCANLINE_FILTER_PAETH:
@@ -591,7 +590,7 @@ class PngParser:public FileParser{
                     for(uint32_t index=0;index<this->scanline_width-1;index++){
                         uint8_t res=this->raw(index) + this->paethPredictor_rev(index);
 
-                        out_line[index]=res;
+                        this->out_line[index]=res;
                     }
                     break;
             }
@@ -684,7 +683,7 @@ ImageParseResult Image_read_png(
         discard chunk_crc;
     }
 
-    println("done with basic file parsing after %.3fs",current_time()-start_time);
+    println("done with basic file parsing after %.3fms",(current_time()-start_time)*1000);
 
     uint64_t output_buffer_size=(parser.ihdr_data.height+1)*parser.ihdr_data.width*4;
     uint8_t *const output_buffer=(uint8_t*)malloc(output_buffer_size);
@@ -699,49 +698,33 @@ ImageParseResult Image_read_png(
     };
     zlib_decoder.decode();
 
-    println("done with DEFLATE after %.3fs",current_time()-start_time);
+    println("done with DEFLATE after %.3fms",(current_time()-start_time)*1000);
 
     const uint32_t bytes_per_pixel=4;
     const uint32_t scanline_width=1+parser.ihdr_data.width*bytes_per_pixel;
     const uint32_t num_scanlines=parser.ihdr_data.height;
 
-    uint8_t* const defiltered_output_buffer=(uint8_t*)malloc(parser.ihdr_data.height*parser.ihdr_data.width*bytes_per_pixel);
+    uint8_t* const defiltered_output_buffer=new uint8_t[parser.ihdr_data.height*parser.ihdr_data.width*bytes_per_pixel];
 
     parser.scanline_width=scanline_width;
     parser.bpp=bytes_per_pixel;
     parser.defiltered_output_buffer=defiltered_output_buffer;
     parser.output_buffer=output_buffer;
 
-    for(uint32_t scanline_index=0;scanline_index<num_scanlines;scanline_index++){
-        if(scanline_index>0){
-            parser.in_line_prev=output_buffer+(scanline_index-1)*scanline_width;
-            parser.out_line_prev=defiltered_output_buffer+(scanline_index-1)*(parser.ihdr_data.width*bytes_per_pixel);
-        }else{
-            parser.in_line_prev=NULL;
-            parser.out_line_prev=NULL;
-        }
+    parser.in_line_prev=NULL;
+    parser.out_line_prev=NULL;
 
-        parser.in_line=output_buffer+scanline_index*scanline_width;
-        parser.out_line=defiltered_output_buffer+scanline_index*(parser.ihdr_data.width*bytes_per_pixel);
+    for(uint32_t scanline_index=0;scanline_index<num_scanlines;scanline_index++){
+        parser.in_line =&output_buffer[scanline_index*scanline_width];
+        parser.out_line=&defiltered_output_buffer[scanline_index*parser.ihdr_data.width*bytes_per_pixel];
 
         parser.process_scanline();
+
+        parser.in_line_prev=parser.in_line;
+        parser.out_line_prev=parser.out_line;
     }
 
-    println("done with scanline processing after %.3fs",current_time()-start_time);
-
-    for(uint32_t pix=0;pix<parser.ihdr_data.height*parser.ihdr_data.width;pix++){
-        const uint8_t red=defiltered_output_buffer[pix*4+0];
-        const uint8_t gre=defiltered_output_buffer[pix*4+1];
-        const uint8_t blu=defiltered_output_buffer[pix*4+2];
-        const uint8_t alp=defiltered_output_buffer[pix*4+3];
-
-        defiltered_output_buffer[pix*4+0]=blu;
-        defiltered_output_buffer[pix*4+1]=gre;
-        defiltered_output_buffer[pix*4+2]=red;
-        defiltered_output_buffer[pix*4+3]=alp;
-    }
-
-    println("done with BGRA -> RGBA  after %.3fs",current_time()-start_time);
+    println("done with scanline processing after %.3fms",(current_time()-start_time)*1000);
 
     parser.destroy();
     free(data_buffer);

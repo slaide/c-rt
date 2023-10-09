@@ -28,17 +28,17 @@ static inline void scan_ycbcr_to_rgb_neon_float(
     };
 
     const OUT_EL* const y[[gnu::aligned(16)]]=image_components[0].out_block_downsampled+scan_offset/rescale_factor[0];
-    const OUT_EL* const cr[[gnu::aligned(16)]]=image_components[1].out_block_downsampled+scan_offset/rescale_factor[1];
-    const OUT_EL* const cb[[gnu::aligned(16)]]=image_components[2].out_block_downsampled+scan_offset/rescale_factor[2];
+    const OUT_EL* const cb[[gnu::aligned(16)]]=image_components[1].out_block_downsampled+scan_offset/rescale_factor[1];
+    const OUT_EL* const cr[[gnu::aligned(16)]]=image_components[2].out_block_downsampled+scan_offset/rescale_factor[2];
 
     for (uint32_t i=0; i<pixels_in_scan; i+=4) {
         // -- re-order from block-orientation to final image orientation
 
         const float32x4_t y_simd=vld1q_f32(&y[image_components[0].conversion_indices[i]]);
-        float32x4_t cr_simd=vld1q_f32(&cr[image_components[1].conversion_indices[i]]);
-        cr_simd=vzip1q_f32(cr_simd,cr_simd);
-        float32x4_t cb_simd=vld1q_f32(&cb[image_components[2].conversion_indices[i]]);
+        float32x4_t cb_simd=vld1q_f32(&cb[image_components[1].conversion_indices[i]]);
         cb_simd=vzip1q_f32(cb_simd,cb_simd);
+        float32x4_t cr_simd=vld1q_f32(&cr[image_components[2].conversion_indices[i]]);
+        cr_simd=vzip1q_f32(cr_simd,cr_simd);
 
         // -- convert ycbcr to rgb
 
@@ -121,17 +121,17 @@ static inline void scan_ycbcr_to_rgb_neon_fixed(
     };
 
     const OUT_EL* const y[[gnu::aligned(16)]]=image_components[0].out_block_downsampled+scan_offset/rescale_factor[0];
-    const OUT_EL* const cr[[gnu::aligned(16)]]=image_components[1].out_block_downsampled+scan_offset/rescale_factor[1];
-    const OUT_EL* const cb[[gnu::aligned(16)]]=image_components[2].out_block_downsampled+scan_offset/rescale_factor[2];
+    const OUT_EL* const cb[[gnu::aligned(16)]]=image_components[1].out_block_downsampled+scan_offset/rescale_factor[1];
+    const OUT_EL* const cr[[gnu::aligned(16)]]=image_components[2].out_block_downsampled+scan_offset/rescale_factor[2];
 
     for (uint32_t i=0; i<pixels_in_scan; i+=4) {
         // -- re-order from block-orientation to final image orientation
 
         int16x8_t y_simd=vld1q_s16(&y[image_components[0].conversion_indices[i]]);
-        int16x8_t cr_simd=vld1q_s16(&cr[image_components[1].conversion_indices[i]]);
-        cr_simd=vzip1q_s16(cr_simd,cr_simd);
-        int16x8_t cb_simd=vld1q_s16(&cb[image_components[2].conversion_indices[i]]);
+        int16x8_t cb_simd=vld1q_s16(&cb[image_components[1].conversion_indices[i]]);
         cb_simd=vzip1q_s16(cb_simd,cb_simd);
+        int16x8_t cr_simd=vld1q_s16(&cr[image_components[2].conversion_indices[i]]);
+        cr_simd=vzip1q_s16(cr_simd,cr_simd);
 
         y_simd=vshrq_n_s16(y_simd,PRECISION);
         cr_simd=vshrq_n_s16(cr_simd,PRECISION);

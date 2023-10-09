@@ -9,7 +9,7 @@ Mesh* App_upload_mesh(
     uint32_t num_vertices,
     VertexData* vertex_data
 ){
-    Mesh* mesh=static_cast<Mesh*>(malloc(sizeof(Mesh)));
+    Mesh* mesh=new Mesh();
 
     VkDeviceSize mesh_memory_size=num_vertices*sizeof(VertexData);
 
@@ -89,7 +89,7 @@ void App_destroy_mesh(Application* app,Mesh* mesh){
     vkFreeMemory(app->device, mesh->buffer_memory, app->vk_allocator);
     vkDestroyBuffer(app->device, mesh->buffer, app->vk_allocator);
 
-    free(mesh);
+    delete mesh;
 }
 
 void App_upload_data(

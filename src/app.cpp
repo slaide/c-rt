@@ -11,6 +11,7 @@
 #include <cstdio>
 #include <unistd.h>
 #include <array>
+#include <vector>
 
 double current_time(){
     struct timespec current_time;
@@ -25,7 +26,7 @@ double current_time(){
     return ret;
 }
 
-void ImageData_initEmpty(struct ImageData* const image_data){
+void ImageData::initEmpty(ImageData* const image_data){
     image_data->data=NULL;
     image_data->height=0;
     image_data->width=0;
@@ -33,12 +34,18 @@ void ImageData_initEmpty(struct ImageData* const image_data){
 
     image_data->image_file_metadata.file_comment=NULL;
 }
-void ImageData_destroy(struct ImageData* const image_data){
+void ImageData::destroy(ImageData* const image_data){
     if(image_data->image_file_metadata.file_comment){
         free(static_cast<void*>(image_data->image_file_metadata.file_comment));
         image_data->image_file_metadata.file_comment=NULL;
     }
     free(image_data->data);
+}
+VkFormat ImageData::vk_img_format()const noexcept{
+    switch(pixel_format){
+        case PIXEL_FORMAT_Ru8Gu8Bu8Au8: return VK_FORMAT_R8G8B8A8_SRGB;
+        default: return VK_FORMAT_UNDEFINED;
+    }
 }
 
 /**
@@ -183,14 +190,16 @@ struct Texture{
 Texture* App_create_texture(Application* app, ImageData* image_data){
     discard image_data;
 
-    Texture* texture=static_cast<Texture*>(malloc(sizeof(Texture)));
+    Texture* texture=new Texture();
+
+    auto image_format=image_data->vk_img_format();
 
     VkImageCreateInfo image_create_info={
         .sType=VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
         .pNext=NULL,
         .flags=0,
         .imageType=VK_IMAGE_TYPE_2D,
-        .format=app->swapchain_format.format,
+        .format=image_format,
         .extent={
             .width=image_data->width,
             .height=image_data->height,
@@ -255,7 +264,7 @@ Texture* App_create_texture(Application* app, ImageData* image_data){
         .flags=0,
         .image=texture->image,
         .viewType=VK_IMAGE_VIEW_TYPE_2D,
-        .format=app->swapchain_format.format,
+        .format=image_format,
         .components={
             .r=VK_COMPONENT_SWIZZLE_IDENTITY,
             .g=VK_COMPONENT_SWIZZLE_IDENTITY,
@@ -435,7 +444,7 @@ void App_destroy_texture(Application* app, Texture* texture){
     vkDestroyImage(app->device,texture->image,app->vk_allocator);
     vkFreeMemory(app->device,texture->image_memory,app->vk_allocator);
 
-    free(texture);
+    delete texture;
 }
 
 VkShaderModule App_create_shader_module(
@@ -457,7 +466,7 @@ VkShaderModule App_create_shader_module(
     uint64_t shader_size=static_cast<uint64_t>(shader_size_res);
     rewind(shader_file);
 
-    uint32_t* shader_code=static_cast<uint32_t*>(malloc(shader_size));
+    uint32_t* shader_code=new uint32_t[shader_size];
     fread(shader_code, 1, shader_size, shader_file);
 
     fclose(shader_file);
@@ -473,7 +482,7 @@ VkShaderModule App_create_shader_module(
     VkShaderModule shader;
     vkCreateShaderModule(app->device, &shader_module_create_info, app->vk_allocator, &shader);
 
-    free(shader_code);
+    delete[] shader_code;
 
     return shader;
 }
@@ -483,7 +492,7 @@ Shader* App_create_shader(
     const uint32_t subpass,
     const uint32_t subpass_num_attachments
 ){
-    Shader* shader=static_cast<Shader*>(malloc(sizeof(Shader)));
+    Shader* shader=new Shader();
 
     shader->app=app;
 
@@ -740,7 +749,7 @@ void App_destroy_shader(Shader* const shader){
     vkDestroyShaderModule(shader->app->device,shader->fragment_shader,shader->app->vk_allocator);
     vkDestroyShaderModule(shader->app->device,shader->vertex_shader,shader->app->vk_allocator);
 
-    free(shader);
+    delete shader;
 }
 
 /**
@@ -755,10 +764,9 @@ VkSwapchainCreateInfoKHR App_create_swapchain(Application* app){
 
     uint32_t num_surface_formats;
     vkGetPhysicalDeviceSurfaceFormatsKHR(app->physical_device, app->window_surface, &num_surface_formats, NULL);
-    VkSurfaceFormatKHR *surface_formats=static_cast<VkSurfaceFormatKHR*>(malloc(num_surface_formats*sizeof(VkSurfaceFormatKHR)));
-    vkGetPhysicalDeviceSurfaceFormatsKHR(app->physical_device, app->window_surface, &num_surface_formats, surface_formats);
+    std::vector<VkSurfaceFormatKHR> surface_formats(num_surface_formats);
+    vkGetPhysicalDeviceSurfaceFormatsKHR(app->physical_device, app->window_surface, &num_surface_formats, surface_formats.data());
     app->swapchain_format=surface_formats[0];
-    free(surface_formats);
     // get surface present mode
 
     VkSurfaceCapabilitiesKHR surface_capabilities;
@@ -770,10 +778,9 @@ VkSwapchainCreateInfoKHR App_create_swapchain(Application* app){
 
     uint32_t num_present_modes;
     vkGetPhysicalDeviceSurfacePresentModesKHR(app->physical_device, app->window_surface, &num_present_modes, NULL);
-    VkPresentModeKHR* present_modes=static_cast<VkPresentModeKHR*>(malloc(num_present_modes*sizeof(VkPresentModeKHR)));
-    vkGetPhysicalDeviceSurfacePresentModesKHR(app->physical_device, app->window_surface, &num_present_modes, present_modes);
+    std::vector<VkPresentModeKHR> present_modes(num_present_modes);
+    vkGetPhysicalDeviceSurfacePresentModesKHR(app->physical_device, app->window_surface, &num_present_modes, present_modes.data());
     VkPresentModeKHR swapchain_present_mode=present_modes[0];
-    free(present_modes);
 
     uint32_t swapchain_image_count=1;
     if(surface_capabilities.minImageCount>0){
@@ -807,11 +814,11 @@ VkSwapchainCreateInfoKHR App_create_swapchain(Application* app){
     }
 
     if (app->swapchain_images!=NULL) {
-        free(app->swapchain_images);
+        delete[] app->swapchain_images;
     }
 
     vkGetSwapchainImagesKHR(app->device, app->swapchain, &app->num_swapchain_images, NULL);
-    app->swapchain_images=static_cast<VkImage*>(malloc(app->num_swapchain_images*sizeof(VkImage)));
+    app->swapchain_images=new VkImage[app->num_swapchain_images];
     vkGetSwapchainImagesKHR(app->device, app->swapchain, &app->num_swapchain_images, app->swapchain_images);
 
     if(app->render_pass!=VK_NULL_HANDLE){
@@ -819,17 +826,17 @@ VkSwapchainCreateInfoKHR App_create_swapchain(Application* app){
             for(uint32_t i=0;i<app->num_swapchain_images;i++){
                 vkDestroyFramebuffer(app->device, app->swapchain_framebuffers[i], app->vk_allocator);
             }
-            free(app->swapchain_framebuffers);
+            delete[] app->swapchain_framebuffers;
         }
         if (app->swapchain_image_views!=NULL) {
             for(uint32_t i=0;i<app->num_swapchain_images;i++){
                 vkDestroyImageView(app->device, app->swapchain_image_views[i], app->vk_allocator);
             }
-            free(app->swapchain_image_views);
+            delete[] app->swapchain_image_views;
         }
 
-        app->swapchain_image_views=static_cast<VkImageView*>(malloc(app->num_swapchain_images*sizeof(VkImageView)));
-        app->swapchain_framebuffers=static_cast<VkFramebuffer*>(malloc(app->num_swapchain_images*sizeof(VkFramebuffer)));
+        app->swapchain_image_views=new VkImageView[app->num_swapchain_images];
+        app->swapchain_framebuffers=new VkFramebuffer[app->num_swapchain_images];
 
         VkImageViewCreateInfo image_view_create_info={
             .sType=VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
@@ -885,7 +892,7 @@ VkSwapchainCreateInfoKHR App_create_swapchain(Application* app){
 ///
 /// this struct owns all memory, unless indicated otherwise
 Application* App_new(PlatformHandle* platform){
-    Application* app=static_cast<Application*>(malloc(sizeof(Application)));
+    Application* app=new Application();
 
     app->vk_allocator=NULL;
     app->platform_handle=platform;
@@ -893,13 +900,13 @@ Application* App_new(PlatformHandle* platform){
     {
         uint32_t num_instance_extensions;
         vkEnumerateInstanceExtensionProperties(NULL, &num_instance_extensions, NULL);
-        VkExtensionProperties* instance_extensions=static_cast<VkExtensionProperties*>(malloc(num_instance_extensions*sizeof(VkExtensionProperties)));
-        vkEnumerateInstanceExtensionProperties(NULL, &num_instance_extensions, instance_extensions);
+        std::vector<VkExtensionProperties> instance_extensions(num_instance_extensions);
+        vkEnumerateInstanceExtensionProperties(NULL, &num_instance_extensions, instance_extensions.data());
 
         uint32_t num_instance_layers;
         vkEnumerateInstanceLayerProperties(&num_instance_layers, NULL);
-        VkLayerProperties* layer_extensions=static_cast<VkLayerProperties*>(malloc(num_instance_layers*sizeof(VkLayerProperties)));
-        vkEnumerateInstanceLayerProperties(&num_instance_layers, layer_extensions);
+        std::vector<VkLayerProperties> layer_extensions(num_instance_layers);
+        vkEnumerateInstanceLayerProperties(&num_instance_layers, layer_extensions.data());
 
         for(uint32_t i=0;i<num_instance_extensions;i++){
             //printf("instance extension: %s\n",instance_extensions[i].extensionName);
@@ -907,9 +914,6 @@ Application* App_new(PlatformHandle* platform){
         for(uint32_t i=0;i<num_instance_layers;i++){
             //printf("instance layer: %s\n",layer_extensions[i].layerName);
         }
-
-        free(instance_extensions);
-        free(layer_extensions);
     }
 
     uint32_t create_instance_flags=0;
@@ -964,8 +968,8 @@ Application* App_new(PlatformHandle* platform){
 
     uint32_t num_physical_devices;
     vkEnumeratePhysicalDevices(app->instance, &num_physical_devices, NULL);
-    VkPhysicalDevice* physical_devices=static_cast<VkPhysicalDevice*>(malloc(num_physical_devices*sizeof(VkPhysicalDevice)));
-    vkEnumeratePhysicalDevices(app->instance, &num_physical_devices, physical_devices);
+    std::vector<VkPhysicalDevice> physical_devices(num_physical_devices);
+    vkEnumeratePhysicalDevices(app->instance, &num_physical_devices, physical_devices.data());
 
     // look for fit physical device, and required queue families
     uint32_t graphics_queue_family_index=UINT32_MAX;
@@ -983,8 +987,8 @@ Application* App_new(PlatformHandle* platform){
 
         uint32_t num_queue_families;
         vkGetPhysicalDeviceQueueFamilyProperties(physical_device, &num_queue_families,NULL);
-        VkQueueFamilyProperties* queue_families=static_cast<VkQueueFamilyProperties*>(malloc(num_queue_families*sizeof(VkQueueFamilyProperties)));
-        vkGetPhysicalDeviceQueueFamilyProperties(physical_device, &num_queue_families,queue_families);
+        std::vector<VkQueueFamilyProperties> queue_families(num_queue_families);
+        vkGetPhysicalDeviceQueueFamilyProperties(physical_device, &num_queue_families,queue_families.data());
 
         graphics_queue_family_index=UINT32_MAX;
         present_queue_family_index=UINT32_MAX;
@@ -1008,8 +1012,6 @@ Application* App_new(PlatformHandle* platform){
             }
         }
 
-        free(queue_families);
-
         if(graphics_queue_family_index==UINT32_MAX || present_queue_family_index==UINT32_MAX){
             printf("  device incompatible\n");
             continue;
@@ -1017,18 +1019,17 @@ Application* App_new(PlatformHandle* platform){
 
         app->physical_device=physical_device;
     }
-    free(physical_devices);
 
     {
         uint32_t num_device_extensions;
         vkEnumerateDeviceExtensionProperties(app->physical_device, NULL, &num_device_extensions,NULL);
-        VkExtensionProperties* device_extensions=static_cast<VkExtensionProperties*>(malloc(num_device_extensions*sizeof(VkExtensionProperties)));
-        vkEnumerateDeviceExtensionProperties(app->physical_device, NULL, &num_device_extensions,device_extensions);
+        std::vector<VkExtensionProperties> device_extensions(num_device_extensions);
+        vkEnumerateDeviceExtensionProperties(app->physical_device, NULL, &num_device_extensions,device_extensions.data());
 
         uint32_t num_device_layers;
         vkEnumerateDeviceLayerProperties(app->physical_device, &num_device_layers, NULL);
-        VkLayerProperties* device_layers=static_cast<VkLayerProperties*>(malloc(num_device_layers*sizeof(VkLayerProperties)));
-        vkEnumerateDeviceLayerProperties(app->physical_device, &num_device_layers, device_layers);
+        std::vector<VkLayerProperties> device_layers(num_device_layers);
+        vkEnumerateDeviceLayerProperties(app->physical_device, &num_device_layers, device_layers.data());
 
         for(uint32_t i=0;i<num_device_extensions;i++){
             //printf("device extension: %s\n",device_extensions[i].extensionName);
@@ -1036,21 +1037,18 @@ Application* App_new(PlatformHandle* platform){
         for(uint32_t i=0;i<num_device_layers;i++){
             //printf("device layer: %s\n",device_layers[i].layerName);
         }
-        
-        free(device_extensions);
-        free(device_layers);
     }
 
     app->graphics_queue_family_index=graphics_queue_family_index;
     app->present_queue_family_index=present_queue_family_index;
 
-    VkDeviceQueueCreateInfo* queue_create_infos;
+    std::vector<VkDeviceQueueCreateInfo> queue_create_infos;
     uint32_t num_queue_create_infos;
 
     float queue_priorities[2]={1.0,1.0};
     if(graphics_queue_family_index==present_queue_family_index){
         num_queue_create_infos=1;
-        queue_create_infos=static_cast<VkDeviceQueueCreateInfo*>(malloc(1*sizeof(VkDeviceQueueCreateInfo)));
+        queue_create_infos.resize(1);
 
         queue_create_infos[0].sType=VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
         queue_create_infos[0].pNext=NULL;
@@ -1060,7 +1058,7 @@ Application* App_new(PlatformHandle* platform){
         queue_create_infos[0].pQueuePriorities=queue_priorities+0;
     }else{
         num_queue_create_infos=2;
-        queue_create_infos=static_cast<VkDeviceQueueCreateInfo*>(malloc(2*sizeof(VkDeviceQueueCreateInfo)));
+        queue_create_infos.resize(2);
 
         queue_create_infos[0].sType=VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
         queue_create_infos[0].pNext=NULL;
@@ -1095,7 +1093,7 @@ Application* App_new(PlatformHandle* platform){
         .pNext=NULL,
         .flags=0,
         .queueCreateInfoCount=num_queue_create_infos,
-        .pQueueCreateInfos=queue_create_infos,
+        .pQueueCreateInfos=queue_create_infos.data(),
         .enabledLayerCount=device_layers.size(),
         .ppEnabledLayerNames=device_layers.data(),
         .enabledExtensionCount=device_extensions.size(),
@@ -1106,7 +1104,6 @@ Application* App_new(PlatformHandle* platform){
     if(res!=VK_SUCCESS){
         exit(VULKAN_CREATE_DEVICE_FAILURE);
     }
-    free(queue_create_infos);
 
     // if these are the same queue family, they will just point to the same queue, which is fine
     vkGetDeviceQueue(app->device, graphics_queue_family_index, 0, &app->graphics_queue);
@@ -1273,9 +1270,9 @@ void App_destroy(Application* app){
 
             vkDestroyDevice(app->device,app->vk_allocator);
 
-            free(app->swapchain_images);
-            free(app->swapchain_image_views);
-            free(app->swapchain_framebuffers);
+            delete[] app->swapchain_images;
+            delete[] app->swapchain_image_views;
+            delete[] app->swapchain_framebuffers;
         }
 
         vkDestroySurfaceKHR(app->instance, app->window_surface, app->vk_allocator);
@@ -1285,7 +1282,7 @@ void App_destroy(Application* app){
 
     App_destroy_window(app,app->platform_window);
 
-    free(app);
+    delete app;
 }
 
 double get_time(struct timespec t){
@@ -1417,7 +1414,7 @@ void App_run(Application* app){
         .level=VK_COMMAND_BUFFER_LEVEL_PRIMARY,
         .commandBufferCount=1
     };
-    VkCommandBuffer* command_buffers=static_cast<VkCommandBuffer*>(malloc(command_buffer_allocate_info.commandBufferCount*sizeof(VkCommandBuffer)));
+    VkCommandBuffer* command_buffers=new VkCommandBuffer[command_buffer_allocate_info.commandBufferCount];
     res=vkAllocateCommandBuffers(app->device, &command_buffer_allocate_info, command_buffers);
     if(res!=VK_SUCCESS){
         fprintf(stderr,"failed to allocate command buffers\n");
@@ -1469,7 +1466,7 @@ void App_run(Application* app){
 
         for(int i=0;i<num_iterations;i++){
             if(i>0){
-                ImageData_destroy(image_data);
+                ImageData::destroy(image_data);
             }
 
             const uint64_t file_path_len=strlen(file_path);
@@ -1682,7 +1679,7 @@ void App_run(Application* app){
 
             for(uint32_t image_index=0;image_index<num_images;image_index++){
                 App_upload_texture(app, image_textures[image_index], &image_data_jpeg[image_index], command_buffer);
-                ImageData_destroy(&image_data_jpeg[image_index]);
+                ImageData::destroy(&image_data_jpeg[image_index]);
             }
         }
 
@@ -1884,5 +1881,5 @@ void App_run(Application* app){
     vkFreeCommandBuffers(app->device, command_pool, command_buffer_allocate_info.commandBufferCount, command_buffers);
     vkDestroyCommandPool(app->device,command_pool,app->vk_allocator);
 
-    free(command_buffers);
+    delete[] command_buffers;
 }
