@@ -1334,7 +1334,7 @@ void JpegParser::parse_segment<JpegSegmentType::DHT>(){
         target_table->destroy();
 
         HuffmanTable::CodingTable_new(
-            target_table,
+            *target_table,
             static_cast<std::size_t>(total_num_values),
             value_code_lengths,
             values

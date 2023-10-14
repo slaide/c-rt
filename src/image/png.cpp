@@ -5,6 +5,7 @@
 #include <string>
 #include <cmath>
 #include <thread>
+#include <vector>
 #include <stdatomic.h>
 
 #include <time.h>
@@ -203,10 +204,8 @@ class ZLIBDecoder{
             const uint64_t flevel_flag=stream->get_bits_advance(2);
             discard flevel_flag;
 
-            if(fdict_flag){
-                fprintf(stderr,"TODO unimplemented: using preset dictionary\n");
-                exit(FATAL_UNEXPECTED_ERROR);
-            }
+            if(fdict_flag)
+                bail(FATAL_UNEXPECTED_ERROR,"TODO unimplemented: using preset dictionary");
 
             LiteralTable literal_alphabet;
             DistanceTable distance_alphabet;
@@ -225,10 +224,11 @@ class ZLIBDecoder{
             // remaining bitstream is formatted according to RFC 1951 (deflate) (e.g. https://datatracker.ietf.org/doc/html/rfc1951)
             bool keep_parsing=true;
             while(keep_parsing){
-                const uint64_t bfinal=stream->get_bits_advance(1);
+                const auto bfinal=stream->get_bits_advance<unsigned>(1);
 
-                const uint64_t btype=stream->get_bits_advance(2);
+                const auto btype=stream->get_bits_advance<unsigned>(2);
                 switch(btype){
+                    // uncompressed block
                     case 0:
                         {
                             bail(FATAL_UNEXPECTED_ERROR,"TODO : uncompressed deflate block");
@@ -254,9 +254,72 @@ class ZLIBDecoder{
                             stream->skip(len*8);
                         }
                         break;
+                    // compressed using fixed huffman codes
                     case 1:
-                        bail(FATAL_UNEXPECTED_ERROR,"TODO : compression with fixed huffman codes");
+                        {
+                            std::size_t num_codes=288;
+                            std::vector<LiteralTable::ParseLeaf> alphabet_leafs(num_codes);
+                            for(unsigned i=0;i<=143;i++){
+                                alphabet_leafs[i]=LiteralTable::ParseLeaf{
+                                    .value=(uint16_t)i,
+                                    .len=8,
+                                    .code=0b00110000u+i
+                                };
+                            }
+                            for(unsigned i=144;i<=255;i++){
+                                alphabet_leafs[i]=LiteralTable::ParseLeaf{
+                                    .value=(uint16_t)i,
+                                    .len=9,
+                                    .code=0b110010000u+(i-144u)
+                                };
+                            }
+                            for(unsigned i=256;i<=279;i++){
+                                alphabet_leafs[i]=LiteralTable::ParseLeaf{
+                                    .value=(uint16_t)i,
+                                    .len=7,
+                                    .code=i-256u
+                                };
+                            }
+                            for(unsigned i=280;i<=287;i++){
+                                alphabet_leafs[i]=LiteralTable::ParseLeaf{
+                                    .value=(uint16_t)i,
+                                    .len=8,
+                                    .code=0b11000000u+(i-280u)
+                                };
+                            }
+
+                            {
+                                std::vector<int> code_lengths(288);
+                                std::vector<uint16_t> values(288);
+                                for(std::size_t i=0;i<288;i++){
+                                    code_lengths[i]=alphabet_leafs[i].len;
+                                    values[i]=alphabet_leafs[i].value;
+                                }
+                                LiteralTable::CodingTable_new(
+                                    literal_alphabet, 
+                                    num_codes,
+                                    code_lengths.data(), 
+                                    values.data()
+                                );
+                            }
+
+                            {
+                                std::vector<int> code_lengths(32);
+                                std::vector<uint16_t> values(32);
+                                for(std::size_t i=0;i<32;i++){
+                                    code_lengths[i]=5;
+                                    values[i]=(unsigned short)i;
+                                }
+                                LiteralTable::CodingTable_new(
+                                    distance_alphabet, 
+                                    32,
+                                    code_lengths.data(), 
+                                    values.data()
+                                );
+                            }
+                        }
                         break;
+                    // compressed using dynamic huffman codes
                     case 2:
                         {
                             const std::size_t num_literal_codes=257+stream->get_bits_advance(5);
@@ -282,7 +345,7 @@ class ZLIBDecoder{
 
                             CodeLengthTable code_length_code_alphabet;
                             CodeLengthTable::CodingTable_new(
-                                &code_length_code_alphabet, 
+                                code_length_code_alphabet, 
                                 NUM_CODE_LENGTH_CODES,
                                 code_length_codes, 
                                 values
@@ -361,7 +424,7 @@ class ZLIBDecoder{
                                 literal_alphabet_values[i]=i;
 
                             LiteralTable::CodingTable_new(
-                                &literal_alphabet, 
+                                literal_alphabet, 
                                 num_literal_codes,
                                 literal_code_lengths, 
                                 literal_alphabet_values
@@ -373,7 +436,7 @@ class ZLIBDecoder{
                                 distance_alphabet_values[i]=i;
 
                             DistanceTable::CodingTable_new(
-                                &distance_alphabet, 
+                                distance_alphabet, 
                                 num_distance_codes,
                                 distance_code_lengths, 
                                 distance_alphabet_values
@@ -387,6 +450,8 @@ class ZLIBDecoder{
                     default:
                         exit(FATAL_UNEXPECTED_ERROR);
                 }
+
+                println("done parsing huffman tables %d",btype);
 
                 for(;;){
                     const auto literal_value=literal_alphabet.lookup(stream);
@@ -403,7 +468,7 @@ class ZLIBDecoder{
                             length+=(uint16_t)stream->get_bits_advance(extra_bits);
 
                         if (length>258)
-                            bail(FATAL_UNEXPECTED_ERROR,"length too large %d\n",length);
+                            bail(FATAL_UNEXPECTED_ERROR,"invalid length %d>258\n",length);
 
                         const auto backward_distance_symbol=distance_alphabet.lookup(stream);
                         const auto backward_extra_bits=DEFLATE_BACKWARD_EXTRA_BIT[backward_distance_symbol];

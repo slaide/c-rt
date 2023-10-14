@@ -8,6 +8,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <array>
+#include <span>
 
 #include "app.hpp"
 #include "bitstream.hpp"
@@ -25,22 +26,21 @@ namespace huffman{
             typedef bitStream::BitStream<BITSTREAM_DIRECTION,BITSTREAM_REMOVE_JPEG_BYTE_STUFFING> BitStream_;
             typedef VALUE VALUE_;
 
-            struct LookupLeaf{
-                VALUE value;
-                uint8_t len;
-            };
+            typedef struct LookupLeaf{
+                VALUE value=0;
+                uint8_t len=0;
+            }LookupLeaf;
 
             uint8_t max_code_length_bits;
-            struct LookupLeaf* lookup_table;
+            LookupLeaf* lookup_table;
+
+            typedef struct ParseLeaf{
+                VALUE value=0;
+                int len=0;
+                uint code=0;
+            }ParseLeaf;
 
         private:
-            struct ParseLeaf{
-                VALUE value;
-                int len;
-
-                uint code;
-            };
-
             #define MAX_HUFFMAN_TABLE_CODE_LENGTH 16
             #define MAX_HUFFMAN_TABLE_ENTRIES 288
 
@@ -66,7 +66,7 @@ namespace huffman{
         * @param values 
         */
         static void CodingTable_new(
-            CodingTable* const  table,
+            CodingTable& table,
 
             std::size_t total_num_values,
             int unfiltered_value_code_lengths[MAX_HUFFMAN_TABLE_ENTRIES],
@@ -94,7 +94,7 @@ namespace huffman{
             for(auto i=total_num_values;i<MAX_HUFFMAN_TABLE_CODE_LENGTH;i++)
                 num_values_of_length[static_cast<std::size_t>(i)]=0;
 
-            table->max_code_length_bits=0;
+            table.max_code_length_bits=0;
 
             struct ParseLeaf parse_leafs[MAX_HUFFMAN_TABLE_ENTRIES];
             for (std::size_t i=0; i<static_cast<std::size_t>(total_num_values); i++) {
@@ -103,8 +103,8 @@ namespace huffman{
 
                 parse_leafs[i].code=0;
 
-                if(parse_leafs[i].len>table->max_code_length_bits)
-                    table->max_code_length_bits=static_cast<uint8_t>(parse_leafs[i].len);
+                if(parse_leafs[i].len>table.max_code_length_bits)
+                    table.max_code_length_bits=static_cast<uint8_t>(parse_leafs[i].len);
             }
 
             std::array<uint,MAX_HUFFMAN_TABLE_CODE_LENGTH+1> bl_count={};
@@ -113,42 +113,53 @@ namespace huffman{
             }
 
             std::array<uint,MAX_HUFFMAN_TABLE_CODE_LENGTH+1> next_code={};
-            for (std::size_t i=1; i<=static_cast<std::size_t>(table->max_code_length_bits); i++) {
+            for (std::size_t i=1; i<=static_cast<std::size_t>(table.max_code_length_bits); i++) {
                 next_code[i]=(next_code[i-1]+bl_count[i-1])<<1;
             }
 
             for (std::size_t i=0; i<total_num_values; i++) {
                 const auto current_leaf=parse_leafs+i;
                 current_leaf->code=next_code[static_cast<std::size_t>(current_leaf->len)] & bitUtil::get_mask<uint>(current_leaf->len);
-                if constexpr(BITSTREAM_DIRECTION == bitStream::BITSTREAM_DIRECTION_RIGHT_TO_LEFT)
-                    current_leaf->code=bitUtil::reverse_bits(current_leaf->code,current_leaf->len);
                 next_code[static_cast<std::size_t>(current_leaf->len)]+=1;
             }
 
-            const int num_possible_leafs=1<<table->max_code_length_bits;
-            table->lookup_table=new struct LookupLeaf[static_cast<std::size_t>(num_possible_leafs)];
-            for (std::size_t i=0; i<total_num_values; i++) {
-                struct ParseLeaf* leaf=&parse_leafs[i];
+            construct_from_parseleafs(table,std::span{parse_leafs,total_num_values},table.max_code_length_bits);
+        }
 
-                int mask_len=table->max_code_length_bits - leaf->len;
-                if(leaf->len>table->max_code_length_bits)
-                    bail(FATAL_UNEXPECTED_ERROR,"this should not be possible %d > %d",leaf->len,table->max_code_length_bits);
+        static void construct_from_parseleafs(
+            CodingTable& table,
+            std::span<ParseLeaf> parse_leafs,
+            uint8_t max_code_size
+        ){
+            table.max_code_length_bits=max_code_size;
+
+            const int num_possible_leafs=1<<table.max_code_length_bits;
+            table.lookup_table=new struct LookupLeaf[static_cast<std::size_t>(num_possible_leafs)];
+            for (ParseLeaf& leaf : parse_leafs) {
+                int mask_len=table.max_code_length_bits - leaf.len;
+                if(leaf.len>table.max_code_length_bits)
+                    bail(FATAL_UNEXPECTED_ERROR,"this should not be possible %d > %d",leaf.len,table.max_code_length_bits);
                 
                 const auto mask=bitUtil::get_mask<int>(mask_len);
+
+                auto leaf_code=leaf.code;
+                if constexpr(BITSTREAM_DIRECTION == bitStream::BITSTREAM_DIRECTION_RIGHT_TO_LEFT)
+                    leaf_code=bitUtil::reverse_bits(leaf.code,leaf.len);
 
                 for (int j=0; j<=mask; j++) {
                     int leaf_index;
                     if(BITSTREAM_DIRECTION==bitStream::BITSTREAM_DIRECTION_LEFT_TO_RIGHT)
-                        leaf_index=static_cast<int>(leaf->code<<mask_len)+j;
+                        leaf_index=static_cast<int>(leaf_code<<mask_len)+j;
                     else
-                        leaf_index=(j<<static_cast<int>(leaf->len))+static_cast<int>(leaf->code);
+                        leaf_index=(j<<static_cast<int>(leaf.len))+static_cast<int>(leaf_code);
                     
-                    table->lookup_table[leaf_index].value=leaf->value;
-                    table->lookup_table[leaf_index].len=static_cast<uint8_t>(leaf->len);
+                    table.lookup_table[leaf_index].value=leaf.value;
+                    table.lookup_table[leaf_index].len=static_cast<uint8_t>(leaf.len);
                 }
             }
         }
         
+    public:
         void destroy()noexcept{
             delete this->lookup_table;
             this->lookup_table=nullptr;
