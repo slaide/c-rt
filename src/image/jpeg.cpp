@@ -160,7 +160,7 @@ const char* Image_jpeg_segment_type_name(JpegSegmentType segment_type){
 typedef OUT_EL QUANT;
 typedef QUANT QuantizationTable[64];
 
-static const uint8_t ZIGZAG[64]={
+static constexpr uint8_t ZIGZAG[64]={
     0,  1,  5,  6,  14, 15, 27, 28,
     2,  4,  7,  13, 16, 26, 29, 42,
     3,  8,  12, 17, 25, 30, 41, 43,
@@ -171,7 +171,7 @@ static const uint8_t ZIGZAG[64]={
     35, 36, 48, 49, 57, 58, 62, 63,
 };
 [[maybe_unused]]
-static const int UNZIGZAG[64]={
+static constexpr int UNZIGZAG[64]={
     0,  1,  8,  16, 9,  2,  3,  10,
     17, 24, 32, 25, 18, 11, 4,  5,
     12, 19, 26, 33, 40, 48, 41, 34,

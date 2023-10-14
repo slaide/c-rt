@@ -1,9 +1,7 @@
 #include "app/app.hpp"
 #include <vulkan/vulkan.h>
 
-Mesh* App_upload_mesh(
-    Application* app,
-
+Mesh* Application::upload_mesh(
     VkCommandBuffer recording_command_buffer,
 
     uint32_t num_vertices,
@@ -23,17 +21,17 @@ Mesh* App_upload_mesh(
         .queueFamilyIndexCount=0,
         .pQueueFamilyIndices=NULL
     };
-    VkResult res=vkCreateBuffer(app->device, &buffer_create_info, app->vk_allocator, &mesh->buffer);
+    VkResult res=vkCreateBuffer(this->device, &buffer_create_info, this->vk_allocator, &mesh->buffer);
     if(res!=VK_SUCCESS){
         fprintf(stderr,"failed to create buffer\n");
         exit(VULKAN_CREATE_BUFFER_FAILURE);
     }
 
     VkMemoryRequirements buffer_memory_requirements;
-    vkGetBufferMemoryRequirements(app->device, mesh->buffer, &buffer_memory_requirements);
+    vkGetBufferMemoryRequirements(this->device, mesh->buffer, &buffer_memory_requirements);
 
     VkPhysicalDeviceMemoryProperties memory_properties;
-    vkGetPhysicalDeviceMemoryProperties(app->physical_device, &memory_properties);
+    vkGetPhysicalDeviceMemoryProperties(this->physical_device, &memory_properties);
 
     uint32_t memory_type_index=UINT32_MAX;
     for(uint32_t i=0;i<memory_properties.memoryTypeCount;i++){
@@ -53,13 +51,13 @@ Mesh* App_upload_mesh(
         .allocationSize=buffer_memory_requirements.size,
         .memoryTypeIndex=memory_type_index
     };
-    res=vkAllocateMemory(app->device, &memory_allocate_info, app->vk_allocator, &mesh->buffer_memory);
+    res=vkAllocateMemory(this->device, &memory_allocate_info, this->vk_allocator, &mesh->buffer_memory);
     if(res!=VK_SUCCESS){
         fprintf(stderr,"failed to allocate memory\n");
         exit(VULKAN_ALLOCATE_MEMORY_FAILURE);
     }
 
-    res=vkBindBufferMemory(app->device, mesh->buffer, mesh->buffer_memory, 0);
+    res=vkBindBufferMemory(this->device, mesh->buffer, mesh->buffer_memory, 0);
     if(res!=VK_SUCCESS){
         fprintf(stderr,"failed to bind buffer memory\n");
         exit(VULKAN_BIND_BUFFER_MEMORY_FAILURE);
@@ -67,7 +65,7 @@ Mesh* App_upload_mesh(
 
     // map device memory
     VertexData* mapped_gpu_memory;
-    vkMapMemory(app->device, mesh->buffer_memory, 0, buffer_memory_requirements.size, 0, (void**)&mapped_gpu_memory);
+    vkMapMemory(this->device, mesh->buffer_memory, 0, buffer_memory_requirements.size, 0, (void**)&mapped_gpu_memory);
     // copy mesh data
     memcpy(mapped_gpu_memory, vertex_data, num_vertices*sizeof(VertexData));
     // flush memory to gpu
@@ -78,23 +76,21 @@ Mesh* App_upload_mesh(
         .offset=0,
         .size=buffer_memory_requirements.size
     };
-    vkFlushMappedMemoryRanges(app->device, 1, &mapped_memory_range);
-    vkUnmapMemory(app->device, mesh->buffer_memory);
+    vkFlushMappedMemoryRanges(this->device, 1, &mapped_memory_range);
+    vkUnmapMemory(this->device, mesh->buffer_memory);
 
     discard recording_command_buffer;
 
     return mesh;
 }
-void App_destroy_mesh(Application* app,Mesh* mesh){
-    vkFreeMemory(app->device, mesh->buffer_memory, app->vk_allocator);
-    vkDestroyBuffer(app->device, mesh->buffer, app->vk_allocator);
+void Application::destroy_mesh(Mesh* mesh){
+    vkFreeMemory(this->device, mesh->buffer_memory, this->vk_allocator);
+    vkDestroyBuffer(this->device, mesh->buffer, this->vk_allocator);
 
     delete mesh;
 }
 
-void App_upload_data(
-    Application* app,
-
+void Application::upload_data(
     VkCommandBuffer recording_command_buffer,
 
     VkBufferUsageFlagBits buffer_usage_flags,
@@ -120,9 +116,9 @@ void App_upload_data(
             .pQueueFamilyIndices=NULL
         };
         VkResult res=vkCreateBuffer(
-            app->device, 
+            this->device, 
             &buffer_create_info, 
-            app->vk_allocator, 
+            this->vk_allocator, 
             buffer
         );
         if(res!=VK_SUCCESS){
@@ -133,10 +129,10 @@ void App_upload_data(
 
     if(memory_initially_null){
         VkMemoryRequirements buffer_memory_requirements;
-        vkGetBufferMemoryRequirements(app->device, *buffer, &buffer_memory_requirements);
+        vkGetBufferMemoryRequirements(this->device, *buffer, &buffer_memory_requirements);
 
         VkPhysicalDeviceMemoryProperties memory_properties;
-        vkGetPhysicalDeviceMemoryProperties(app->physical_device, &memory_properties);
+        vkGetPhysicalDeviceMemoryProperties(this->physical_device, &memory_properties);
 
         uint32_t memory_type_index=UINT32_MAX;
         for(uint32_t i=0;i<memory_properties.memoryTypeCount;i++){
@@ -156,7 +152,7 @@ void App_upload_data(
             .allocationSize=buffer_memory_requirements.size,
             .memoryTypeIndex=memory_type_index
         };
-        VkResult res=vkAllocateMemory(app->device, &memory_allocate_info, app->vk_allocator, buffer_memory);
+        VkResult res=vkAllocateMemory(this->device, &memory_allocate_info, this->vk_allocator, buffer_memory);
         if(res!=VK_SUCCESS){
             fprintf(stderr,"failed to allocate memory\n");
             exit(VULKAN_ALLOCATE_MEMORY_FAILURE);
@@ -164,7 +160,7 @@ void App_upload_data(
     }
 
     if (buffer_initially_null || memory_initially_null) {
-        VkResult res=vkBindBufferMemory(app->device, *buffer, *buffer_memory, 0);
+        VkResult res=vkBindBufferMemory(this->device, *buffer, *buffer_memory, 0);
         if(res!=VK_SUCCESS){
             fprintf(stderr,"failed to bind buffer memory\n");
             exit(VULKAN_BIND_BUFFER_MEMORY_FAILURE);
@@ -173,7 +169,7 @@ void App_upload_data(
 
     // map device memory
     VertexData* mapped_gpu_memory;
-    vkMapMemory(app->device, *buffer_memory, 0, memory_size, 0, (void**)&mapped_gpu_memory);
+    vkMapMemory(this->device, *buffer_memory, 0, memory_size, 0, (void**)&mapped_gpu_memory);
     // copy data
     memcpy(mapped_gpu_memory, data, data_size_bytes);
     // flush memory to gpu
@@ -184,8 +180,8 @@ void App_upload_data(
         .offset=0,
         .size=memory_size
     };
-    vkFlushMappedMemoryRanges(app->device, 1, &mapped_memory_range);
-    vkUnmapMemory(app->device, *buffer_memory);
+    vkFlushMappedMemoryRanges(this->device, 1, &mapped_memory_range);
+    vkUnmapMemory(this->device, *buffer_memory);
 
     discard recording_command_buffer;
 }

@@ -201,7 +201,7 @@ void PlatformWindow_set_render_area_width(PlatformWindow* platform_window,uint16
  */
 typedef struct PlatformHandle PlatformHandle;
 
-typedef struct Application Application;
+class Application;
 
 /**
  * @brief struct containing relevant data for a single vertex
@@ -227,6 +227,8 @@ typedef struct Mesh{
     VkDeviceMemory buffer_memory;
 }Mesh;
 
+typedef struct Texture Texture;
+
 /**
  * @brief gpu shader object for object drawing
  * 
@@ -250,169 +252,186 @@ typedef struct Shader{
 /**
  * @brief main application handle
  */
-typedef struct Application{
-    uint32_t cli_num_args;
-    char** cli_args;
-    
-    PlatformHandle* platform_handle;
-    PlatformWindow* platform_window;
+class Application{
+    public:
 
-    VkInstance instance;
-    VkAllocationCallbacks* vk_allocator;
+        uint32_t cli_num_args=0;
+        char** cli_args=nullptr;
+        
+        PlatformHandle* platform_handle=nullptr;
+        PlatformWindow* platform_window=nullptr;
 
-    VkSurfaceKHR window_surface;
-    VkSwapchainKHR swapchain;
-    VkSurfaceFormatKHR swapchain_format;
-    uint32_t num_swapchain_images;
-    VkImage* swapchain_images;
-    VkImageView* swapchain_image_views;
-    VkFramebuffer* swapchain_framebuffers;
+        VkInstance instance=VK_NULL_HANDLE;
+        VkAllocationCallbacks* vk_allocator=nullptr;
 
-    VkPhysicalDevice physical_device;
-    VkDevice device;
+        VkSurfaceKHR window_surface=VK_NULL_HANDLE;
+        VkSwapchainKHR swapchain=VK_NULL_HANDLE;
+        VkSurfaceFormatKHR swapchain_format;
+        uint32_t num_swapchain_images;
+        VkImage* swapchain_images=nullptr;
+        VkImageView* swapchain_image_views=nullptr;
+        VkFramebuffer* swapchain_framebuffers=nullptr;
 
-    uint32_t graphics_queue_family_index;
-    VkQueue graphics_queue;
-    uint32_t present_queue_family_index;
-    VkQueue present_queue;
+        VkPhysicalDevice physical_device=VK_NULL_HANDLE;
+        VkDevice device=VK_NULL_HANDLE;
 
-    VkDeviceSize staging_buffer_size;
-    VkDeviceSize staging_buffer_size_occupied;
-    VkBuffer staging_buffer;
-    VkDeviceMemory staging_buffer_memory;
+        uint32_t graphics_queue_family_index=0;
+        VkQueue graphics_queue=VK_NULL_HANDLE;
+        uint32_t present_queue_family_index=0;
+        VkQueue present_queue=VK_NULL_HANDLE;
 
-    VkRenderPass render_pass;
+        VkDeviceSize staging_buffer_size=0;
+        VkDeviceSize staging_buffer_size_occupied=0;
+        VkBuffer staging_buffer=VK_NULL_HANDLE;
+        VkDeviceMemory staging_buffer_memory=VK_NULL_HANDLE;
 
-    Shader* shader;
-} Application;
+        VkRenderPass render_pass=VK_NULL_HANDLE;
 
-/**
- * \brief create a new app
- * 
- * \param platform a handle to a platform-specific handle. will be internally passed to all environment interactions that are platform-specific.
- *
- * \return a handle to a new application
- */
-Application* App_new(PlatformHandle* platform);
-/**
- * @brief run the main loop of an application
- * runs until the open window is closed
- * 
- * @param app 
- */
-void App_run(Application* app);
-/**
- * @brief destroy an application and free all resources
- * 
- * @param app 
- */
-void App_destroy(Application* app);
+        Shader* shader=nullptr;
 
-typedef struct Texture Texture;
+    public:
 
-/**
- * @brief create a new texture on the gpu for use by a shader
- * 
- * @param app 
- * @param image_data contains image data on the cpu
- * @return Texture* 
- */
-Texture* App_create_texture(Application* app, ImageData* image_data);
+        /**
+         * \brief create a new app
+         * 
+         * \param platform a handle to a platform-specific handle. will be internally passed to all environment interactions that are platform-specific.
+         *
+         * \return a handle to a new application
+         */
+        Application(PlatformHandle* platform);
 
-/**
- * @brief create a new window
- * 
- * @param app 
- * @return PlatformWindow* 
- */
-PlatformWindow* App_create_window(
-    Application* app,
-    uint16_t width,
-    uint16_t height
-);
-/**
- * @brief create a vulkan surface for the specified window
- * 
- * @param app 
- * @param platform_window 
- * @return VkSurfaceKHR 
- */
-VkSurfaceKHR App_create_window_vk_surface(Application* app,PlatformWindow* platform_window);
+        /**
+         * @brief run the main loop of an application
+         * runs until the open window is closed
+         * 
+         * @param app 
+         */
+        void run();
 
-#define INPUT_EVENT_PRESENT 1
-#define INPUT_EVENT_NOT_PRESENT 0
-/**
- * @brief attempt to retrieve a user input event
- * 
- * @param app 
- * @param event 
- * @return 1 if an event is present, otherwise 0
- */
-int App_get_input_event(Application* app,InputEvent* event);
-/**
- * @brief destroy a window
- * 
- * destroy a window. note that this cleans up the resources used by the window, and does not indicate destruction of a window during the main application event loop.
- * 
- * @param app 
- * @param window 
- */
-void App_destroy_window(Application* app, PlatformWindow* window);
-/**
- * @brief set the title of the specified window
- * 
- * @param app 
- * @param window 
- * @param title 
- */
-void App_set_window_title(Application* app, PlatformWindow* window, const char* title);
+        /**
+         * @brief destroy an application and free all resources
+         * 
+         * @param app 
+         */
+        void destroy();
 
-/**
- * @brief upload a mesh to the gpu
- * 
- * @param app 
- * @param recording_command_buffer a vulkan command buffer in recording state where the upload commands will be recorded
- * @param num_vertices number of vertices in the specified cpu buffer
- * @param vertex_data vertex data on the cpu
- * @return Mesh* 
- */
-Mesh* App_upload_mesh(
-    Application* app,
+        /**
+         * @brief create a new texture on the gpu for use by a shader
+         * 
+         * @param app 
+         * @param image_data contains image data on the cpu
+         * @return Texture* 
+         */
+        Texture* create_texture(ImageData* image_data);
+        void upload_texture(
+            Texture* const texture,
+            const ImageData* const image_data,
+            VkCommandBuffer recording_command_buffer
+        );
+        void destroy_texture(Texture* texture);
 
-    VkCommandBuffer recording_command_buffer,
+        /**
+         * @brief create a new window
+         * 
+         * @param app 
+         * @return PlatformWindow* 
+         */
+        PlatformWindow* create_window(
+            uint16_t width,
+            uint16_t height
+        );
+        /**
+         * @brief create a vulkan surface for the specified window
+         * 
+         * @param app 
+         * @param platform_window 
+         * @return VkSurfaceKHR 
+         */
+        VkSurfaceKHR create_window_vk_surface(PlatformWindow* platform_window);
 
-    uint32_t num_vertices,
-    VertexData* vertex_data
-);
-/**
- * @brief destroy a mesh and free all resources on the gpu
- * 
- * @param app 
- * @param mesh 
- */
-void App_destroy_mesh(Application* app,Mesh* mesh);
+        #define INPUT_EVENT_PRESENT 1
+        #define INPUT_EVENT_NOT_PRESENT 0
+        /**
+         * @brief attempt to retrieve a user input event
+         * 
+         * @param app 
+         * @param event 
+         * @return 1 if an event is present, otherwise 0
+         */
+        int get_input_event(InputEvent* event);
+        /**
+         * @brief destroy a window
+         * 
+         * destroy a window. note that this cleans up the resources used by the window, and does not indicate destruction of a window during the main application event loop.
+         * 
+         * @param app 
+         * @param window 
+         */
+        void destroy_window(PlatformWindow* window);
+        /**
+         * @brief set the title of the specified window
+         * 
+         * @param app 
+         * @param window 
+         * @param title 
+         */
+        void set_window_title(PlatformWindow* window, const char* title);
 
-/**
- * @brief upload data to gpu
- * allocates device memory, if memory handle is VK_NULL_HANDLE
- * creates buffer, if buffer handle is VK_NULL_HANDLE
- * and copies data to target memory (directly into target memory, i.e. target memory is host visible)
- * @param app 
- * @param recording_command_buffer 
- * @param buffer 
- * @param buffer_memory 
- * @param data_size_bytes 
- * @param data 
- */
-void App_upload_data(
-    Application* app,
+        /**
+         * @brief upload a mesh to the gpu
+         * 
+         * @param app 
+         * @param recording_command_buffer a vulkan command buffer in recording state where the upload commands will be recorded
+         * @param num_vertices number of vertices in the specified cpu buffer
+         * @param vertex_data vertex data on the cpu
+         * @return Mesh* 
+         */
+        Mesh* upload_mesh(
+            VkCommandBuffer recording_command_buffer,
 
-    VkCommandBuffer recording_command_buffer,
+            uint32_t num_vertices,
+            VertexData* vertex_data
+        );
+        /**
+         * @brief destroy a mesh and free all resources on the gpu
+         * 
+         * @param app 
+         * @param mesh 
+         */
+        void destroy_mesh(Mesh* mesh);
 
-    VkBufferUsageFlagBits buffer_usage_flags,
-    VkBuffer* buffer,
-    VkDeviceMemory* buffer_memory,
+        /**
+         * @brief upload data to gpu
+         * allocates device memory, if memory handle is VK_NULL_HANDLE
+         * creates buffer, if buffer handle is VK_NULL_HANDLE
+         * and copies data to target memory (directly into target memory, i.e. target memory is host visible)
+         * @param app 
+         * @param recording_command_buffer 
+         * @param buffer 
+         * @param buffer_memory 
+         * @param data_size_bytes 
+         * @param data 
+         */
+        void upload_data(
+            VkCommandBuffer recording_command_buffer,
 
-    VkDeviceSize data_size_bytes,
-    void* data
-);
+            VkBufferUsageFlagBits buffer_usage_flags,
+            VkBuffer* buffer,
+            VkDeviceMemory* buffer_memory,
+
+            VkDeviceSize data_size_bytes,
+            void* data
+        );
+
+        VkShaderModule create_shader_module(
+            const char* const shader_file_path
+        );
+        Shader* create_shader(
+            const uint32_t subpass,
+            const uint32_t subpass_num_attachments
+        );
+        void destroy_shader(Shader* const shader);
+
+        VkSwapchainCreateInfoKHR create_swapchain();
+};
+

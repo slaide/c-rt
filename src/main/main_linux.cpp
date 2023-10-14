@@ -4,9 +4,9 @@
 
 #include <vector>
 
-#include <vulkan/vulkan.h>
 #include <xcb/xcb.h>
 #include <xcb/xcb_util.h>
+#include <vulkan/vulkan.h>
 
 #include <app/app.hpp>
 
@@ -56,45 +56,45 @@ xcb_atom_t Platform_xcb_intern_atom(PlatformHandle* platform,const char* atom_na
     return atom;
 }
 
-void App_set_window_title(Application* app, PlatformWindow* window, const char* title){
-    xcb_atom_t net_wm_name=Platform_xcb_intern_atom(app->platform_handle,"_NET_WM_NAME");
-    xcb_atom_t net_wm_visible_name=Platform_xcb_intern_atom(app->platform_handle,"_NET_WM_VISIBLE_NAME");
+void Application::set_window_title(PlatformWindow* window, const char* title){
+    xcb_atom_t net_wm_name=Platform_xcb_intern_atom(this->platform_handle,"_NET_WM_NAME");
+    xcb_atom_t net_wm_visible_name=Platform_xcb_intern_atom(this->platform_handle,"_NET_WM_VISIBLE_NAME");
 
-    xcb_void_cookie_t change_property_cookie=xcb_change_property_checked(app->platform_handle->connection, 
+    xcb_void_cookie_t change_property_cookie=xcb_change_property_checked(this->platform_handle->connection, 
         XCB_PROP_MODE_REPLACE, 
         window->window, 
         net_wm_name, 
-        Platform_xcb_intern_atom(app->platform_handle,"UTF8_STRING"), 
+        Platform_xcb_intern_atom(this->platform_handle,"UTF8_STRING"), 
         8, (uint32_t)strlen(title), title
     );
-    xcb_generic_error_t* change_property_error=xcb_request_check(app->platform_handle->connection, change_property_cookie);
+    xcb_generic_error_t* change_property_error=xcb_request_check(this->platform_handle->connection, change_property_cookie);
     if(change_property_error!=NULL){
         fprintf(stderr,"failed to set property because %s\n",xcb_event_get_error_label(change_property_error->error_code));
         exit(XCB_CHANGE_PROPERTY_FAILURE);
     }
-    change_property_cookie=xcb_change_property_checked(app->platform_handle->connection, 
+    change_property_cookie=xcb_change_property_checked(this->platform_handle->connection, 
         XCB_PROP_MODE_REPLACE, 
         window->window, 
         net_wm_visible_name, 
-        Platform_xcb_intern_atom(app->platform_handle,"UTF8_STRING"), 
+        Platform_xcb_intern_atom(this->platform_handle,"UTF8_STRING"), 
         8, (uint32_t)strlen(title), title
     );
-    change_property_error=xcb_request_check(app->platform_handle->connection, change_property_cookie);
+    change_property_error=xcb_request_check(this->platform_handle->connection, change_property_cookie);
     if(change_property_error!=NULL){
         fprintf(stderr,"failed to set property because %s\n",xcb_event_get_error_label(change_property_error->error_code));
         exit(XCB_CHANGE_PROPERTY_FAILURE);
     }
 }
-VkSurfaceKHR App_create_window_vk_surface(Application* app,PlatformWindow* platform_window){
+VkSurfaceKHR Application::create_window_vk_surface(PlatformWindow* platform_window){
     VkXcbSurfaceCreateInfoKHR surface_create_info={
         .sType=VK_STRUCTURE_TYPE_XCB_SURFACE_CREATE_INFO_KHR,
         .pNext=NULL,
         .flags=0,
-        .connection=app->platform_handle->connection,
+        .connection=this->platform_handle->connection,
         .window=platform_window->window
     };
     VkSurfaceKHR surface;
-    VkResult res=vkCreateXcbSurfaceKHR(app->instance, &surface_create_info, app->vk_allocator, &surface);
+    VkResult res=vkCreateXcbSurfaceKHR(this->instance, &surface_create_info, this->vk_allocator, &surface);
     if(res!=VK_SUCCESS){
         fprintf(stderr,"failed to create xcb surface\n");
         exit(VULKAN_CREATE_XCB_SURFACE_FAILURE);
@@ -126,8 +126,8 @@ InputKeyCode XCBKeycode_to_InputKeyCode(xcb_keycode_t keycode){
     }
 }
 
-int App_get_input_event(Application* app,InputEvent* input_event){
-    xcb_generic_event_t* xcb_event=xcb_poll_for_event(app->platform_handle->connection);
+int Application::get_input_event(InputEvent* input_event){
+    xcb_generic_event_t* xcb_event=xcb_poll_for_event(this->platform_handle->connection);
     if(xcb_event == NULL){
         return INPUT_EVENT_NOT_PRESENT;
     }
@@ -141,7 +141,7 @@ int App_get_input_event(Application* app,InputEvent* input_event){
         case XCB_CLIENT_MESSAGE:
             {
                 xcb_client_message_event_t* client_message = (xcb_client_message_event_t*) xcb_event;
-                for(PlatformWindow* open_window : app->platform_handle->open_windows){
+                for(PlatformWindow* open_window : this->platform_handle->open_windows){
                     xcb_atom_t client_message_atom=client_message->data.data32[0];
                     if(client_message_atom==open_window->delete_window_atom){
                         input_event->generic.input_event_type=INPUT_EVENT_TYPE_WINDOW_CLOSE;
@@ -157,11 +157,11 @@ int App_get_input_event(Application* app,InputEvent* input_event){
                 input_event->windowresized.new_height=config_event->height;
                 input_event->windowresized.new_width=config_event->width;
 
-                input_event->windowresized.old_height=app->platform_window->window_height;
-                input_event->windowresized.old_width=app->platform_window->window_width;
+                input_event->windowresized.old_height=this->platform_window->window_height;
+                input_event->windowresized.old_width=this->platform_window->window_width;
 
-                app->platform_window->window_height=config_event->height;
-                app->platform_window->window_width=config_event->width;
+                this->platform_window->window_height=config_event->height;
+                this->platform_window->window_width=config_event->width;
             }
             break;
 
@@ -177,7 +177,7 @@ int App_get_input_event(Application* app,InputEvent* input_event){
                 xcb_motion_notify_event_t* motion_event=(xcb_motion_notify_event_t*)xcb_event;
                 input_event->pointermove.input_event_type=INPUT_EVENT_TYPE_POINTER_MOVE;
                 input_event->pointermove.pointer_x=motion_event->event_x;
-                input_event->pointermove.pointer_y=app->platform_window->render_area_height-motion_event->event_y;
+                input_event->pointermove.pointer_y=this->platform_window->render_area_height-motion_event->event_y;
 
                 if(motion_event->state&256){
                     input_event->pointermove.button_pressed=INPUT_BUTTON_LEFT;
@@ -198,19 +198,19 @@ int App_get_input_event(Application* app,InputEvent* input_event){
                         input_event->buttonpress.input_event_type=INPUT_EVENT_TYPE_BUTTON_PRESS;
                         input_event->buttonpress.button=INPUT_BUTTON_LEFT;
                         input_event->buttonpress.pointer_x=button_event->event_x;
-                        input_event->buttonpress.pointer_y=app->platform_window->render_area_height-button_event->event_y;
+                        input_event->buttonpress.pointer_y=this->platform_window->render_area_height-button_event->event_y;
                         break;
                     case MOUSE_BUTTON_MIDDLE:
                         input_event->buttonpress.input_event_type=INPUT_EVENT_TYPE_BUTTON_PRESS;
                         input_event->buttonpress.button=INPUT_BUTTON_MIDDLE;
                         input_event->buttonpress.pointer_x=button_event->event_x;
-                        input_event->buttonpress.pointer_y=app->platform_window->render_area_height-button_event->event_y;
+                        input_event->buttonpress.pointer_y=this->platform_window->render_area_height-button_event->event_y;
                         break;
                     case MOUSE_BUTTON_RIGHT:
                         input_event->buttonpress.input_event_type=INPUT_EVENT_TYPE_BUTTON_PRESS;
                         input_event->buttonpress.button=INPUT_BUTTON_RIGHT;
                         input_event->buttonpress.pointer_x=button_event->event_x;
-                        input_event->buttonpress.pointer_y=app->platform_window->render_area_height-button_event->event_y;
+                        input_event->buttonpress.pointer_y=this->platform_window->render_area_height-button_event->event_y;
                         break;
                     case MOUSE_BUTTON_SCROLL_UP:{
                             input_event->scroll.input_event_type=INPUT_EVENT_TYPE_SCROLL;
@@ -295,20 +295,19 @@ void Platform_destroy(PlatformHandle* platform){
     delete platform;
 }
 
-PlatformWindow* App_create_window(
-    Application* app,
+PlatformWindow* Application::create_window(
     uint16_t width,
     uint16_t height
 ){
-    const xcb_setup_t* setup=xcb_get_setup(app->platform_handle->connection);
+    const xcb_setup_t* setup=xcb_get_setup(this->platform_handle->connection);
     xcb_screen_iterator_t screens=xcb_setup_roots_iterator(setup);
 
     PlatformWindow* window=new PlatformWindow();
     window->window_height=height;
     window->window_width=width;
     
-    window->window=xcb_generate_id(app->platform_handle->connection);
-    xcb_flush(app->platform_handle->connection);
+    window->window=xcb_generate_id(this->platform_handle->connection);
+    xcb_flush(this->platform_handle->connection);
 
     // possible value mask values are in enum xcb_cw_t
     xcb_cw_t value_mask=XCB_CW_EVENT_MASK;
@@ -322,7 +321,7 @@ PlatformWindow* App_create_window(
     };
 
     xcb_void_cookie_t window_create_reply=xcb_create_window_checked(
-        app->platform_handle->connection, 
+        this->platform_handle->connection, 
         XCB_COPY_FROM_PARENT, 
         window->window, 
         screens.data->root, 
@@ -334,45 +333,45 @@ PlatformWindow* App_create_window(
         value_mask,
         value_list
     );
-    xcb_generic_error_t* window_create_error=xcb_request_check(app->platform_handle->connection, window_create_reply);
+    xcb_generic_error_t* window_create_error=xcb_request_check(this->platform_handle->connection, window_create_reply);
     if(window_create_error!=NULL && window_create_error->error_code!=0){
         fprintf(stderr,"failed to create window %d\n",window_create_error->error_code);
         exit(XCB_WINDOW_CREATE_FAILURE);
     }
 
-    xcb_flush(app->platform_handle->connection);
+    xcb_flush(this->platform_handle->connection);
 
-    window->delete_window_atom=Platform_xcb_intern_atom(app->platform_handle, "WM_DELETE_WINDOW");
-    xcb_atom_t wm_protocols_atom=Platform_xcb_intern_atom(app->platform_handle, "WM_PROTOCOLS");
+    window->delete_window_atom=Platform_xcb_intern_atom(this->platform_handle, "WM_DELETE_WINDOW");
+    xcb_atom_t wm_protocols_atom=Platform_xcb_intern_atom(this->platform_handle, "WM_PROTOCOLS");
 
-    xcb_void_cookie_t change_property_cookie=xcb_change_property_checked(app->platform_handle->connection, XCB_PROP_MODE_REPLACE, window->window, wm_protocols_atom, XCB_ATOM_ATOM, 32, 1, &window->delete_window_atom);
-    xcb_generic_error_t* change_property_error=xcb_request_check(app->platform_handle->connection, change_property_cookie);
+    xcb_void_cookie_t change_property_cookie=xcb_change_property_checked(this->platform_handle->connection, XCB_PROP_MODE_REPLACE, window->window, wm_protocols_atom, XCB_ATOM_ATOM, 32, 1, &window->delete_window_atom);
+    xcb_generic_error_t* change_property_error=xcb_request_check(this->platform_handle->connection, change_property_cookie);
     if(change_property_error!=NULL){
         fprintf(stderr,"failed to set property because %s\n",xcb_event_get_error_label(change_property_error->error_code));
         exit(XCB_CHANGE_PROPERTY_FAILURE);
     }
 
-    int xcb_connection_error_state=xcb_connection_has_error(app->platform_handle->connection);
+    int xcb_connection_error_state=xcb_connection_has_error(this->platform_handle->connection);
     if(xcb_connection_error_state!=0){
         fprintf(stderr,"xcb connection error state %d\n",xcb_connection_error_state);
         exit(XCB_CONNECT_FAILURE);
     }
 
-    xcb_map_window(app->platform_handle->connection,window->window);
+    xcb_map_window(this->platform_handle->connection,window->window);
 
-    app->platform_handle->open_windows.push_back(window);
+    this->platform_handle->open_windows.push_back(window);
 
     return window;
 }
-void App_destroy_window(Application* app, PlatformWindow* window){
-    xcb_unmap_window(app->platform_handle->connection,window->window);
-    xcb_destroy_window(app->platform_handle->connection,window->window);
+void Application::destroy_window(PlatformWindow* window){
+    xcb_unmap_window(this->platform_handle->connection,window->window);
+    xcb_destroy_window(this->platform_handle->connection,window->window);
 
     delete window;
 
-    for(auto it=app->platform_handle->open_windows.begin();it<app->platform_handle->open_windows.end();it++){
+    for(auto it=this->platform_handle->open_windows.begin();it<this->platform_handle->open_windows.end();it++){
         if(*it==window){
-            app->platform_handle->open_windows.erase(it);
+            this->platform_handle->open_windows.erase(it);
             break;
         }
     }
@@ -380,20 +379,20 @@ void App_destroy_window(Application* app, PlatformWindow* window){
 
 int main(int argc, char** argv){
     PlatformHandle* platform=Platform_new();
-    Application *app=App_new(platform);
+    Application *app=new Application(platform);
 
     app->cli_num_args=(uint32_t)argc;
     app->cli_args=argv;
 
     if (app->cli_num_args>1) {
-        App_set_window_title(app,app->platform_window,app->cli_args[1]);
+        app->set_window_title(app->platform_window,app->cli_args[1]);
     }else{
-        App_set_window_title(app,app->platform_window,"unknown image");
+        app->set_window_title(app->platform_window,"unknown image");
     }
 
-    App_run(app);
+    app->run();
 
-    App_destroy(app);
+    app->destroy();
     Platform_destroy(platform);
     
     return 0;

@@ -12,6 +12,7 @@
 #include <unistd.h>
 #include <array>
 #include <vector>
+#include <ranges>
 #include <string>
 
 double current_time(){
@@ -137,7 +138,7 @@ const char* vkRes2str(VkResult res){
  * @return const char* NULL on invalid or unknown device type
  */
 [[gnu::pure]]
-const char* device_type_name(VkPhysicalDeviceType device_type){
+std::string device_type_name(VkPhysicalDeviceType device_type){
     switch(device_type){
         case VK_PHYSICAL_DEVICE_TYPE_CPU: return "VK_PHYSICAL_DEVICE_TYPE_CPU";
         case VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU: return "VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU";
@@ -181,8 +182,8 @@ struct Texture{
  * @param image_data 
  * @return Texture* 
  */
-[[gnu::nonnull(1,2)]]
-Texture* App_create_texture(Application* app, ImageData* image_data){
+[[gnu::nonnull(2)]]
+Texture* Application::create_texture(ImageData* image_data){
     Texture* texture=new Texture();
 
     auto image_format=image_data->vk_img_format();
@@ -208,18 +209,18 @@ Texture* App_create_texture(Application* app, ImageData* image_data){
         .pQueueFamilyIndices=NULL,
         .initialLayout=VK_IMAGE_LAYOUT_UNDEFINED
     };
-    VkResult res=vkCreateImage(app->device,&image_create_info,app->vk_allocator,&texture->image);
+    VkResult res=vkCreateImage(this->device,&image_create_info,this->vk_allocator,&texture->image);
     if(res!=VK_SUCCESS){
         fprintf(stderr,"failed to create image\n");
         exit(VULKAN_CREATE_IMAGE_FAILURE);
     }
 
     VkMemoryRequirements image_memory_requirements;
-    vkGetImageMemoryRequirements(app->device, texture->image, &image_memory_requirements);
+    vkGetImageMemoryRequirements(this->device, texture->image, &image_memory_requirements);
 
     uint32_t image_memory_type_index=UINT32_MAX;
     VkPhysicalDeviceMemoryProperties physical_device_memory_properties;
-    vkGetPhysicalDeviceMemoryProperties(app->physical_device,&physical_device_memory_properties);
+    vkGetPhysicalDeviceMemoryProperties(this->physical_device,&physical_device_memory_properties);
     for(uint32_t i=0;i<physical_device_memory_properties.memoryTypeCount;i++){
         if(image_memory_requirements.memoryTypeBits&(1<<i)){
             image_memory_type_index=i;
@@ -233,12 +234,12 @@ Texture* App_create_texture(Application* app, ImageData* image_data){
         .allocationSize=image_memory_requirements.size,
         .memoryTypeIndex=image_memory_type_index
     };
-    res=vkAllocateMemory(app->device, &image_memory_allocate_info, app->vk_allocator, &texture->image_memory);
+    res=vkAllocateMemory(this->device, &image_memory_allocate_info, this->vk_allocator, &texture->image_memory);
     if(res!=VK_SUCCESS){
         fprintf(stderr,"failed to allocate image memory\n");
         exit(VULKAN_ALLOCATE_MEMORY_FAILURE);
     }
-    res=vkBindImageMemory(app->device, texture->image, texture->image_memory, 0);
+    res=vkBindImageMemory(this->device, texture->image, texture->image_memory, 0);
     if(res!=VK_SUCCESS){
         fprintf(stderr,"failed to bind image memory\n");
         exit(VULKAN_BIND_IMAGE_MEMORY_FAILURE);
@@ -266,7 +267,7 @@ Texture* App_create_texture(Application* app, ImageData* image_data){
         },
         .subresourceRange=image_subresource_range
     };
-    res=vkCreateImageView(app->device,&image_view_create_info,app->vk_allocator,&texture->image_view);
+    res=vkCreateImageView(this->device,&image_view_create_info,this->vk_allocator,&texture->image_view);
     if(res!=VK_SUCCESS){
         fprintf(stderr,"failed to create image view\n");
         exit(VULKAN_CREATE_IMAGE_VIEW_FAILURE);
@@ -275,18 +276,18 @@ Texture* App_create_texture(Application* app, ImageData* image_data){
     VkDescriptorSetAllocateInfo descriptor_set_allocate_info={
         .sType=VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
         .pNext=NULL,
-        .descriptorPool=app->shader->descriptor_pool,
+        .descriptorPool=this->shader->descriptor_pool,
         .descriptorSetCount=1,
-        .pSetLayouts=&app->shader->set_layout
+        .pSetLayouts=&this->shader->set_layout
     };
-    res=vkAllocateDescriptorSets(app->device, &descriptor_set_allocate_info, &texture->descriptor_set);
+    res=vkAllocateDescriptorSets(this->device, &descriptor_set_allocate_info, &texture->descriptor_set);
     if(res!=VK_SUCCESS){
         fprintf(stderr,"failed to allocate descriptor sets\n");
         exit(VULKAN_ALLOCATE_DESCRIPTOR_SETS_FAILURE);
     }
 
     VkDescriptorImageInfo descriptor_image_info={
-        .sampler=app->shader->image_sampler,
+        .sampler=this->shader->image_sampler,
         .imageView=texture->image_view,
         .imageLayout=VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
     };
@@ -302,12 +303,11 @@ Texture* App_create_texture(Application* app, ImageData* image_data){
         .pBufferInfo=NULL,
         .pTexelBufferView=NULL
     };
-    vkUpdateDescriptorSets(app->device, 1, &write_descriptor_set, 0, NULL);
+    vkUpdateDescriptorSets(this->device, 1, &write_descriptor_set, 0, NULL);
 
     return texture;
 }
-void App_upload_texture(
-    Application* const app,
+void Application::upload_texture(
     Texture* const texture,
     const ImageData* const image_data,
     VkCommandBuffer recording_command_buffer
@@ -345,17 +345,17 @@ void App_upload_texture(
     }
 
     VkPhysicalDeviceProperties physical_device_properties;
-    vkGetPhysicalDeviceProperties(app->physical_device,&physical_device_properties);
+    vkGetPhysicalDeviceProperties(this->physical_device,&physical_device_properties);
 
     VkDeviceSize image_memory_size_raw=image_data->height*image_data->width*4;
     VkDeviceSize image_memory_size=ROUND_UP(image_memory_size_raw, physical_device_properties.limits.nonCoherentAtomSize);
 
-    const VkDeviceSize image_offset_into_staging_buffer=app->staging_buffer_size_occupied;
+    const VkDeviceSize image_offset_into_staging_buffer=this->staging_buffer_size_occupied;
 
     void* staging_buffer_cpu_memory;
     VkResult res=vkMapMemory(
-        app->device, 
-        app->staging_buffer_memory, 
+        this->device, 
+        this->staging_buffer_memory, 
         image_offset_into_staging_buffer, 
         image_memory_size, 0, &staging_buffer_cpu_memory
     );
@@ -363,10 +363,10 @@ void App_upload_texture(
         fprintf(stderr,"failed to map memory\n");
         exit(VULKAN_MAP_MEMORY_FAILURE);
     }
-    app->staging_buffer_size_occupied+=image_memory_size;
+    this->staging_buffer_size_occupied+=image_memory_size;
 
-    if(app->staging_buffer_size_occupied>app->staging_buffer_size){
-        fprintf(stderr,"copied more data into staging buffer than fits into it (%" PRIu64 " > %" PRIu64 ")\n",app->staging_buffer_size_occupied,app->staging_buffer_size);
+    if(this->staging_buffer_size_occupied>this->staging_buffer_size){
+        fprintf(stderr,"copied more data into staging buffer than fits into it (%" PRIu64 " > %" PRIu64 ")\n",this->staging_buffer_size_occupied,this->staging_buffer_size);
         exit(ERROR_STAGING_BUFFER_OVERFLOW);
     }
 
@@ -375,17 +375,17 @@ void App_upload_texture(
     VkMappedMemoryRange flush_memory_range={
         .sType=VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
         .pNext=NULL,
-        .memory=app->staging_buffer_memory,
+        .memory=this->staging_buffer_memory,
         .offset=image_offset_into_staging_buffer,
         .size=VK_WHOLE_SIZE
     };
-    res=vkFlushMappedMemoryRanges(app->device, 1, &flush_memory_range);
+    res=vkFlushMappedMemoryRanges(this->device, 1, &flush_memory_range);
     if (res!=VK_SUCCESS) {
         fprintf(stderr,"failed to flush mapped memory ranges\n");
         exit(VULKAN_FLUSH_MAPPED_MEMORY_RANGES_FAILURE);
     }
 
-    vkUnmapMemory(app->device, app->staging_buffer_memory);
+    vkUnmapMemory(this->device, this->staging_buffer_memory);
 
     VkBufferImageCopy buffer_image_copy={
         .bufferOffset=image_offset_into_staging_buffer,
@@ -400,7 +400,7 @@ void App_upload_texture(
         .imageOffset={.x=0,.y=0,.z=0},
         .imageExtent={.width=image_data->width,.height=image_data->height,.depth=1}
     };
-    vkCmdCopyBufferToImage(command_buffer, app->staging_buffer, texture->image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &buffer_image_copy);
+    vkCmdCopyBufferToImage(command_buffer, this->staging_buffer, texture->image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &buffer_image_copy);
 
     {
         VkImageMemoryBarrier image_memory_barriers[1]={{
@@ -432,16 +432,15 @@ void App_upload_texture(
         );
     }
 }
-void App_destroy_texture(Application* app, Texture* texture){
-    vkDestroyImageView(app->device,texture->image_view,app->vk_allocator);
-    vkDestroyImage(app->device,texture->image,app->vk_allocator);
-    vkFreeMemory(app->device,texture->image_memory,app->vk_allocator);
+void Application::destroy_texture(Texture* texture){
+    vkDestroyImageView(this->device,texture->image_view,this->vk_allocator);
+    vkDestroyImage(this->device,texture->image,this->vk_allocator);
+    vkFreeMemory(this->device,texture->image_memory,this->vk_allocator);
 
     delete texture;
 }
 
-VkShaderModule App_create_shader_module(
-    Application* const app,
+VkShaderModule Application::create_shader_module(
     const char* const shader_file_path
 ){
     FILE* shader_file=fopen(shader_file_path,"rb");
@@ -473,24 +472,22 @@ VkShaderModule App_create_shader_module(
     };
 
     VkShaderModule shader;
-    vkCreateShaderModule(app->device, &shader_module_create_info, app->vk_allocator, &shader);
+    vkCreateShaderModule(this->device, &shader_module_create_info, this->vk_allocator, &shader);
 
     delete[] shader_code;
 
     return shader;
 }
-Shader* App_create_shader(
-    Application* const app,
-
+Shader* Application::create_shader(
     const uint32_t subpass,
     const uint32_t subpass_num_attachments
 ){
     Shader* shader=new Shader();
 
-    shader->app=app;
+    shader->app=this;
 
-    shader->fragment_shader=App_create_shader_module(app, "fragshader.spv");
-    shader->vertex_shader=App_create_shader_module(app, "vertshader.spv");
+    shader->fragment_shader=Application::create_shader_module("fragshader.spv");
+    shader->vertex_shader=Application::create_shader_module("vertshader.spv");
 
     {
         VkDescriptorSetLayoutBinding set_layout_bindings[2]={
@@ -516,7 +513,7 @@ Shader* App_create_shader(
             .bindingCount=2,
             .pBindings=set_layout_bindings
         };
-        VkResult res=vkCreateDescriptorSetLayout(app->device, &descriptor_set_layout, app->vk_allocator, &shader->set_layout);
+        VkResult res=vkCreateDescriptorSetLayout(this->device, &descriptor_set_layout, this->vk_allocator, &shader->set_layout);
         if(res!=VK_SUCCESS){
             fprintf(stderr,"failed to create descriptor set layout\n");
             exit(VULKAN_CREATE_DESCRIPTOR_SET_LAYOUT_FAILURE);
@@ -526,22 +523,22 @@ Shader* App_create_shader(
     VkDescriptorPoolSize pool_sizes[2]={
         {
             .type=VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-            .descriptorCount=app->cli_num_args,
+            .descriptorCount=this->cli_num_args,
         },
         {
             .type=VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-            .descriptorCount=app->cli_num_args,
+            .descriptorCount=this->cli_num_args,
         }
     };
     VkDescriptorPoolCreateInfo descriptor_pool_create_info={
         .sType=VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
         .pNext=NULL,
         .flags=0,
-        .maxSets=app->cli_num_args,
+        .maxSets=this->cli_num_args,
         .poolSizeCount=2,
         .pPoolSizes=pool_sizes
     };
-    VkResult res=vkCreateDescriptorPool(app->device, &descriptor_pool_create_info, app->vk_allocator, &shader->descriptor_pool);
+    VkResult res=vkCreateDescriptorPool(this->device, &descriptor_pool_create_info, this->vk_allocator, &shader->descriptor_pool);
     if(res!=VK_SUCCESS){
         fprintf(stderr,"failed to create descriptor pool\n");
         exit(VULKAN_CREATE_DESCRIPTOR_POOL_FAILURE);
@@ -567,7 +564,7 @@ Shader* App_create_shader(
         .borderColor=VK_BORDER_COLOR_INT_OPAQUE_BLACK,
         .unnormalizedCoordinates=VK_FALSE
     };
-    res=vkCreateSampler(app->device, &sampler_create_info, app->vk_allocator, &shader->image_sampler);
+    res=vkCreateSampler(this->device, &sampler_create_info, this->vk_allocator, &shader->image_sampler);
     if(res!=VK_SUCCESS){
         fprintf(stderr,"failed to create sampler\n");
         exit(FATAL_UNEXPECTED_ERROR);
@@ -582,7 +579,7 @@ Shader* App_create_shader(
         .pushConstantRangeCount=0,
         .pPushConstantRanges=NULL
     };
-    vkCreatePipelineLayout(app->device, &pipeline_layout_create_info, app->vk_allocator, &shader->pipeline_layout);
+    vkCreatePipelineLayout(this->device, &pipeline_layout_create_info, this->vk_allocator, &shader->pipeline_layout);
 
     VkVertexInputBindingDescription vertex_input_binding_descriptions[1]={{
         .binding=0,
@@ -723,16 +720,16 @@ Shader* App_create_shader(
         .pColorBlendState=&color_blend_state,
         .pDynamicState=&dynamic_state,
         .layout=shader->pipeline_layout,
-        .renderPass=app->render_pass,
+        .renderPass=this->render_pass,
         .subpass=subpass,
         .basePipelineHandle=NULL,
         .basePipelineIndex=-1
     };
-    vkCreateGraphicsPipelines(app->device, VK_NULL_HANDLE, 1, &graphics_pipeline_create_info, app->vk_allocator, &shader->pipeline);
+    vkCreateGraphicsPipelines(this->device, VK_NULL_HANDLE, 1, &graphics_pipeline_create_info, this->vk_allocator, &shader->pipeline);
 
     return shader;
 }
-void App_destroy_shader(Shader* const shader){
+void Application::destroy_shader(Shader* const shader){
     vkDestroyDescriptorPool(shader->app->device, shader->descriptor_pool, shader->app->vk_allocator);
     vkDestroyDescriptorSetLayout(shader->app->device, shader->set_layout, shader->app->vk_allocator);
 
@@ -748,31 +745,31 @@ void App_destroy_shader(Shader* const shader){
 /**
  * @brief create swapchain
  * re-creates swapchain if an old one exists.
- * if app->render_pass exists, swapchain image views and framebuffers will be recreated
+ * if this->render_pass exists, swapchain image views and framebuffers will be recreated
  * @param app 
  * @return VkSwapchainCreateInfoKHR 
  */
-VkSwapchainCreateInfoKHR App_create_swapchain(Application* app){
+VkSwapchainCreateInfoKHR Application::create_swapchain(){
     VkResult res;
 
     uint32_t num_surface_formats;
-    vkGetPhysicalDeviceSurfaceFormatsKHR(app->physical_device, app->window_surface, &num_surface_formats, NULL);
+    vkGetPhysicalDeviceSurfaceFormatsKHR(this->physical_device, this->window_surface, &num_surface_formats, NULL);
     std::vector<VkSurfaceFormatKHR> surface_formats(num_surface_formats);
-    vkGetPhysicalDeviceSurfaceFormatsKHR(app->physical_device, app->window_surface, &num_surface_formats, surface_formats.data());
-    app->swapchain_format=surface_formats[0];
+    vkGetPhysicalDeviceSurfaceFormatsKHR(this->physical_device, this->window_surface, &num_surface_formats, surface_formats.data());
+    this->swapchain_format=surface_formats[0];
     // get surface present mode
 
     VkSurfaceCapabilitiesKHR surface_capabilities;
-    res=vkGetPhysicalDeviceSurfaceCapabilitiesKHR(app->physical_device,app->window_surface,&surface_capabilities);
+    res=vkGetPhysicalDeviceSurfaceCapabilitiesKHR(this->physical_device,this->window_surface,&surface_capabilities);
     if(res!=VK_SUCCESS){
         fprintf(stderr,"vkGetPhysicalDeviceSurfaceCapabilitiesKHR failed with %d\n",res);
         exit(VULKAN_GET_PHYSICAL_DEVICE_SURFACE_CAPABILITIES_KHR_FAILURE);
     }
 
     uint32_t num_present_modes;
-    vkGetPhysicalDeviceSurfacePresentModesKHR(app->physical_device, app->window_surface, &num_present_modes, NULL);
+    vkGetPhysicalDeviceSurfacePresentModesKHR(this->physical_device, this->window_surface, &num_present_modes, NULL);
     std::vector<VkPresentModeKHR> present_modes(num_present_modes);
-    vkGetPhysicalDeviceSurfacePresentModesKHR(app->physical_device, app->window_surface, &num_present_modes, present_modes.data());
+    vkGetPhysicalDeviceSurfacePresentModesKHR(this->physical_device, this->window_surface, &num_present_modes, present_modes.data());
     VkPresentModeKHR swapchain_present_mode=present_modes[0];
 
     uint32_t swapchain_image_count=1;
@@ -780,15 +777,15 @@ VkSwapchainCreateInfoKHR App_create_swapchain(Application* app){
         swapchain_image_count=surface_capabilities.minImageCount;
     }
 
-    VkSwapchainKHR old_swapchain=app->swapchain;
+    VkSwapchainKHR old_swapchain=this->swapchain;
     VkSwapchainCreateInfoKHR swapchain_create_info={
         .sType=VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
         .pNext=NULL,
         .flags=0,
-        .surface=app->window_surface,
+        .surface=this->window_surface,
         .minImageCount=swapchain_image_count,
-        .imageFormat=app->swapchain_format.format,
-        .imageColorSpace=app->swapchain_format.colorSpace,
+        .imageFormat=this->swapchain_format.format,
+        .imageColorSpace=this->swapchain_format.colorSpace,
         .imageExtent=surface_capabilities.currentExtent,
         .imageArrayLayers=1,
         .imageUsage=VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
@@ -801,35 +798,35 @@ VkSwapchainCreateInfoKHR App_create_swapchain(Application* app){
         .clipped=VK_TRUE,
         .oldSwapchain=old_swapchain
     };
-    vkCreateSwapchainKHR(app->device, &swapchain_create_info, app->vk_allocator, &app->swapchain);
+    vkCreateSwapchainKHR(this->device, &swapchain_create_info, this->vk_allocator, &this->swapchain);
     if(old_swapchain!=VK_NULL_HANDLE){
-        vkDestroySwapchainKHR(app->device, old_swapchain, app->vk_allocator);
+        vkDestroySwapchainKHR(this->device, old_swapchain, this->vk_allocator);
     }
 
-    if (app->swapchain_images!=NULL) {
-        delete[] app->swapchain_images;
+    if (this->swapchain_images!=NULL) {
+        delete[] this->swapchain_images;
     }
 
-    vkGetSwapchainImagesKHR(app->device, app->swapchain, &app->num_swapchain_images, NULL);
-    app->swapchain_images=new VkImage[app->num_swapchain_images];
-    vkGetSwapchainImagesKHR(app->device, app->swapchain, &app->num_swapchain_images, app->swapchain_images);
+    vkGetSwapchainImagesKHR(this->device, this->swapchain, &this->num_swapchain_images, NULL);
+    this->swapchain_images=new VkImage[this->num_swapchain_images];
+    vkGetSwapchainImagesKHR(this->device, this->swapchain, &this->num_swapchain_images, this->swapchain_images);
 
-    if(app->render_pass!=VK_NULL_HANDLE){
-        if (app->swapchain_framebuffers!=NULL) {
-            for(uint32_t i=0;i<app->num_swapchain_images;i++){
-                vkDestroyFramebuffer(app->device, app->swapchain_framebuffers[i], app->vk_allocator);
+    if(this->render_pass!=VK_NULL_HANDLE){
+        if (this->swapchain_framebuffers!=NULL) {
+            for(uint32_t i=0;i<this->num_swapchain_images;i++){
+                vkDestroyFramebuffer(this->device, this->swapchain_framebuffers[i], this->vk_allocator);
             }
-            delete[] app->swapchain_framebuffers;
+            delete[] this->swapchain_framebuffers;
         }
-        if (app->swapchain_image_views!=NULL) {
-            for(uint32_t i=0;i<app->num_swapchain_images;i++){
-                vkDestroyImageView(app->device, app->swapchain_image_views[i], app->vk_allocator);
+        if (this->swapchain_image_views!=NULL) {
+            for(uint32_t i=0;i<this->num_swapchain_images;i++){
+                vkDestroyImageView(this->device, this->swapchain_image_views[i], this->vk_allocator);
             }
-            delete[] app->swapchain_image_views;
+            delete[] this->swapchain_image_views;
         }
 
-        app->swapchain_image_views=new VkImageView[app->num_swapchain_images];
-        app->swapchain_framebuffers=new VkFramebuffer[app->num_swapchain_images];
+        this->swapchain_image_views=new VkImageView[this->num_swapchain_images];
+        this->swapchain_framebuffers=new VkFramebuffer[this->num_swapchain_images];
 
         VkImageViewCreateInfo image_view_create_info={
             .sType=VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
@@ -837,7 +834,7 @@ VkSwapchainCreateInfoKHR App_create_swapchain(Application* app){
             .flags=0,
             .image=VK_NULL_HANDLE,
             .viewType=VK_IMAGE_VIEW_TYPE_2D,
-            .format=app->swapchain_format.format,
+            .format=this->swapchain_format.format,
             .components={
                 .r=VK_COMPONENT_SWIZZLE_IDENTITY,
                 .g=VK_COMPONENT_SWIZZLE_IDENTITY,
@@ -856,22 +853,22 @@ VkSwapchainCreateInfoKHR App_create_swapchain(Application* app){
             .sType=VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
             .pNext=NULL,
             .flags=0,
-            .renderPass=app->render_pass,
+            .renderPass=this->render_pass,
             .attachmentCount=1,
             .pAttachments=NULL,
             .width=swapchain_create_info.imageExtent.width,
             .height=swapchain_create_info.imageExtent.height,
             .layers=1
         };
-        for(uint32_t i=0;i<app->num_swapchain_images;i++){
-            image_view_create_info.image=app->swapchain_images[i];
-            res=vkCreateImageView(app->device, &image_view_create_info, app->vk_allocator, &app->swapchain_image_views[i]);
+        for(uint32_t i=0;i<this->num_swapchain_images;i++){
+            image_view_create_info.image=this->swapchain_images[i];
+            res=vkCreateImageView(this->device, &image_view_create_info, this->vk_allocator, &this->swapchain_image_views[i]);
             if(res!=VK_SUCCESS){
                 fprintf(stderr,"failed to create image view for swapchain image %d\n",i);
             }
 
-            framebuffer_create_info.pAttachments=&app->swapchain_image_views[i];
-            res=vkCreateFramebuffer(app->device,&framebuffer_create_info,app->vk_allocator,&app->swapchain_framebuffers[i]);
+            framebuffer_create_info.pAttachments=&this->swapchain_image_views[i];
+            res=vkCreateFramebuffer(this->device,&framebuffer_create_info,this->vk_allocator,&this->swapchain_framebuffers[i]);
             if(res!=VK_SUCCESS){
                 fprintf(stderr,"failed to create framebuffer for swapchain image %d\n",i);
             }
@@ -884,12 +881,7 @@ VkSwapchainCreateInfoKHR App_create_swapchain(Application* app){
 /// create a new app
 ///
 /// this struct owns all memory, unless indicated otherwise
-Application* App_new(PlatformHandle* platform){
-    Application* app=new Application();
-
-    app->vk_allocator=NULL;
-    app->platform_handle=platform;
-
+Application::Application(PlatformHandle* platform):platform_handle(platform){
     {
         uint32_t num_instance_extensions;
         vkEnumerateInstanceExtensionProperties(NULL, &num_instance_extensions, NULL);
@@ -949,33 +941,29 @@ Application* App_new(PlatformHandle* platform){
         .enabledExtensionCount=instance_extensions.size(),
         .ppEnabledExtensionNames=instance_extensions.data()
     };
-    VkResult res=vkCreateInstance(&instance_create_info,app->vk_allocator,&app->instance);
-    if(res!=VK_SUCCESS){
-        fprintf(stderr,"failed to create vulkan instance because %s\n",vkRes2str(res));
-        exit(VULKAN_CREATE_INSTANCE_FAILURE);
-    }
+    VkResult res=vkCreateInstance(&instance_create_info,this->vk_allocator,&this->instance);
+    if(res!=VK_SUCCESS)
+        bail(VULKAN_CREATE_INSTANCE_FAILURE,"failed to create vulkan instance because %s\n",vkRes2str(res));
 
-    app->platform_window=App_create_window(app,1280,720);
+    this->platform_window=this->create_window(1280,720);
 
-    app->window_surface=App_create_window_vk_surface(app,app->platform_window);
+    this->window_surface=this->create_window_vk_surface(this->platform_window);
 
     uint32_t num_physical_devices;
-    vkEnumeratePhysicalDevices(app->instance, &num_physical_devices, NULL);
+    vkEnumeratePhysicalDevices(this->instance, &num_physical_devices, NULL);
     std::vector<VkPhysicalDevice> physical_devices(num_physical_devices);
-    vkEnumeratePhysicalDevices(app->instance, &num_physical_devices, physical_devices.data());
+    vkEnumeratePhysicalDevices(this->instance, &num_physical_devices, physical_devices.data());
 
     // look for fit physical device, and required queue families
     uint32_t graphics_queue_family_index=UINT32_MAX;
     uint32_t present_queue_family_index=UINT32_MAX;
 
-    for(uint32_t i=0;i<num_physical_devices;i++){
-        VkPhysicalDevice physical_device=physical_devices[i];
-
+    for(auto physical_device : physical_devices){
         VkPhysicalDeviceProperties physical_device_properties;
         vkGetPhysicalDeviceProperties(physical_device,&physical_device_properties);
 
         #ifdef DEBUG
-            printf("vulkan device present: %s of type %s\n",physical_device_properties.deviceName,device_type_name(physical_device_properties.deviceType));
+            printf("vulkan device present: %s of type %s\n",physical_device_properties.deviceName,device_type_name(physical_device_properties.deviceType).data());
         #endif
 
         uint32_t num_queue_families;
@@ -993,7 +981,7 @@ Application* App_new(PlatformHandle* platform){
             }
 
             VkBool32 surface_presentation_supported;
-            vkGetPhysicalDeviceSurfaceSupportKHR(physical_device, queue_family_index, app->window_surface, &surface_presentation_supported);
+            vkGetPhysicalDeviceSurfaceSupportKHR(physical_device, queue_family_index, this->window_surface, &surface_presentation_supported);
 
             if(surface_presentation_supported==VK_TRUE){
                 present_queue_family_index=queue_family_index;
@@ -1010,19 +998,19 @@ Application* App_new(PlatformHandle* platform){
             continue;
         }
 
-        app->physical_device=physical_device;
+        this->physical_device=physical_device;
     }
 
     {
         uint32_t num_device_extensions;
-        vkEnumerateDeviceExtensionProperties(app->physical_device, NULL, &num_device_extensions,NULL);
+        vkEnumerateDeviceExtensionProperties(this->physical_device, NULL, &num_device_extensions,NULL);
         std::vector<VkExtensionProperties> device_extensions(num_device_extensions);
-        vkEnumerateDeviceExtensionProperties(app->physical_device, NULL, &num_device_extensions,device_extensions.data());
+        vkEnumerateDeviceExtensionProperties(this->physical_device, NULL, &num_device_extensions,device_extensions.data());
 
         uint32_t num_device_layers;
-        vkEnumerateDeviceLayerProperties(app->physical_device, &num_device_layers, NULL);
+        vkEnumerateDeviceLayerProperties(this->physical_device, &num_device_layers, NULL);
         std::vector<VkLayerProperties> device_layers(num_device_layers);
-        vkEnumerateDeviceLayerProperties(app->physical_device, &num_device_layers, device_layers.data());
+        vkEnumerateDeviceLayerProperties(this->physical_device, &num_device_layers, device_layers.data());
 
         for(uint32_t i=0;i<num_device_extensions;i++){
             //printf("device extension: %s\n",device_extensions[i].extensionName);
@@ -1032,8 +1020,8 @@ Application* App_new(PlatformHandle* platform){
         }
     }
 
-    app->graphics_queue_family_index=graphics_queue_family_index;
-    app->present_queue_family_index=present_queue_family_index;
+    this->graphics_queue_family_index=graphics_queue_family_index;
+    this->present_queue_family_index=present_queue_family_index;
 
     std::vector<VkDeviceQueueCreateInfo> queue_create_infos;
     uint32_t num_queue_create_infos;
@@ -1093,29 +1081,24 @@ Application* App_new(PlatformHandle* platform){
         .ppEnabledExtensionNames=device_extensions.data(),
         .pEnabledFeatures=&device_features
     };
-    res=vkCreateDevice(app->physical_device,&device_create_info,app->vk_allocator,&app->device);
+    res=vkCreateDevice(this->physical_device,&device_create_info,this->vk_allocator,&this->device);
     if(res!=VK_SUCCESS){
         exit(VULKAN_CREATE_DEVICE_FAILURE);
     }
 
     // if these are the same queue family, they will just point to the same queue, which is fine
-    vkGetDeviceQueue(app->device, graphics_queue_family_index, 0, &app->graphics_queue);
-    vkGetDeviceQueue(app->device, present_queue_family_index, 0, &app->present_queue);
+    vkGetDeviceQueue(this->device, graphics_queue_family_index, 0, &this->graphics_queue);
+    vkGetDeviceQueue(this->device, present_queue_family_index, 0, &this->present_queue);
 
-    app->swapchain_images=NULL;
-    app->swapchain_image_views=NULL;
-    app->swapchain_framebuffers=NULL;
-    app->swapchain=VK_NULL_HANDLE;
-    app->render_pass=VK_NULL_HANDLE;
-    VkSwapchainCreateInfoKHR swapchain_create_info=App_create_swapchain(app);
+    VkSwapchainCreateInfoKHR swapchain_create_info=this->create_swapchain();
 
-    PlatformWindow_set_render_area_width(app->platform_window,(uint16_t)swapchain_create_info.imageExtent.width);
-    PlatformWindow_set_render_area_height(app->platform_window,(uint16_t)swapchain_create_info.imageExtent.height);
+    PlatformWindow_set_render_area_width(this->platform_window,(uint16_t)swapchain_create_info.imageExtent.width);
+    PlatformWindow_set_render_area_height(this->platform_window,(uint16_t)swapchain_create_info.imageExtent.height);
 
     std::array<VkAttachmentDescription,1> render_pass_attachments={{
         {
             /*VkAttachmentDescriptionFlags*/    .flags=0,
-            /*VkFormat*/                        .format=app->swapchain_format.format,
+            /*VkFormat*/                        .format=this->swapchain_format.format,
             /*VkSampleCountFlagBits*/           .samples=VK_SAMPLE_COUNT_1_BIT,
             /*VkAttachmentLoadOp*/              .loadOp=VK_ATTACHMENT_LOAD_OP_CLEAR,
             /*VkAttachmentStoreOp*/             .storeOp=VK_ATTACHMENT_STORE_OP_STORE,
@@ -1176,42 +1159,42 @@ Application* App_new(PlatformHandle* platform){
         .dependencyCount=render_subpass_dependencies.size(),
         .pDependencies=render_subpass_dependencies.data()
     };
-    res=vkCreateRenderPass(app->device,&render_pass_create_info,app->vk_allocator,&app->render_pass);
+    res=vkCreateRenderPass(this->device,&render_pass_create_info,this->vk_allocator,&this->render_pass);
     if(res!=VK_SUCCESS){
         fprintf(stderr,"failed to create renderpass\n");
         exit(VULKAN_CREATE_RENDER_PASS_FAILURE);
     }
 
-    App_create_swapchain(app);
+    this->create_swapchain();
 
-    app->shader=NULL;
+    this->shader=NULL;
 
     static const VkDeviceSize STAGING_BUFFER_SIZE_BYTES=512*1024*1024;
-    app->staging_buffer_size=STAGING_BUFFER_SIZE_BYTES;
-    app->staging_buffer_size_occupied=0;
+    this->staging_buffer_size=STAGING_BUFFER_SIZE_BYTES;
+    this->staging_buffer_size_occupied=0;
 
     VkBufferCreateInfo staging_buffer_create_info={
         .sType=VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
         .pNext=NULL,
         .flags=0,
-        .size=app->staging_buffer_size,
+        .size=this->staging_buffer_size,
         .usage=VK_BUFFER_USAGE_TRANSFER_SRC_BIT|VK_BUFFER_USAGE_TRANSFER_DST_BIT,
         .sharingMode=VK_SHARING_MODE_EXCLUSIVE,
         .queueFamilyIndexCount=0,
         .pQueueFamilyIndices=NULL
     };
-    res=vkCreateBuffer(app->device, &staging_buffer_create_info, app->vk_allocator, &app->staging_buffer);
+    res=vkCreateBuffer(this->device, &staging_buffer_create_info, this->vk_allocator, &this->staging_buffer);
     if(res!=VK_SUCCESS){
         fprintf(stderr,"failed to create staging buffer\n");
         exit(FATAL_UNEXPECTED_ERROR);
     }
 
     VkMemoryRequirements staging_buffer_memory_requirements;
-    vkGetBufferMemoryRequirements(app->device, app->staging_buffer, &staging_buffer_memory_requirements);
+    vkGetBufferMemoryRequirements(this->device, this->staging_buffer, &staging_buffer_memory_requirements);
 
     uint32_t staging_buffer_memory_type_index=UINT32_MAX;
     VkPhysicalDeviceMemoryProperties physical_device_memory_properties;
-    vkGetPhysicalDeviceMemoryProperties(app->physical_device,&physical_device_memory_properties);
+    vkGetPhysicalDeviceMemoryProperties(this->physical_device,&physical_device_memory_properties);
 
     for(uint32_t i=0;i<physical_device_memory_properties.memoryTypeCount;i++){
         if((1<<i)&staging_buffer_memory_requirements.memoryTypeBits){
@@ -1225,19 +1208,17 @@ Application* App_new(PlatformHandle* platform){
         .allocationSize=staging_buffer_memory_requirements.size,
         .memoryTypeIndex=staging_buffer_memory_type_index
     };
-    res=vkAllocateMemory(app->device, &staging_buffer_memory_allocate_info, app->vk_allocator, &app->staging_buffer_memory);
+    res=vkAllocateMemory(this->device, &staging_buffer_memory_allocate_info, this->vk_allocator, &this->staging_buffer_memory);
     if(res!=VK_SUCCESS){
         fprintf(stderr,"failed to allocate staging buffer memory\n");
         exit(VULKAN_ALLOCATE_MEMORY_FAILURE);
     }
 
-    res=vkBindBufferMemory(app->device, app->staging_buffer, app->staging_buffer_memory, 0);
+    res=vkBindBufferMemory(this->device, this->staging_buffer, this->staging_buffer_memory, 0);
     if(res!=VK_SUCCESS){
         fprintf(stderr,"failed to bind staging buffer memory\n");
         exit(VULKAN_BIND_BUFFER_MEMORY_FAILURE);
     }
-
-    return app;
 }
 
 /**
@@ -1245,37 +1226,37 @@ Application* App_new(PlatformHandle* platform){
  * 
  * @param app 
  */
-void App_destroy(Application* app){
-    if(app->instance!=VK_NULL_HANDLE){
-        if(app->device!=VK_NULL_HANDLE){
-            vkDeviceWaitIdle(app->device);
+void Application::destroy(){
+    if(this->instance!=VK_NULL_HANDLE){
+        if(this->device!=VK_NULL_HANDLE){
+            vkDeviceWaitIdle(this->device);
 
-            App_destroy_shader(app->shader);
+            this->destroy_shader(this->shader);
 
-            for(uint32_t i=0;i<app->num_swapchain_images;i++){
-                vkDestroyFramebuffer(app->device,app->swapchain_framebuffers[i],app->vk_allocator);
-                vkDestroyImageView(app->device,app->swapchain_image_views[i],app->vk_allocator);
+            for(uint32_t i=0;i<this->num_swapchain_images;i++){
+                vkDestroyFramebuffer(this->device,this->swapchain_framebuffers[i],this->vk_allocator);
+                vkDestroyImageView(this->device,this->swapchain_image_views[i],this->vk_allocator);
             }
 
-            vkDestroyRenderPass(app->device,app->render_pass,app->vk_allocator);
+            vkDestroyRenderPass(this->device,this->render_pass,this->vk_allocator);
             
-            vkDestroySwapchainKHR(app->device, app->swapchain, app->vk_allocator);
+            vkDestroySwapchainKHR(this->device, this->swapchain, this->vk_allocator);
 
-            vkDestroyDevice(app->device,app->vk_allocator);
+            vkDestroyDevice(this->device,this->vk_allocator);
 
-            delete[] app->swapchain_images;
-            delete[] app->swapchain_image_views;
-            delete[] app->swapchain_framebuffers;
+            delete[] this->swapchain_images;
+            delete[] this->swapchain_image_views;
+            delete[] this->swapchain_framebuffers;
         }
 
-        vkDestroySurfaceKHR(app->instance, app->window_surface, app->vk_allocator);
+        vkDestroySurfaceKHR(this->instance, this->window_surface, this->vk_allocator);
 
-        vkDestroyInstance(app->instance,app->vk_allocator);
+        vkDestroyInstance(this->instance,this->vk_allocator);
     }
 
-    App_destroy_window(app,app->platform_window);
+    this->destroy_window(this->platform_window);
 
-    delete app;
+    delete this;
 }
 
 double get_time(struct timespec t){
@@ -1310,8 +1291,7 @@ typedef struct GpuCpuDataReference{
 void GpuCpuDataReference_update(
     GpuCpuDataReference* ref
 ){
-    App_upload_data(
-        ref->app, 
+    ref->app->upload_data(
         VK_NULL_HANDLE, 
         ref->buffer_usage_flags, 
         &ref->buffer, 
@@ -1341,13 +1321,13 @@ GpuCpuDataReference App_GpuCpuDataReference_initialise(
     return ret;
 }
 
-void App_run(Application* app){
+void Application::run(){
     // change working directory to executable location to be able to load runtime dependencies
     {
-        uint64_t loc_len=strlen(app->cli_args[0]);
+        uint64_t loc_len=strlen(this->cli_args[0]);
         uint64_t slash_loc=UINT32_MAX;
         for(uint64_t i=0;i<loc_len;i++){
-            if(app->cli_args[0][i]=='/'){
+            if(this->cli_args[0][i]=='/'){
                 slash_loc=i;
             }
         }
@@ -1359,7 +1339,7 @@ void App_run(Application* app){
             }
             std::array<char, PATH_BUF_SIZE + 1> path_buf{};
             std::fill(path_buf.begin(), path_buf.end(), '\0');
-            memcpy(path_buf.data(),app->cli_args[0],slash_loc);
+            memcpy(path_buf.data(),this->cli_args[0],slash_loc);
 
             chdir(path_buf.data());
         }
@@ -1367,7 +1347,7 @@ void App_run(Application* app){
 
     VkResult res;
 
-    app->shader=App_create_shader(app,0,1);
+    this->shader=this->create_shader(0,1);
 
     VkSemaphoreCreateInfo semaphore_create_info={
         .sType=VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
@@ -1375,30 +1355,25 @@ void App_run(Application* app){
         .flags=0
     };
     VkSemaphore image_available_semaphore;
-    res=vkCreateSemaphore(app->device,&semaphore_create_info,app->vk_allocator,&image_available_semaphore);
-    if(res!=VK_SUCCESS){
-        fprintf(stderr,"failed to create semaphore\n");
-        exit(VULKAN_CREATE_SEMAPHORE_FAILURE);
-    }
+    res=vkCreateSemaphore(this->device,&semaphore_create_info,this->vk_allocator,&image_available_semaphore);
+    if(res!=VK_SUCCESS)
+        bail(VULKAN_CREATE_SEMAPHORE_FAILURE,"failed to create semaphore");
+        
     VkSemaphore rendering_finished_semaphore;
-    res=vkCreateSemaphore(app->device,&semaphore_create_info,app->vk_allocator,&rendering_finished_semaphore);
-    if(res!=VK_SUCCESS){
-        fprintf(stderr,"failed to create semaphore\n");
-        exit(VULKAN_CREATE_SEMAPHORE_FAILURE);
-    }
+    res=vkCreateSemaphore(this->device,&semaphore_create_info,this->vk_allocator,&rendering_finished_semaphore);
+    if(res!=VK_SUCCESS)
+        bail(VULKAN_CREATE_SEMAPHORE_FAILURE,"failed to create semaphore");
 
     VkCommandPoolCreateInfo command_pool_create_info={
         .sType=VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
         .pNext=NULL,
         .flags=VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
-        .queueFamilyIndex=app->graphics_queue_family_index
+        .queueFamilyIndex=this->graphics_queue_family_index
     };
     VkCommandPool command_pool;
-    res=vkCreateCommandPool(app->device, &command_pool_create_info, app->vk_allocator, &command_pool);
-    if(res!=VK_SUCCESS){
-        fprintf(stderr,"failed to create command pool\n");
-        exit(VULKAN_CREATE_COMMAND_POOL_FAILURE);
-    }
+    res=vkCreateCommandPool(this->device, &command_pool_create_info, this->vk_allocator, &command_pool);
+    if(res!=VK_SUCCESS)
+        bail(VULKAN_CREATE_COMMAND_POOL_FAILURE,"failed to create command pool");
 
     VkCommandBufferAllocateInfo command_buffer_allocate_info={
         .sType=VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
@@ -1408,11 +1383,9 @@ void App_run(Application* app){
         .commandBufferCount=1
     };
     VkCommandBuffer* command_buffers=new VkCommandBuffer[command_buffer_allocate_info.commandBufferCount];
-    res=vkAllocateCommandBuffers(app->device, &command_buffer_allocate_info, command_buffers);
-    if(res!=VK_SUCCESS){
-        fprintf(stderr,"failed to allocate command buffers\n");
-        exit(VULKAN_ALLOCATE_COMMAND_BUFFERS_FAILURE);
-    }
+    res=vkAllocateCommandBuffers(this->device, &command_buffer_allocate_info, command_buffers);
+    if(res!=VK_SUCCESS)
+        bail(VULKAN_ALLOCATE_COMMAND_BUFFERS_FAILURE,"failed to allocate command buffers");
 
     VkCommandBuffer command_buffer=command_buffers[0];
 
@@ -1425,10 +1398,8 @@ void App_run(Application* app){
         float offset_y;
     };
 
-    if(app->cli_num_args==1){
-        fprintf(stderr,"no image to display.\nprovide at least one image path as cli arg to this application for display.\n");
-        exit(ERROR_NO_ARGUMENT_IMAGE);
-    }
+    if(this->cli_num_args==1)
+        bail(ERROR_NO_ARGUMENT_IMAGE,"no image to display.\nprovide at least one image path as cli arg to this application for display.");
 
     #ifdef DEBUG
         static const int num_iterations=IMAGE_BENCHMARK_NUM_REPEATS;
@@ -1436,7 +1407,7 @@ void App_run(Application* app){
         static const int num_iterations=1;
     #endif
 
-    const uint32_t num_images=app->cli_num_args-1;
+    const uint32_t num_images=this->cli_num_args-1;
 
     Mesh* quadmesh=NULL;
 
@@ -1453,7 +1424,7 @@ void App_run(Application* app){
     GpuCpuDataReference image_view_data_refs[MAX_NUM_SWAPCHAIN_IMAGES];
 
     for(uint32_t image_index=0;image_index<num_images;image_index++){
-        std::string file_path=app->cli_args[1+image_index];
+        std::string file_path=this->cli_args[1+image_index];
 
         ImageData* const image_data=&image_data_jpeg[image_index];
 
@@ -1472,32 +1443,34 @@ void App_run(Application* app){
             static const auto GIF_FILE_ENDING_LEN=GIF_FILE_ENDING.size();
 
             auto start_time=current_time();
-            ImageParseResult image_parse_res;
             if(strncmp(PNG_FILE_ENDING.data(),file_path.data()+file_path_len-PNG_FILE_ENDING_LEN,PNG_FILE_ENDING_LEN)==0){
-                image_parse_res=Image_read_png(file_path.data(),image_data);
+                const auto image_parse_res=Image_read_png(file_path.data(),image_data);
                 if (image_parse_res!=IMAGE_PARSE_RESULT_OK)
                     bail(-31, "failed to parse png");
+
             }else if(strncmp(JPEG_FILE_ENDING.data(),file_path.data()+file_path_len-JPEG_FILE_ENDING_LEN,JPEG_FILE_ENDING_LEN)==0){
-                image_parse_res=Image_read_jpeg(file_path.data(),image_data);
+                const auto image_parse_res=Image_read_jpeg(file_path.data(),image_data);
                 if (image_parse_res!=IMAGE_PARSE_RESULT_OK)
                     bail(-31, "failed to parse jpeg");
+
             }else if(strncmp(GIF_FILE_ENDING.data(),file_path.data()+file_path_len-GIF_FILE_ENDING_LEN,GIF_FILE_ENDING_LEN)==0){
-                image_parse_res=Image_read_gif(file_path.data(),image_data);
+                const auto image_parse_res=Image_read_gif(file_path.data(),image_data);
                 if (image_parse_res!=IMAGE_PARSE_RESULT_OK)
                     bail(-31, "failed to parse gif");
+
             }else{
                 bail(FATAL_UNEXPECTED_ERROR,"invalid file ending of supposed image file %s",file_path.data());
             }
             println("parsed %s in %.3fms",file_path.data(),(current_time()-start_time)*1e3);
         }
 
-        image_textures[image_index]=App_create_texture(app,image_data);
+        image_textures[image_index]=this->create_texture(image_data);
 
         const float image_aspect_ratio=(float)image_data->width/(float)image_data->height;
         float window_aspect_ratio;
         {
-            const uint16_t window_height=PlatformWindow_get_render_area_height(app->platform_window);
-            const uint16_t window_width=PlatformWindow_get_render_area_width(app->platform_window);
+            const uint16_t window_height=PlatformWindow_get_render_area_height(this->platform_window);
+            const uint16_t window_width=PlatformWindow_get_render_area_width(this->platform_window);
 
             window_aspect_ratio=(float)window_width/(float)window_height;
         }
@@ -1509,7 +1482,7 @@ void App_run(Application* app){
         image_view_data[image_index].offset_y=0;
 
         image_view_data_refs[image_index]=App_GpuCpuDataReference_initialise(
-            app, 
+            this, 
             &image_view_data[image_index], 
             sizeof(struct ImageViewData), 
             VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT
@@ -1532,7 +1505,7 @@ void App_run(Application* app){
             .pBufferInfo=write_descriptor_set_buffers,
             .pTexelBufferView=NULL
         };
-        vkUpdateDescriptorSets(app->device, 1, &write_descriptor_set, 0, NULL);
+        vkUpdateDescriptorSets(this->device, 1, &write_descriptor_set, 0, NULL);
     }
     int32_t left_button_down_x=0;
     int32_t left_button_down_y=0;
@@ -1548,13 +1521,13 @@ void App_run(Application* app){
             break;
         }
 
-        const uint16_t window_height=PlatformWindow_get_render_area_height(app->platform_window);
-        const uint16_t window_width=PlatformWindow_get_render_area_width(app->platform_window);
+        const uint16_t window_height=PlatformWindow_get_render_area_height(this->platform_window);
+        const uint16_t window_width=PlatformWindow_get_render_area_width(this->platform_window);
 
         bool window_has_been_resized=false;
         InputEvent event;
 
-        while(App_get_input_event(app,&event)){
+        while(this->get_input_event(&event)){
             switch(event.generic.input_event_type){
                 case INPUT_EVENT_TYPE_KEY_PRESS:
                     switch(event.keypress.key){
@@ -1586,7 +1559,7 @@ void App_run(Application* app){
                         default:
                             break;
                     }
-                    App_set_window_title(app, app->platform_window, app->cli_args[current_image_index+1]);
+                    this->set_window_title(this->platform_window, this->cli_args[current_image_index+1]);
                     break;
                 case INPUT_EVENT_TYPE_BUTTON_PRESS:
                     if(event.buttonpress.button==INPUT_BUTTON_LEFT){
@@ -1608,13 +1581,13 @@ void App_run(Application* app){
                 case INPUT_EVENT_TYPE_WINDOW_RESIZED:{
                         window_has_been_resized=true;
 
-                        VkSwapchainCreateInfoKHR swapchain_create_info=App_create_swapchain(app);
+                        VkSwapchainCreateInfoKHR swapchain_create_info=this->create_swapchain();
 
-                        PlatformWindow_set_render_area_width(app->platform_window,(uint16_t)swapchain_create_info.imageExtent.width);
-                        PlatformWindow_set_render_area_height(app->platform_window,(uint16_t)swapchain_create_info.imageExtent.height);
+                        PlatformWindow_set_render_area_width(this->platform_window,(uint16_t)swapchain_create_info.imageExtent.width);
+                        PlatformWindow_set_render_area_height(this->platform_window,(uint16_t)swapchain_create_info.imageExtent.height);
                     
-                        const uint16_t window_height=PlatformWindow_get_render_area_height(app->platform_window);
-                        const uint16_t window_width=PlatformWindow_get_render_area_width(app->platform_window);
+                        const uint16_t window_height=PlatformWindow_get_render_area_height(this->platform_window);
+                        const uint16_t window_width=PlatformWindow_get_render_area_width(this->platform_window);
 
                         for(uint32_t i=0;i<num_images;i++){
                             image_view_data[i].window_aspect_ratio=(float)window_width/(float)window_height;
@@ -1648,7 +1621,7 @@ void App_run(Application* app){
         }
 
         uint32_t next_swapchain_image_index;
-        res=vkAcquireNextImageKHR(app->device, app->swapchain, UINT64_MAX, image_available_semaphore, VK_NULL_HANDLE, &next_swapchain_image_index);
+        res=vkAcquireNextImageKHR(this->device, this->swapchain, UINT64_MAX, image_available_semaphore, VK_NULL_HANDLE, &next_swapchain_image_index);
         switch(res){
             case VK_SUCCESS:
             case VK_SUBOPTIMAL_KHR:
@@ -1668,10 +1641,10 @@ void App_run(Application* app){
         vkBeginCommandBuffer(command_buffer, &command_buffer_begin_info);
 
         if(frame==0){
-            quadmesh=App_upload_mesh(app, command_buffer, 4, mesh);
+            quadmesh=this->upload_mesh(command_buffer, 4, mesh);
 
             for(uint32_t image_index=0;image_index<num_images;image_index++){
-                App_upload_texture(app, image_textures[image_index], &image_data_jpeg[image_index], command_buffer);
+                this->upload_texture(image_textures[image_index], &image_data_jpeg[image_index], command_buffer);
                 ImageData::destroy(&image_data_jpeg[image_index]);
             }
         }
@@ -1686,7 +1659,7 @@ void App_run(Application* app){
                 .newLayout=VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,  
                 .srcQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED,  
                 .dstQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED,  
-                .image=app->swapchain_images[next_swapchain_image_index], 
+                .image=this->swapchain_images[next_swapchain_image_index], 
                 .subresourceRange={
                     .aspectMask=VK_IMAGE_ASPECT_COLOR_BIT,
                     .baseMipLevel=0,
@@ -1712,8 +1685,8 @@ void App_run(Application* app){
         VkRenderPassBeginInfo render_pass_begin_info={
             .sType=VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
             .pNext=NULL,
-            .renderPass=app->render_pass,
-            .framebuffer=app->swapchain_framebuffers[next_swapchain_image_index],
+            .renderPass=this->render_pass,
+            .framebuffer=this->swapchain_framebuffers[next_swapchain_image_index],
             .renderArea={
                 .offset={.x=0,.y=0},
                 .extent={.width=window_width,.height=window_height}
@@ -1741,7 +1714,7 @@ void App_run(Application* app){
         }};
         vkCmdSetScissor(command_buffer, 0, 1, scissors);
 
-        vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, app->shader->pipeline);
+        vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, this->shader->pipeline);
         VkBuffer bind_vertex_buffers[1]={quadmesh->buffer};
         VkDeviceSize bind_vertex_buffer_offsets[1]={0};
         vkCmdBindVertexBuffers(
@@ -1752,7 +1725,7 @@ void App_run(Application* app){
         );
         vkCmdBindDescriptorSets(command_buffer, 
             VK_PIPELINE_BIND_POINT_GRAPHICS, 
-            app->shader->pipeline_layout, 
+            this->shader->pipeline_layout, 
             0, 1, &image_textures[current_image_index]->descriptor_set, 
             0, NULL
         );
@@ -1768,9 +1741,9 @@ void App_run(Application* app){
                 .dstAccessMask=VK_ACCESS_MEMORY_READ_BIT,
                 .oldLayout=VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
                 .newLayout=VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
-                .srcQueueFamilyIndex=app->present_queue_family_index,
-                .dstQueueFamilyIndex=app->present_queue_family_index,
-                .image=app->swapchain_images[next_swapchain_image_index],
+                .srcQueueFamilyIndex=this->present_queue_family_index,
+                .dstQueueFamilyIndex=this->present_queue_family_index,
+                .image=this->swapchain_images[next_swapchain_image_index],
                 .subresourceRange={
                     .aspectMask=VK_IMAGE_ASPECT_COLOR_BIT,
                     .baseMipLevel=0,
@@ -1808,14 +1781,14 @@ void App_run(Application* app){
             .signalSemaphoreCount=1,
             .pSignalSemaphores=&rendering_finished_semaphore
         }};
-        res=vkQueueSubmit(app->present_queue,1,queue_submit_infos,VK_NULL_HANDLE);
+        res=vkQueueSubmit(this->present_queue,1,queue_submit_infos,VK_NULL_HANDLE);
         if(res!=VK_SUCCESS){
             fprintf(stderr,"failed to submit swapchain presentation image\n");
             exit(VULKAN_QUEUE_SUBMIT_FAILURE);
         }
 
         VkSemaphore present_wait_semaphores[1]={rendering_finished_semaphore};
-        VkSwapchainKHR present_swapchains[1]={app->swapchain};
+        VkSwapchainKHR present_swapchains[1]={this->swapchain};
         uint32_t present_swapchain_image_indices[1]={next_swapchain_image_index};
         VkPresentInfoKHR swapchain_present_info={
             .sType=VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
@@ -1827,7 +1800,7 @@ void App_run(Application* app){
             .pImageIndices=present_swapchain_image_indices,
             .pResults=NULL
         };
-        res=vkQueuePresentKHR(app->present_queue, &swapchain_present_info);
+        res=vkQueuePresentKHR(this->present_queue, &swapchain_present_info);
         switch(res){
             case VK_SUCCESS:
             case VK_SUBOPTIMAL_KHR:
@@ -1838,7 +1811,7 @@ void App_run(Application* app){
                 exit(VULKAN_ACQUIRE_NEXT_IMAGE_KHR_FAILURE);
         }
 
-        vkDeviceWaitIdle(app->device);
+        vkDeviceWaitIdle(this->device);
 
         struct timespec current_frame_time;
         clock_gettime(CLOCK_MONOTONIC, &current_frame_time);
@@ -1857,22 +1830,22 @@ void App_run(Application* app){
     }
 
     for(uint32_t i=0;i<num_images;i++){
-        vkDestroyBuffer(app->device,image_view_data_refs[i].buffer,app->vk_allocator);
-        vkFreeMemory(app->device,image_view_data_refs[i].memory,app->vk_allocator);
+        vkDestroyBuffer(this->device,image_view_data_refs[i].buffer,this->vk_allocator);
+        vkFreeMemory(this->device,image_view_data_refs[i].memory,this->vk_allocator);
 
-        App_destroy_texture(app,image_textures[i]);
+        this->destroy_texture(image_textures[i]);
     }
 
-    App_destroy_mesh(app,quadmesh);
+    this->destroy_mesh(quadmesh);
 
-    vkDestroyBuffer(app->device, app->staging_buffer, app->vk_allocator);
-    vkFreeMemory(app->device, app->staging_buffer_memory, app->vk_allocator);
-    vkDestroySampler(app->device, app->shader->image_sampler, app->vk_allocator);
+    vkDestroyBuffer(this->device, this->staging_buffer, this->vk_allocator);
+    vkFreeMemory(this->device, this->staging_buffer_memory, this->vk_allocator);
+    vkDestroySampler(this->device, this->shader->image_sampler, this->vk_allocator);
 
-    vkDestroySemaphore(app->device,image_available_semaphore,app->vk_allocator);
-    vkDestroySemaphore(app->device,rendering_finished_semaphore,app->vk_allocator);
-    vkFreeCommandBuffers(app->device, command_pool, command_buffer_allocate_info.commandBufferCount, command_buffers);
-    vkDestroyCommandPool(app->device,command_pool,app->vk_allocator);
+    vkDestroySemaphore(this->device,image_available_semaphore,this->vk_allocator);
+    vkDestroySemaphore(this->device,rendering_finished_semaphore,this->vk_allocator);
+    vkFreeCommandBuffers(this->device, command_pool, command_buffer_allocate_info.commandBufferCount, command_buffers);
+    vkDestroyCommandPool(this->device,command_pool,this->vk_allocator);
 
     delete[] command_buffers;
 }
