@@ -1,7 +1,9 @@
 #include <cstdint>
-#include <stdio.h>
+#include <cstdio>
+#include <cstdlib>
 
-#include <stdlib.h>
+#include <vector>
+
 #include <vulkan/vulkan.h>
 #include <xcb/xcb.h>
 #include <xcb/xcb_util.h>
@@ -11,8 +13,7 @@
 struct PlatformHandle{
     xcb_connection_t* connection;
 
-    uint32_t num_open_windows;
-    PlatformWindow** open_windows;
+    std::vector<PlatformWindow*> open_windows;
 };
 struct PlatformWindow{
     xcb_window_t window;
@@ -140,9 +141,7 @@ int App_get_input_event(Application* app,InputEvent* input_event){
         case XCB_CLIENT_MESSAGE:
             {
                 xcb_client_message_event_t* client_message = (xcb_client_message_event_t*) xcb_event;
-                for(uint32_t window_id=0;window_id<app->platform_handle->num_open_windows;window_id++){
-                    PlatformWindow* open_window=app->platform_handle->open_windows[window_id];
-
+                for(PlatformWindow* open_window : app->platform_handle->open_windows){
                     xcb_atom_t client_message_atom=client_message->data.data32[0];
                     if(client_message_atom==open_window->delete_window_atom){
                         input_event->generic.input_event_type=INPUT_EVENT_TYPE_WINDOW_CLOSE;
@@ -289,15 +288,9 @@ PlatformHandle* Platform_new(){
         exit(XCB_CONNECT_FAILURE);
     }
 
-    platform->num_open_windows=0;
-    platform->open_windows=NULL;
-
     return platform;
 }
 void Platform_destroy(PlatformHandle* platform){
-    if(platform->num_open_windows>0){
-        free(platform->open_windows);
-    }
     xcb_disconnect(platform->connection);
     delete platform;
 }
@@ -367,26 +360,20 @@ PlatformWindow* App_create_window(
 
     xcb_map_window(app->platform_handle->connection,window->window);
 
-    uint32_t new_window_id=app->platform_handle->num_open_windows;
-    app->platform_handle->num_open_windows+=1;
-    app->platform_handle->open_windows=(PlatformWindow**)realloc(app->platform_handle->open_windows, app->platform_handle->num_open_windows*sizeof(PlatformWindow*));
-
-    app->platform_handle->open_windows[new_window_id]=window;
+    app->platform_handle->open_windows.push_back(window);
 
     return window;
 }
-void App_destroy_window(Application *app, PlatformWindow *window){
+void App_destroy_window(Application* app, PlatformWindow* window){
     xcb_unmap_window(app->platform_handle->connection,window->window);
     xcb_destroy_window(app->platform_handle->connection,window->window);
 
     delete window;
 
-    if(app->platform_handle->num_open_windows>0){
-        app->platform_handle->num_open_windows-=1;
-        if(app->platform_handle->num_open_windows>0){
-            app->platform_handle->open_windows=(PlatformWindow**)realloc(app->platform_handle->open_windows,app->platform_handle->num_open_windows*sizeof(PlatformWindow*));
-        }else{
-            free(app->platform_handle->open_windows);
+    for(auto it=app->platform_handle->open_windows.begin();it<app->platform_handle->open_windows.end();it++){
+        if(*it==window){
+            app->platform_handle->open_windows.erase(it);
+            break;
         }
     }
 }

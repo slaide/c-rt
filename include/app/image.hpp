@@ -79,7 +79,7 @@ class FileParser{
         this->file_size=static_cast<std::size_t>(ftell_res);
         rewind(file);
 
-        this->file_contents=static_cast<uint8_t*>(aligned_alloc(64,ROUND_UP(this->file_size,64u)));
+        this->file_contents=new uint8_t[this->file_size];
         discard fread(this->file_contents, 1, this->file_size, file);
         
         fclose(file);

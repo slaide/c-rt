@@ -789,7 +789,7 @@ class JpegParser: public FileParser{
 
     /// cleanup all resources
     void destroy(){
-        free(this->file_contents);
+        delete[] this->file_contents;
 
         for(int i=0;i<4;i++){
             this->ac_coding_tables[i].destroy();
@@ -797,11 +797,11 @@ class JpegParser: public FileParser{
         }
 
         for(uint32_t c=0;c<this->Nf;c++){
-            free(this->image_components[c].conversion_indices);
-            free(this->image_components[c].out_block_downsampled);
+            delete[] this->image_components[c].conversion_indices;
+            delete[] this->image_components[c].out_block_downsampled;
             // free batch allocated scan memory
-            free(this->image_components[c].scan_memory[0]);
-            free(this->image_components[c].scan_memory);
+            delete[] this->image_components[c].scan_memory[0];
+            delete[] this->image_components[c].scan_memory;
         }
     }
 
@@ -982,17 +982,17 @@ class JpegParser: public FileParser{
 
             this->image_components[i].scan_memory=new MCU_EL*[component_num_scans];
 
-            uint32_t per_scan_memory_size=(uint32_t)ROUND_UP(component_num_scan_elements*sizeof(MCU_EL),4096);
-            MCU_EL* const total_scan_memory=(MCU_EL*)calloc(component_num_scans,per_scan_memory_size);
+            const uint32_t per_scan_memory_size=(uint32_t)ROUND_UP(component_num_scan_elements*sizeof(MCU_EL),4096u);
+            MCU_EL* const total_scan_memory=new MCU_EL[component_num_scans*per_scan_memory_size];
+            memset(total_scan_memory,0,component_num_scans*per_scan_memory_size*sizeof(MCU_EL));
             for (uint32_t s=0; s<component_num_scans; s++) {
                 this->image_components[i].scan_memory[s]=total_scan_memory+s*per_scan_memory_size/sizeof(MCU_EL);
-                //parser->image_components[i].scan_memory[s]=calloc(1,component_num_scan_elements*sizeof(MCU_EL));
             }
 
             this->image_components[i].num_scans=component_num_scans;
             this->image_components[i].num_blocks_in_scan=component_num_scan_elements/64;
 
-            this->image_components[i].out_block_downsampled=(OUT_EL*)aligned_alloc(64,ROUND_UP(sizeof(OUT_EL)*(component_data_size+16),64));
+            this->image_components[i].out_block_downsampled=new OUT_EL[ROUND_UP(sizeof(OUT_EL)*(component_data_size+16),64)];
 
             this->image_components[i].total_num_blocks=this->image_components[i].vert_samples*this->image_components[i].horz_samples/64;
 
@@ -1205,7 +1205,7 @@ class JpegParser: public FileParser{
     void correct_image_size(){
         if(this->X!=this->real_X || this->Y!=this->real_Y){
             uint8_t* const old_data=image_data->data;
-            uint8_t* const real_data=(uint8_t*)aligned_alloc(64,ROUND_UP(this->real_X*this->real_Y*4,64));
+            uint8_t* const real_data=new uint8_t[ROUND_UP(this->real_X*this->real_Y*4,64)];
 
             for (uint32_t y=0; y<this->real_Y; y++) {
                 for(uint32_t x=0; x<this->real_X; x++) {

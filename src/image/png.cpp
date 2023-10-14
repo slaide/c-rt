@@ -21,7 +21,7 @@
 typedef huffman::CodingTable<uint16_t, bitStream::BITSTREAM_DIRECTION_RIGHT_TO_LEFT, false> DistanceTable;
 typedef huffman::CodingTable<uint16_t, bitStream::BITSTREAM_DIRECTION_RIGHT_TO_LEFT, false> LiteralTable;
 typedef huffman::CodingTable<uint8_t, bitStream::BITSTREAM_DIRECTION_RIGHT_TO_LEFT, false> CodeLengthTable;
-typedef DistanceTable::BitStream_ BitStream;
+using BitStream = DistanceTable::BitStream_;
 
 static constexpr uint32_t PNG_BITSTREAM_COMPRESSION_MAX_WINDOW_SIZE=32768;
 static constexpr uint32_t MAX_CHUNK_SIZE=0x8FFFFFFF;
@@ -209,9 +209,6 @@ class ZLIBDecoder{
             if(fdict_flag)
                 bail(FATAL_UNEXPECTED_ERROR,"TODO unimplemented: using preset dictionary");
 
-            LiteralTable literal_alphabet;
-            DistanceTable distance_alphabet;
-
             int out_offset=0;
             int block_id=0;
             discard block_id;
@@ -219,6 +216,9 @@ class ZLIBDecoder{
             // remaining bitstream is formatted according to RFC 1951 (deflate) (e.g. https://datatracker.ietf.org/doc/html/rfc1951)
             bool keep_parsing=true;
             while(keep_parsing){
+                LiteralTable literal_alphabet;
+                DistanceTable distance_alphabet;
+
                 const auto bfinal=stream->get_bits_advance<unsigned>(1);
 
                 const auto btype=stream->get_bits_advance<unsigned>(2);
@@ -467,27 +467,18 @@ class PngParser:public FileParser{
         struct IHDR ihdr_data;
 
         /// bytes per pixel
-        uint32_t bpp;
-        uint32_t scanline_width;
+        uint32_t bpp=0;
+        uint32_t scanline_width=0;
 
-        uint8_t* output_buffer;
-        uint8_t* defiltered_output_buffer;
-        uint8_t* in_line;
-        uint8_t* out_line;
-        uint8_t* in_line_prev;
-        uint8_t* out_line_prev;
+        uint8_t* output_buffer=nullptr;
+        uint8_t* defiltered_output_buffer=nullptr;
+        uint8_t* in_line=nullptr;
+        uint8_t* out_line=nullptr;
+        uint8_t* in_line_prev=nullptr;
+        uint8_t* out_line_prev=nullptr;
 
-        PngParser(const char* file_path,ImageData*const image_data):FileParser(file_path, image_data){
-            this->bpp=0;
-            this->scanline_width=0;
+        PngParser(const char* file_path,ImageData*const image_data):FileParser(file_path, image_data){}
 
-            this->output_buffer=nullptr;
-            this->defiltered_output_buffer=nullptr;
-            this->in_line=nullptr;
-            this->out_line=nullptr;
-            this->in_line_prev=nullptr;
-            this->out_line_prev=nullptr;
-        }
         void destroy(){
             delete[] this->file_contents;
             delete[] this->output_buffer;

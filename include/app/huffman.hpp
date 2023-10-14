@@ -161,7 +161,7 @@ namespace huffman{
         
     public:
         void destroy()noexcept{
-            delete this->lookup_table;
+            delete[] this->lookup_table;
             this->lookup_table=nullptr;
         }
     };

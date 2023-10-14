@@ -37,10 +37,10 @@ void ImageData::initEmpty(ImageData* const image_data){
 }
 void ImageData::destroy(ImageData* const image_data){
     if(image_data->image_file_metadata.file_comment){
-        free(static_cast<void*>(image_data->image_file_metadata.file_comment));
+        delete[] image_data->image_file_metadata.file_comment;
         image_data->image_file_metadata.file_comment=NULL;
     }
-    free(image_data->data);
+    delete[] image_data->data;
 }
 VkFormat ImageData::vk_img_format()const noexcept{
     switch(pixel_format){
@@ -353,8 +353,8 @@ void App_upload_texture(
     VkPhysicalDeviceProperties physical_device_properties;
     vkGetPhysicalDeviceProperties(app->physical_device,&physical_device_properties);
 
-    VkDeviceSize image_memory_size=image_data->height*image_data->width*4;
-    image_memory_size=ROUND_UP(image_memory_size, physical_device_properties.limits.nonCoherentAtomSize);
+    VkDeviceSize image_memory_size_raw=image_data->height*image_data->width*4;
+    VkDeviceSize image_memory_size=ROUND_UP(image_memory_size_raw, physical_device_properties.limits.nonCoherentAtomSize);
 
     const VkDeviceSize image_offset_into_staging_buffer=app->staging_buffer_size_occupied;
 
@@ -376,7 +376,7 @@ void App_upload_texture(
         exit(ERROR_STAGING_BUFFER_OVERFLOW);
     }
 
-    memcpy(staging_buffer_cpu_memory,image_data->data,image_memory_size);
+    memcpy(staging_buffer_cpu_memory,image_data->data,image_memory_size_raw);
 
     VkMappedMemoryRange flush_memory_range={
         .sType=VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
@@ -961,7 +961,7 @@ Application* App_new(PlatformHandle* platform){
         exit(VULKAN_CREATE_INSTANCE_FAILURE);
     }
 
-    app->platform_window=App_create_window(app,500,500);
+    app->platform_window=App_create_window(app,1280,720);
 
     app->window_surface=App_create_window_vk_surface(app,app->platform_window);
 
