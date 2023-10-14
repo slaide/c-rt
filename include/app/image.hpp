@@ -51,10 +51,10 @@ typedef enum ImageParseResult{
 
 class FileParser{
     public:
-        uint64_t file_size;
+        std::size_t file_size;
         uint8_t* file_contents;
 
-        uint64_t current_file_content_index;
+        std::size_t current_file_content_index;
 
         ImageData* const image_data;
 
@@ -76,7 +76,7 @@ class FileParser{
             fprintf(stderr,"could not get file size\n");
             throw IMAGE_PARSE_RESULT_FILESIZE_UNKNOWN;
         }
-        this->file_size=static_cast<uint64_t>(ftell_res);
+        this->file_size=static_cast<std::size_t>(ftell_res);
         rewind(file);
 
         this->file_contents=static_cast<uint8_t*>(aligned_alloc(64,ROUND_UP(this->file_size,64u)));

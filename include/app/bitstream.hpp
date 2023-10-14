@@ -21,12 +21,12 @@ template <Direction DIRECTION,bool REMOVE_JPEG_BYTE_STUFFING>
 class BitStream{
     public:
         uint8_t* data;
-        uint64_t data_size;
+        std::size_t data_size;
 
-        uint64_t next_data_index;
+        std::size_t next_data_index;
 
         uint64_t buffer;
-        uint64_t buffer_bits_filled;
+        std::size_t buffer_bits_filled;
 
     /**
     * @brief initialise stream
@@ -80,10 +80,10 @@ class BitStream{
     /// number may be much larger than cache size
     [[gnu::always_inline,gnu::flatten,maybe_unused]]
     inline void skip(
-        const uint64_t n_bits
+        const std::size_t n_bits
     )noexcept{
         if(n_bits>this->buffer_bits_filled){
-            uint64_t remaining_bits=n_bits-this->buffer_bits_filled;
+            std::size_t remaining_bits=n_bits-this->buffer_bits_filled;
             this->next_data_index+=remaining_bits/8;
 
             this->buffer_bits_filled=0;
@@ -96,7 +96,7 @@ class BitStream{
             }
         }else{
             if(n_bits>this->buffer_bits_filled){
-                uint64_t bits_remaining=n_bits-this->buffer_bits_filled;
+                std::size_t bits_remaining=n_bits-this->buffer_bits_filled;
                 this->advance_unsafe((uint8_t)this->buffer_bits_filled);
                 this->fill_buffer();
                 this->advance_unsafe((uint8_t)bits_remaining);
@@ -121,16 +121,16 @@ class BitStream{
         }
     }
 
-    template<typename T = uint64_t>
+    template<typename T = std::size_t>
     [[gnu::always_inline,gnu::flatten]]
     inline T get_bits_unsafe(
         uint8_t n_bits
     )const noexcept{
         if constexpr(DIRECTION==BITSTREAM_DIRECTION_LEFT_TO_RIGHT){
-            const uint64_t ret=this->buffer>>(64-n_bits);
+            const std::size_t ret=this->buffer>>(64-n_bits);
             return static_cast<T>(ret);
         }else if constexpr(DIRECTION==BITSTREAM_DIRECTION_RIGHT_TO_LEFT){
-            const uint64_t ret=this->buffer & bitUtil::get_mask<uint64_t>(n_bits);
+            const std::size_t ret=this->buffer & bitUtil::get_mask<std::size_t>(n_bits);
             return static_cast<T>(ret);
         }
     }
@@ -144,7 +144,7 @@ class BitStream{
     * @param n_bits 
     * @return int 
     */
-    template<typename T = uint64_t>
+    template<typename T = std::size_t>
     [[gnu::always_inline,gnu::flatten]]
     inline T get_bits(
         const uint8_t n_bits
@@ -156,7 +156,7 @@ class BitStream{
         return ret;
     }
 
-    template<typename T = uint64_t>
+    template<typename T = std::size_t>
     [[gnu::always_inline,gnu::flatten,maybe_unused]]
     inline T get_bits_advance(
         const uint8_t n_bits
@@ -169,7 +169,7 @@ class BitStream{
 };
 
 template <Direction DIR,bool REM_JPG_STUFF>
-void BitStream<DIR,REM_JPG_STUFF>::BitStream_new(BitStream* stream,void* const data,const uint64_t data_size)noexcept{
+void BitStream<DIR,REM_JPG_STUFF>::BitStream_new(BitStream* stream,void* const data,const std::size_t data_size)noexcept{
     stream->data=static_cast<uint8_t*>(data);
     stream->data_size=data_size;
     stream->next_data_index=0;
@@ -186,7 +186,7 @@ template <Direction DIRECTION,bool REMOVE_JPEG_BYTE_STUFFING>
 [[gnu::hot,gnu::flatten]]
 inline void BitStream<DIRECTION,REMOVE_JPEG_BYTE_STUFFING>::fill_buffer(
 )noexcept{
-    uint64_t num_bytes_missing = (64-this->buffer_bits_filled)/8;
+    std::size_t num_bytes_missing = (64-this->buffer_bits_filled)/8;
 
     if(this->next_data_index+num_bytes_missing>this->data_size){
         num_bytes_missing=this->data_size-this->next_data_index;
@@ -195,9 +195,9 @@ inline void BitStream<DIRECTION,REMOVE_JPEG_BYTE_STUFFING>::fill_buffer(
     if constexpr(DIRECTION==BITSTREAM_DIRECTION_RIGHT_TO_LEFT){
         uint64_t new_bytes=0;
         for(uint64_t i=0; i<num_bytes_missing; i++){
-            const uint64_t next_byte = this->data[this->next_data_index++];
+            const std::size_t next_byte = this->data[this->next_data_index++];
 
-            const uint64_t shift_by = i*8;
+            const std::size_t shift_by = i*8;
             new_bytes |= next_byte << shift_by;
 
             if constexpr(REMOVE_JPEG_BYTE_STUFFING)
@@ -210,9 +210,9 @@ inline void BitStream<DIRECTION,REMOVE_JPEG_BYTE_STUFFING>::fill_buffer(
     }else if constexpr(DIRECTION==BITSTREAM_DIRECTION_LEFT_TO_RIGHT){
         uint64_t new_bytes=0;
         for(uint64_t i=0; i<num_bytes_missing; i++){
-            const uint64_t next_byte = this->data[this->next_data_index++];
+            const std::size_t next_byte = this->data[this->next_data_index++];
 
-            const uint64_t shift_by = (7-i)*8;
+            const std::size_t shift_by = (7-i)*8;
             new_bytes |= next_byte << shift_by;
 
             if constexpr(REMOVE_JPEG_BYTE_STUFFING)

@@ -176,7 +176,7 @@ CVReturn display_link_callback(
 @implementation MyAppDelegate
 
     - (void)applicationDidFinishLaunching:(NSNotification *)notification{
-        PlatformHandle* myplatform=(PlatformHandle*)malloc(sizeof(PlatformHandle));
+        PlatformHandle* myplatform=new PlatformHandle();
         myplatform->app=self;
         Application* main_app=App_new(myplatform);
 
@@ -227,7 +227,7 @@ PlatformWindow* App_create_window(
     uint16_t width,
     uint16_t height
 ){
-    PlatformWindow* window=(PlatformWindow*)malloc(sizeof(PlatformWindow));
+    PlatformWindow* window=new PlatformWindow();
     window->window_height=height;
     window->window_width=width;
     window->window=[
@@ -266,7 +266,7 @@ void App_destroy_window(Application* app, PlatformWindow* window){
     discard app;
     [window->window.contentView release];
     [window->window release];
-    free(window);
+    delete window;
 }
 void App_set_window_title(Application* app, PlatformWindow* window, const char* title){
     discard app;

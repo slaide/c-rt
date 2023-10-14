@@ -27,7 +27,8 @@
 
 template<typename V,typename M>
 [[gnu::always_inline,gnu::flatten]]
-static const inline V ROUND_UP(V VALUE,M MULTIPLE_OF){
-    V ret=((VALUE) + (((V)MULTIPLE_OF)-1)) / (V)MULTIPLE_OF;
-    return ret * (V)MULTIPLE_OF;
+static const inline V ROUND_UP(V value,M multiple_of){
+    V multiple_of_as_v=static_cast<V>(multiple_of);
+    V ret=((value) + (multiple_of_as_v-1)) / multiple_of_as_v;
+    return ret * multiple_of_as_v;
 }

@@ -1283,10 +1283,10 @@ void JpegParser::parse_segment<JpegSegmentType::DQT>(){
 }
 template<>
 void JpegParser::parse_segment<JpegSegmentType::DHT>(){
-    const int segment_size=this->next_u16();
-    const int segment_end_position=static_cast<int>(this->current_file_content_index)+segment_size-2;
+    const std::size_t segment_size=(std::size_t)this->next_u16();
+    const std::size_t segment_end_position=this->current_file_content_index+segment_size-2;
 
-    int segment_bytes_read=0;
+    std::size_t segment_bytes_read=0;
     while(segment_bytes_read<segment_size-2){
         int table_index_and_class=this->get_mem<uint8_t>();
 
@@ -1319,10 +1319,9 @@ void JpegParser::parse_segment<JpegSegmentType::DHT>(){
         for(int i=0;i<total_num_values;i++)
             values[i]=this->file_contents[this->current_file_content_index++];
 
-        int value_code_lengths[260];
-        memset(value_code_lengths,0,sizeof(value_code_lengths));
+        std::array<int,260> value_code_lengths{};
 
-        int value_index=0;
+        std::size_t value_index=0;
         for (int code_length=0; code_length<16; code_length++) {
             for(int i=0;i<num_values_of_length[code_length];i++)
                 value_code_lengths[value_index++]=code_length+1;
@@ -1336,7 +1335,7 @@ void JpegParser::parse_segment<JpegSegmentType::DHT>(){
         HuffmanTable::CodingTable_new(
             *target_table,
             static_cast<std::size_t>(total_num_values),
-            value_code_lengths,
+            value_code_lengths.data(),
             values
         );
     }

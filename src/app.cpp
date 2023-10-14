@@ -12,6 +12,7 @@
 #include <unistd.h>
 #include <array>
 #include <vector>
+#include <string>
 
 double current_time(){
     struct timespec current_time;
@@ -1362,11 +1363,11 @@ void App_run(Application* app){
                 fprintf(stderr,"path too long\n");
                 exit(FATAL_UNEXPECTED_ERROR);
             }
-            char path_buf[PATH_BUF_SIZE+1];
-            memset(path_buf,0,PATH_BUF_SIZE+1);
-            memcpy(path_buf,app->cli_args[0],slash_loc);
+            std::array<char, PATH_BUF_SIZE + 1> path_buf{};
+            std::fill(path_buf.begin(), path_buf.end(), '\0');
+            memcpy(path_buf.data(),app->cli_args[0],slash_loc);
 
-            chdir(path_buf);
+            chdir(path_buf.data());
         }
     }
 
@@ -1458,7 +1459,7 @@ void App_run(Application* app){
     GpuCpuDataReference image_view_data_refs[MAX_NUM_SWAPCHAIN_IMAGES];
 
     for(uint32_t image_index=0;image_index<num_images;image_index++){
-        const char* file_path=app->cli_args[1+image_index];
+        std::string file_path=app->cli_args[1+image_index];
 
         ImageData* const image_data=&image_data_jpeg[image_index];
 
@@ -1467,33 +1468,33 @@ void App_run(Application* app){
                 ImageData::destroy(image_data);
             }
 
-            const uint64_t file_path_len=strlen(file_path);
+            const auto file_path_len=file_path.size();
 
-            static const char* const PNG_FILE_ENDING=".png";
-            static const uint64_t PNG_FILE_ENDING_LEN=strlen(PNG_FILE_ENDING);
-            static const char* const JPEG_FILE_ENDING=".jpg";
-            static const uint64_t JPEG_FILE_ENDING_LEN=strlen(JPEG_FILE_ENDING);
-            static const char* const GIF_FILE_ENDING=".gif";
-            static const uint64_t GIF_FILE_ENDING_LEN=strlen(GIF_FILE_ENDING);
+            static const std::string PNG_FILE_ENDING=".png";
+            static const auto PNG_FILE_ENDING_LEN=PNG_FILE_ENDING.size();
+            static const std::string JPEG_FILE_ENDING=".jpg";
+            static const auto JPEG_FILE_ENDING_LEN=JPEG_FILE_ENDING.size();
+            static const std::string GIF_FILE_ENDING=".gif";
+            static const auto GIF_FILE_ENDING_LEN=GIF_FILE_ENDING.size();
 
-            ImageParseResult image_parse_res;
             auto start_time=current_time();
-            if(strncmp(PNG_FILE_ENDING,&file_path[file_path_len-PNG_FILE_ENDING_LEN],PNG_FILE_ENDING_LEN)==0){
-                image_parse_res=Image_read_png(file_path,image_data);
+            ImageParseResult image_parse_res;
+            if(strncmp(PNG_FILE_ENDING.data(),file_path.data()+file_path_len-PNG_FILE_ENDING_LEN,PNG_FILE_ENDING_LEN)==0){
+                image_parse_res=Image_read_png(file_path.data(),image_data);
                 if (image_parse_res!=IMAGE_PARSE_RESULT_OK)
                     bail(-31, "failed to parse png");
-            }else if(strncmp(JPEG_FILE_ENDING,&file_path[file_path_len-JPEG_FILE_ENDING_LEN],JPEG_FILE_ENDING_LEN)==0){
-                image_parse_res=Image_read_jpeg(file_path,image_data);
+            }else if(strncmp(JPEG_FILE_ENDING.data(),file_path.data()+file_path_len-JPEG_FILE_ENDING_LEN,JPEG_FILE_ENDING_LEN)==0){
+                image_parse_res=Image_read_jpeg(file_path.data(),image_data);
                 if (image_parse_res!=IMAGE_PARSE_RESULT_OK)
                     bail(-31, "failed to parse jpeg");
-            }else if(strncmp(GIF_FILE_ENDING,&file_path[file_path_len-GIF_FILE_ENDING_LEN],GIF_FILE_ENDING_LEN)==0){
-                image_parse_res=Image_read_gif(file_path,image_data);
+            }else if(strncmp(GIF_FILE_ENDING.data(),file_path.data()+file_path_len-GIF_FILE_ENDING_LEN,GIF_FILE_ENDING_LEN)==0){
+                image_parse_res=Image_read_gif(file_path.data(),image_data);
                 if (image_parse_res!=IMAGE_PARSE_RESULT_OK)
                     bail(-31, "failed to parse gif");
             }else{
-                bail(FATAL_UNEXPECTED_ERROR,"invalid file ending of supposed image file %s",file_path);
+                bail(FATAL_UNEXPECTED_ERROR,"invalid file ending of supposed image file %s",file_path.data());
             }
-            println("parsed %s in %.3fms",file_path,(current_time()-start_time)*1e3);
+            println("parsed %s in %.3fms",file_path.data(),(current_time()-start_time)*1e3);
         }
 
         image_textures[image_index]=App_create_texture(app,image_data);

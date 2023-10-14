@@ -6,6 +6,8 @@
 #include <cmath>
 #include <thread>
 #include <vector>
+#include <ranges>
+#include <numeric>
 #include <stdatomic.h>
 
 #include <time.h>
@@ -21,8 +23,8 @@ typedef huffman::CodingTable<uint16_t, bitStream::BITSTREAM_DIRECTION_RIGHT_TO_L
 typedef huffman::CodingTable<uint8_t, bitStream::BITSTREAM_DIRECTION_RIGHT_TO_LEFT, false> CodeLengthTable;
 typedef DistanceTable::BitStream_ BitStream;
 
-static const uint32_t PNG_BITSTREAM_COMPRESSION_MAX_WINDOW_SIZE=32768;
-static const uint32_t MAX_CHUNK_SIZE=0x8FFFFFFF;
+static constexpr uint32_t PNG_BITSTREAM_COMPRESSION_MAX_WINDOW_SIZE=32768;
+static constexpr uint32_t MAX_CHUNK_SIZE=0x8FFFFFFF;
 
 #define CHUNK_TYPE_FROM_NAME(C0,C1,C2,C3) ((C3<<24)|(C2<<16)|(C1<<8)|(C0))
 enum ChunkType{
@@ -88,7 +90,7 @@ enum PNGInterlace{
 };
 
 [[maybe_unused]]
-static const uint8_t DEFLATE_EXTRA_BITS[]={
+static constexpr uint8_t DEFLATE_EXTRA_BITS[]={
     0,0,0,0, 0,0,0,0,// 257...264
     1,1,1,1,// 265...268
     2,2,2,2,// 269...272
@@ -98,7 +100,7 @@ static const uint8_t DEFLATE_EXTRA_BITS[]={
     0 // 285
 };
 [[maybe_unused]]
-static const uint16_t DEFLATE_BASE_LENGTH_OFFSET[]={
+static constexpr uint16_t DEFLATE_BASE_LENGTH_OFFSET[]={
     3,   4,      5,        6,      7,  8,  9,  10, // 257...264
     11,  11+2,   11+2*2,   11+2*3, // 265...268
     19,  19+4,   19+4*2,   19+4*3, // 269...272
@@ -108,7 +110,7 @@ static const uint16_t DEFLATE_BASE_LENGTH_OFFSET[]={
     258 // 285
 };
 [[maybe_unused]]
-static const uint8_t DEFLATE_BACKWARD_EXTRA_BIT[]={
+static constexpr uint8_t DEFLATE_BACKWARD_EXTRA_BIT[]={
     0,  0,  0,  0,
     1,  1,
     2,  2,
@@ -125,7 +127,7 @@ static const uint8_t DEFLATE_BACKWARD_EXTRA_BIT[]={
     13, 13
 };
 [[maybe_unused]]
-static const uint16_t DEFLATE_BACKWARD_LENGTH_OFFSET[]={
+static constexpr uint16_t DEFLATE_BACKWARD_LENGTH_OFFSET[]={
     1,     2,    3,    4,
     5,     7,
     9,     13,
@@ -142,11 +144,11 @@ static const uint16_t DEFLATE_BACKWARD_LENGTH_OFFSET[]={
     16385, 24577
 };
 
-#define NUM_CODE_LENGTH_CODES 19
+static constexpr std::size_t NUM_CODE_LENGTH_CODES=19;
 /// this table in turn is also hufmann encoded, so:
 /// per spec, there are 19 code length codes (0-15 denote code length of this many bits, 16-19 are special)
 /// the sequence in which the number of bits used for each code length code appear in this table is specified to the following:
-static const uint8_t CODE_LENGTH_CODE_CHARACTERS[NUM_CODE_LENGTH_CODES]={16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15};
+static constexpr uint8_t CODE_LENGTH_CODE_CHARACTERS[NUM_CODE_LENGTH_CODES]={16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15};
 
 /// decode zlib-compressed data
 ///
@@ -214,13 +216,6 @@ class ZLIBDecoder{
             int block_id=0;
             discard block_id;
 
-            /// used as huffman table values
-            uint8_t values[NUM_CODE_LENGTH_CODES];
-            memset(values,0,sizeof(values));
-            for(uint8_t i=0;i<NUM_CODE_LENGTH_CODES;i++){
-                values[i]=i;
-            }
-
             // remaining bitstream is formatted according to RFC 1951 (deflate) (e.g. https://datatracker.ietf.org/doc/html/rfc1951)
             bool keep_parsing=true;
             while(keep_parsing){
@@ -257,62 +252,38 @@ class ZLIBDecoder{
                     // compressed using fixed huffman codes
                     case 1:
                         {
-                            std::size_t num_codes=288;
-                            std::vector<LiteralTable::ParseLeaf> alphabet_leafs(num_codes);
-                            for(unsigned i=0;i<=143;i++){
-                                alphabet_leafs[i]=LiteralTable::ParseLeaf{
-                                    .value=(uint16_t)i,
-                                    .len=8,
-                                    .code=0b00110000u+i
-                                };
-                            }
-                            for(unsigned i=144;i<=255;i++){
-                                alphabet_leafs[i]=LiteralTable::ParseLeaf{
-                                    .value=(uint16_t)i,
-                                    .len=9,
-                                    .code=0b110010000u+(i-144u)
-                                };
-                            }
-                            for(unsigned i=256;i<=279;i++){
-                                alphabet_leafs[i]=LiteralTable::ParseLeaf{
-                                    .value=(uint16_t)i,
-                                    .len=7,
-                                    .code=i-256u
-                                };
-                            }
-                            for(unsigned i=280;i<=287;i++){
-                                alphabet_leafs[i]=LiteralTable::ParseLeaf{
-                                    .value=(uint16_t)i,
-                                    .len=8,
-                                    .code=0b11000000u+(i-280u)
-                                };
-                            }
-
+                            // construct predefined huffman trees
                             {
-                                std::vector<int> code_lengths(288);
-                                std::vector<uint16_t> values(288);
-                                for(std::size_t i=0;i<288;i++){
-                                    code_lengths[i]=alphabet_leafs[i].len;
-                                    values[i]=alphabet_leafs[i].value;
-                                }
+                                constexpr std::size_t num_entries=288;
+
+                                std::array<int,num_entries> code_lengths{};
+                                std::fill(code_lengths.data()+0,code_lengths.data()+144,8);
+                                std::fill(code_lengths.data()+144,code_lengths.data()+256,9);
+                                std::fill(code_lengths.data()+256,code_lengths.data()+280,7);
+                                std::fill(code_lengths.data()+280,code_lengths.data()+288,8);
+
+                                std::array<uint16_t,num_entries> values{};
+                                std::iota(values.begin(),values.end(),0);
+
                                 LiteralTable::CodingTable_new(
                                     literal_alphabet, 
-                                    num_codes,
+                                    code_lengths.size(),
                                     code_lengths.data(), 
                                     values.data()
                                 );
                             }
 
                             {
-                                std::vector<int> code_lengths(32);
-                                std::vector<uint16_t> values(32);
-                                for(std::size_t i=0;i<32;i++){
-                                    code_lengths[i]=5;
-                                    values[i]=(unsigned short)i;
-                                }
+                                constexpr std::size_t num_entries=32;
+
+                                std::array<int,num_entries> code_lengths{};
+                                std::fill(code_lengths.begin(),code_lengths.end(),5);
+                                std::array<uint16_t,num_entries> values{};
+                                std::iota(values.begin(),values.end(),0);
+
                                 LiteralTable::CodingTable_new(
                                     distance_alphabet, 
-                                    32,
+                                    code_lengths.size(),
                                     code_lengths.data(), 
                                     values.data()
                                 );
@@ -331,28 +302,31 @@ class ZLIBDecoder{
                                 bail(FATAL_UNEXPECTED_ERROR,"too many huffman codes (distance) %" PRIu64 "\n",num_distance_codes);
 
                             // the number of elements in this table can be 4-19. the code length codes not present in the table are specified to not occur (i.e. zero bits)
-                            const int num_huffman_codes=4+stream->get_bits_advance<uint8_t>(4);
+                            const auto num_huffman_codes=4+stream->get_bits_advance<std::size_t>(4);
 
                             // parse code sizes for each entry in the huffman code table
 
                             // parse all code lengths in one go
-                            int code_length_codes[NUM_CODE_LENGTH_CODES];
-                            memset(code_length_codes,0,sizeof(code_length_codes));
-                            for(int code_size_index=0;code_size_index<num_huffman_codes;code_size_index++){
+                            std::array<int,NUM_CODE_LENGTH_CODES> code_length_codes{};
+                            for(std::size_t code_size_index : std::views::iota(0u,num_huffman_codes)){
                                 int new_code_length_code=stream->get_bits_advance<uint8_t>(3);
                                 code_length_codes[CODE_LENGTH_CODE_CHARACTERS[code_size_index]]=new_code_length_code;
                             }
+
+                            /// used as huffman table values
+                            std::array<uint8_t,NUM_CODE_LENGTH_CODES> values{};
+                            std::iota(values.begin(), values.end(), 0);
 
                             CodeLengthTable code_length_code_alphabet;
                             CodeLengthTable::CodingTable_new(
                                 code_length_code_alphabet, 
                                 NUM_CODE_LENGTH_CODES,
-                                code_length_codes, 
-                                values
+                                code_length_codes.data(), 
+                                values.data()
                             );
 
                             // then read literal and distance alphabet code lengths in one pass, since they use the same alphabet
-                            int literal_plus_distance_code_lengths[288+33];
+                            std::array<int,288+33> literal_plus_distance_code_lengths{};
                             for(std::size_t i=0;i<num_literal_codes+num_distance_codes;){
                                 const auto value=code_length_code_alphabet.lookup(stream);
                                 switch (value) {
@@ -361,10 +335,11 @@ class ZLIBDecoder{
                                             //Copy the previous code length 3 - 6 times.
                                             //The next 2 bits indicate repeat length
                                             //        (0 = 3, ... , 3 = 6)
-                                            const uint64_t num_reps=3+stream->get_bits_advance(2);
-                                            for(uint64_t rep=0;rep<num_reps;rep++){
-                                                literal_plus_distance_code_lengths[i+rep]=literal_plus_distance_code_lengths[i-1];
-                                            }
+                                            const auto num_reps=3+stream->get_bits_advance<std::size_t>(2);
+
+                                            const auto code_to_copy=literal_plus_distance_code_lengths[i-1];
+                                            std::fill(literal_plus_distance_code_lengths.data()+i,literal_plus_distance_code_lengths.data()+i+num_reps,code_to_copy);
+
                                             i+=num_reps;
                                         }
                                         break;
@@ -372,10 +347,8 @@ class ZLIBDecoder{
                                         {
                                             //Repeat a code length of 0 for 3 - 10 times.
                                             //   (3 bits of length)
-                                            const auto num_reps=3+stream->get_bits_advance(3);
-                                            for(uint64_t rep=0;rep<num_reps;rep++){
-                                                literal_plus_distance_code_lengths[i+rep]=0;
-                                            }
+                                            const auto num_reps=3+stream->get_bits_advance<std::size_t>(3);
+                                            std::fill(literal_plus_distance_code_lengths.data()+i,literal_plus_distance_code_lengths.data()+i+num_reps,0);
                                             i+=num_reps;
                                         }
                                         break;
@@ -383,10 +356,8 @@ class ZLIBDecoder{
                                         {
                                             // Repeat a code length of 0 for 11 - 138 times
                                             //   (7 bits of length)
-                                            const auto num_reps=11+stream->get_bits_advance(7);
-                                            for(uint64_t rep=0;rep<num_reps;rep++){
-                                                literal_plus_distance_code_lengths[i+rep]=0;
-                                            }
+                                            const auto num_reps=11+stream->get_bits_advance<std::size_t>(7);
+                                            std::fill(literal_plus_distance_code_lengths.data()+i,literal_plus_distance_code_lengths.data()+i+num_reps,0);
                                             i+=num_reps;
                                         }
                                         break;
@@ -402,44 +373,40 @@ class ZLIBDecoder{
                             code_length_code_alphabet.destroy();
 
                             // split combined alphabet
-                            int literal_code_lengths[288];
-                            for(std::size_t i=0;i<num_literal_codes;i++){
-                                literal_code_lengths[i]=literal_plus_distance_code_lengths[i];
-                            }
-                            for(std::size_t i=num_literal_codes;i<288;i++){
-                                literal_code_lengths[i]=0;
-                            }
+                            std::array<int,288> literal_code_lengths{};
+                            std::copy(
+                                literal_plus_distance_code_lengths.data(),
+                                literal_plus_distance_code_lengths.data()+num_literal_codes,
+                                literal_code_lengths.data()
+                            );
 
-                            int distance_code_lengths[33];
-                            for(std::size_t i=0;i<num_distance_codes;i++){
-                                distance_code_lengths[i]=literal_plus_distance_code_lengths[i+num_literal_codes];
-                            }
-                            for(std::size_t i=num_distance_codes;i<33;i++){
-                                distance_code_lengths[i]=0;
-                            }
+                            std::array<int,33> distance_code_lengths{};
+                            std::copy(
+                                literal_plus_distance_code_lengths.data()+num_literal_codes,
+                                literal_plus_distance_code_lengths.data()+num_literal_codes+num_distance_codes,
+                                distance_code_lengths.data()
+                            );
 
                             // construct literal alphabet from compressed alphabet lengths
-                            LiteralTable::VALUE_ literal_alphabet_values[288];
-                            for(LiteralTable::VALUE_ i=0;i<288;i++)
-                                literal_alphabet_values[i]=i;
+                            std::array<LiteralTable::VALUE_,288> literal_alphabet_values{};
+                            std::iota(literal_alphabet_values.begin(),literal_alphabet_values.end(),0);
 
                             LiteralTable::CodingTable_new(
                                 literal_alphabet, 
                                 num_literal_codes,
-                                literal_code_lengths, 
-                                literal_alphabet_values
+                                literal_code_lengths.data(), 
+                                literal_alphabet_values.data()
                             );
 
                             // construct distance alphabet from compressed alphabet lengths
-                            DistanceTable::VALUE_ distance_alphabet_values[33];
-                            for(DistanceTable::VALUE_ i=0;i<33;i++)
-                                distance_alphabet_values[i]=i;
+                            std::array<DistanceTable::VALUE_,33> distance_alphabet_values{};
+                            std::iota(distance_alphabet_values.begin(),distance_alphabet_values.end(),0);
 
                             DistanceTable::CodingTable_new(
                                 distance_alphabet, 
                                 num_distance_codes,
-                                distance_code_lengths, 
-                                distance_alphabet_values
+                                distance_code_lengths.data(), 
+                                distance_alphabet_values.data()
                             );
                         }
 
@@ -450,8 +417,6 @@ class ZLIBDecoder{
                     default:
                         exit(FATAL_UNEXPECTED_ERROR);
                 }
-
-                println("done parsing huffman tables %d",btype);
 
                 for(;;){
                     const auto literal_value=literal_alphabet.lookup(stream);
@@ -465,7 +430,7 @@ class ZLIBDecoder{
                         auto length=DEFLATE_BASE_LENGTH_OFFSET[table_offset];
                         const auto extra_bits=DEFLATE_EXTRA_BITS[table_offset];
                         if (extra_bits>0)
-                            length+=(uint16_t)stream->get_bits_advance(extra_bits);
+                            length+=stream->get_bits_advance<uint16_t>(extra_bits);
 
                         if (length>258)
                             bail(FATAL_UNEXPECTED_ERROR,"invalid length %d>258\n",length);
@@ -474,7 +439,7 @@ class ZLIBDecoder{
                         const auto backward_extra_bits=DEFLATE_BACKWARD_EXTRA_BIT[backward_distance_symbol];
                         auto backward_distance=DEFLATE_BACKWARD_LENGTH_OFFSET[backward_distance_symbol];
                         if(backward_extra_bits>0){
-                            auto backward_extra_distance=(uint16_t)stream->get_bits_advance(backward_extra_bits);
+                            auto backward_extra_distance=stream->get_bits_advance<uint16_t>(backward_extra_bits);
                             backward_distance+=backward_extra_distance;
                         }
 
@@ -524,8 +489,8 @@ class PngParser:public FileParser{
             this->out_line_prev=nullptr;
         }
         void destroy(){
-            free(this->file_contents);
-            free(this->output_buffer);
+            delete[] this->file_contents;
+            delete[] this->output_buffer;
         }
 
         [[gnu::hot,gnu::flatten]]
@@ -621,38 +586,38 @@ class PngParser:public FileParser{
 
         [[gnu::hot,gnu::flatten]]
         inline void process_scanline()noexcept{
-            uint8_t scanline_filter_byte=this->in_line[0];
+            const uint8_t scanline_filter_byte=this->in_line[0];
             this->in_line++;
 
             PNGScanlineFilter scanline_filter=(PNGScanlineFilter)scanline_filter_byte;
             switch(scanline_filter){
                 case PNG_SCANLINE_FILTER_NONE:
                     // println("filter: none");
-                    for(uint32_t index=0;index<this->scanline_width-1;index++){
+                    for(uint32_t index : std::views::iota(0u,this->scanline_width-1)){
                         this->out_line[index]=this->raw(index);
                     }
                     break;
                 case PNG_SCANLINE_FILTER_SUB:
                     // println("filter: sub");
-                    for(uint32_t index=0;index<this->scanline_width-1;index++){
+                    for(uint32_t index : std::views::iota(0u,this->scanline_width-1)){
                         this->out_line[index]=this->raw(index) + this->previous_rev(index);
                     }
                     break;
                 case PNG_SCANLINE_FILTER_UP:
                     // println("filter: up");
-                    for(uint32_t index=0;index<this->scanline_width-1;index++){
+                    for(uint32_t index : std::views::iota(0u,this->scanline_width-1)){
                         this->out_line[index]=this->raw(index) + this->above_rev(index);
                     }
                     break;
                 case PNG_SCANLINE_FILTER_AVERAGE:
                     // println("filter: average");
-                    for(uint32_t index=0;index<this->scanline_width-1;index++){
+                    for(uint32_t index : std::views::iota(0u,this->scanline_width-1)){
                         this->out_line[index]=this->raw(index) + static_cast<uint8_t>((this->previous_rev(index)+this->above_rev(index))/2);
                     }
                     break;
                 case PNG_SCANLINE_FILTER_PAETH:
                     // println("filter: paeth");
-                    for(uint32_t index=0;index<this->scanline_width-1;index++){
+                    for(uint32_t index : std::views::iota(0u,this->scanline_width-1)){
                         uint8_t res=this->raw(index) + this->paethPredictor_rev(index);
 
                         this->out_line[index]=res;
@@ -675,8 +640,8 @@ ImageParseResult Image_read_png(
     parser.expect_signature((const uint8_t*)(PNG_SIGNATURE), 8);
 
     // accumulated IDAT contents
-    uint64_t data_size=0;
-    uint8_t *data_buffer=NULL;
+    std::size_t data_size=0;
+    std::vector<uint8_t> data_buffer;
 
     bool parsing_done=false;
     while(parser.current_file_content_index<parser.file_size && !parsing_done){
@@ -721,12 +686,13 @@ ImageParseResult Image_read_png(
                 }
                 break;
             case CHUNK_TYPE_IDAT:
-                if(!data_buffer){
-                    data_buffer=(uint8_t*)malloc(bytes_in_chunk);
-                }else{
-                    data_buffer=(uint8_t*)realloc(data_buffer,data_size+bytes_in_chunk);
-                }
-                memcpy(data_buffer+data_size,parser.data_ptr(),bytes_in_chunk);
+                data_buffer.resize(data_buffer.size()+bytes_in_chunk);
+
+                std::copy(
+                    parser.data_ptr(),
+                    parser.data_ptr()+bytes_in_chunk,
+                    data_buffer.data()+data_size
+                );
                 data_size+=bytes_in_chunk;
 
                 break;
@@ -735,11 +701,10 @@ ImageParseResult Image_read_png(
                 break;
             default:
                 {
-                    uint8_t chunk_name[5];
-                    chunk_name[4]=0;
-                    memcpy(chunk_name,&chunk_type,4);
+                    std::array<uint8_t,5> chunk_name{};
+                    memcpy(chunk_name.data(),&chunk_type,4);
                     bool chunk_type_significant=chunk_name[0]&0x80;
-                    printf("unknown chunk type %s (%ssignificant)\n",chunk_name,chunk_type_significant?"":"not ");
+                    printf("unknown chunk type %s (%ssignificant)\n",chunk_name.data(),chunk_type_significant?"":"not ");
                 }
         }
         parser.current_file_content_index+=bytes_in_chunk;
@@ -750,14 +715,14 @@ ImageParseResult Image_read_png(
 
     println("done with basic file parsing after %.3fms",(current_time()-start_time)*1000);
 
-    uint64_t output_buffer_size=(parser.ihdr_data.height+1)*parser.ihdr_data.width*4;
-    uint8_t *const output_buffer=(uint8_t*)malloc(output_buffer_size);
+    std::size_t output_buffer_size=(parser.ihdr_data.height+1)*parser.ihdr_data.width*4;
+    uint8_t* const output_buffer=new uint8_t[output_buffer_size];
 
     // the data spread across the IDAT chunks is combined into a single bitstream, defined by RFC 1950 (e.g. https://datatracker.ietf.org/doc/html/rfc1950)
 
     ZLIBDecoder zlib_decoder{
-        data_size,
-        data_buffer,
+        data_buffer.size(),
+        data_buffer.data(),
         output_buffer_size,
         output_buffer
     };
@@ -779,7 +744,7 @@ ImageParseResult Image_read_png(
     parser.in_line_prev=NULL;
     parser.out_line_prev=NULL;
 
-    for(uint32_t scanline_index=0;scanline_index<num_scanlines;scanline_index++){
+    for(uint32_t scanline_index : std::views::iota(0u,num_scanlines)){
         parser.in_line =&output_buffer[scanline_index*scanline_width];
         parser.out_line=&defiltered_output_buffer[scanline_index*parser.ihdr_data.width*bytes_per_pixel];
 
@@ -792,7 +757,6 @@ ImageParseResult Image_read_png(
     println("done with scanline processing after %.3fms",(current_time()-start_time)*1000);
 
     parser.destroy();
-    free(data_buffer);
 
     image_data->data=defiltered_output_buffer;
 
