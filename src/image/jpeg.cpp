@@ -1237,6 +1237,7 @@ template<>
 void JpegParser::parse_segment<JpegSegmentType::EOI>(){
     this->parsing_done=true;
 }
+#include<iostream>
 template<>
 void JpegParser::parse_segment<JpegSegmentType::COM>(){
     const uint32_t segment_size=this->next_u16();
@@ -1245,12 +1246,9 @@ void JpegParser::parse_segment<JpegSegmentType::COM>(){
 
     const uint32_t comment_length=segment_size-2;
 
-    char* const comment_str=new char[comment_length+1];
-    comment_str[comment_length]=0;
+    std::string comment_str{&this->file_contents[this->current_file_content_index],&this->file_contents[this->current_file_content_index+comment_length]};
 
-    memcpy(comment_str,&this->file_contents[this->current_file_content_index],comment_length);
-
-    image_data->image_file_metadata.file_comment=comment_str;
+    image_data->image_file_metadata.file_comment=std::move(comment_str);
 
     this->current_file_content_index=static_cast<uint64_t>(segment_end_position);
 }

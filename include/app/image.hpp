@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <cstring>
 #include <cstdlib>
+#include <string>
 
 #include "app/macros.hpp"
 #include "app/error.hpp"
@@ -15,7 +16,7 @@ typedef enum PixelFormat{
     PIXEL_FORMAT_Ru8Gu8Bu8Au8
 }PixelFormat;
 struct ImageFileMetadata{
-    char* file_comment;
+    std::string file_comment;
 };
 
 class ImageData{
@@ -79,7 +80,8 @@ class FileParser{
         this->file_size=static_cast<std::size_t>(ftell_res);
         rewind(file);
 
-        this->file_contents=new uint8_t[this->file_size];
+        // add some padding to the end of the file so that we can read past the end of the file without segfaulting
+        this->file_contents=new uint8_t[this->file_size+16];
         discard fread(this->file_contents, 1, this->file_size, file);
         
         fclose(file);

@@ -32,14 +32,8 @@ void ImageData::initEmpty(ImageData* const image_data){
     image_data->height=0;
     image_data->width=0;
     image_data->pixel_format=(PixelFormat)0;
-
-    image_data->image_file_metadata.file_comment=NULL;
 }
 void ImageData::destroy(ImageData* const image_data){
-    if(image_data->image_file_metadata.file_comment){
-        delete[] image_data->image_file_metadata.file_comment;
-        image_data->image_file_metadata.file_comment=NULL;
-    }
     delete[] image_data->data;
 }
 VkFormat ImageData::vk_img_format()const noexcept{
