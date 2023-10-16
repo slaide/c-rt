@@ -6,6 +6,7 @@
 #include <cstdlib>
 #include <ctime>
 #include <csignal>
+#include <memory>
 
 #include <vulkan/vulkan.h>
 
@@ -201,6 +202,26 @@ void PlatformWindow_set_render_area_width(PlatformWindow* platform_window,uint16
  */
 typedef struct PlatformHandle PlatformHandle;
 
+class _VkCore{
+    public:
+        VkInstance instance=VK_NULL_HANDLE;
+        VkAllocationCallbacks* vk_allocator=nullptr;
+        VkPhysicalDevice physical_device=VK_NULL_HANDLE;
+        VkDevice device=VK_NULL_HANDLE;
+
+        _VkCore(){
+            this->instance=VK_NULL_HANDLE;
+            this->vk_allocator=nullptr;
+            this->physical_device=VK_NULL_HANDLE;
+            this->device=VK_NULL_HANDLE;
+        }
+
+        auto create_semaphore(VkSemaphoreCreateInfo* semaphore_create_info,VkSemaphore* semaphore){
+            return vkCreateSemaphore(device,semaphore_create_info,vk_allocator,semaphore);
+        }
+};
+typedef std::shared_ptr<_VkCore> VkCore;
+
 class Application;
 
 /**
@@ -227,7 +248,7 @@ typedef struct Mesh{
     VkDeviceMemory buffer_memory;
 }Mesh;
 
-typedef struct Texture Texture;
+class Texture;
 
 /**
  * @brief gpu shader object for object drawing
@@ -235,7 +256,7 @@ typedef struct Texture Texture;
  * not to be confused with a shader module
  */
 typedef struct Shader{
-    Application* app;
+    VkCore core;
 
     VkShaderModule fragment_shader;
     VkShaderModule vertex_shader;
@@ -257,12 +278,11 @@ class Application{
 
         uint32_t cli_num_args=0;
         char** cli_args=nullptr;
+
+        VkCore core;
         
         PlatformHandle* platform_handle=nullptr;
         PlatformWindow* platform_window=nullptr;
-
-        VkInstance instance=VK_NULL_HANDLE;
-        VkAllocationCallbacks* vk_allocator=nullptr;
 
         VkSurfaceKHR window_surface=VK_NULL_HANDLE;
         VkSwapchainKHR swapchain=VK_NULL_HANDLE;
@@ -271,9 +291,6 @@ class Application{
         VkImage* swapchain_images=nullptr;
         VkImageView* swapchain_image_views=nullptr;
         VkFramebuffer* swapchain_framebuffers=nullptr;
-
-        VkPhysicalDevice physical_device=VK_NULL_HANDLE;
-        VkDevice device=VK_NULL_HANDLE;
 
         uint32_t graphics_queue_family_index=0;
         VkQueue graphics_queue=VK_NULL_HANDLE;

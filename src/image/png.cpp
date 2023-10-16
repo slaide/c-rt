@@ -8,7 +8,6 @@
 #include <vector>
 #include <ranges>
 #include <numeric>
-#include <stdatomic.h>
 
 #include <time.h>
 
@@ -27,38 +26,156 @@ static constexpr uint32_t PNG_BITSTREAM_COMPRESSION_MAX_WINDOW_SIZE=32768;
 static constexpr uint32_t MAX_CHUNK_SIZE=0x8FFFFFFF;
 
 #define CHUNK_TYPE_FROM_NAME(C0,C1,C2,C3) ((C3<<24)|(C2<<16)|(C1<<8)|(C0))
-enum ChunkType{
-    CHUNK_TYPE_IHDR=CHUNK_TYPE_FROM_NAME('I','H','D','R'),
-    CHUNK_TYPE_IDAT=CHUNK_TYPE_FROM_NAME('I','D','A','T'),
-    CHUNK_TYPE_PLTE=CHUNK_TYPE_FROM_NAME('P','L','T','E'),
-    CHUNK_TYPE_IEND=CHUNK_TYPE_FROM_NAME('I','E','N','D'),
+class ChunkType{
+    private:
+        enum class Value:uint32_t{
+            IHDR=CHUNK_TYPE_FROM_NAME('I','H','D','R'),
+            IDAT=CHUNK_TYPE_FROM_NAME('I','D','A','T'),
+            PLTE=CHUNK_TYPE_FROM_NAME('P','L','T','E'),
+            IEND=CHUNK_TYPE_FROM_NAME('I','E','N','D'),
+            tEXt=CHUNK_TYPE_FROM_NAME('t','E','X','t'),
+            iTXt=CHUNK_TYPE_FROM_NAME('i','T','X','t'),
+            sRGB=CHUNK_TYPE_FROM_NAME('s','R','G','B'),
+            gAMA=CHUNK_TYPE_FROM_NAME('g','A','M','A'),
+            cHRM=CHUNK_TYPE_FROM_NAME('c','H','R','M'),
 
-    //other common chunk types: sRGB, iCCP, cHRM, gAMA, iTXt, tEXt, zTXt, bKGD, pHYs, sBIT, hIST, tIME
+            UNDEFINED=0xFFFFFFFF,
+
+            //other common chunk types: sRGB, iCCP, cHRM, gAMA, iTXt, tEXt, zTXt, bKGD, pHYs, sBIT, hIST, tIME
+        };
+    public:
+        using V=Value;
+    private:
+        V v;
+    public:
+        ChunkType():v(V::UNDEFINED){}
+        ChunkType(uint32_t raw):v(V(raw)){}
+        ChunkType(const V& v):v(v){}
+        ChunkType& operator=(const V& v){
+            this->v=v;
+            return *this;
+        }
+
+        V raw()const noexcept{
+            return this->v;
+        }
+
+        std::string name()const noexcept{
+            std::string ret(4,0);
+
+            ret[3]=(char)((uint32_t)this->raw()>>24);
+            ret[2]=(char)((uint32_t)this->raw()>>16);
+            ret[1]=(char)((uint32_t)this->raw()>>8);
+            ret[0]=(char)((uint32_t)this->raw()>>0);
+
+            return ret;
+        }
+
+        /// 0 (uppercase) = critical, 1 (lowercase) = ancillary.
+        bool is_ancillary()const noexcept{
+            return this->name()[0]&0x20;
+        }
+        /// 0 (uppercase) = public, 1 (lowercase) = private.
+        bool is_private()const noexcept{
+            return this->name()[1]&0x20;
+        }
+        /// Must be 0 (uppercase) in files conforming to this version of PNG.
+        bool is_reserved()const noexcept{
+            return this->name()[2]&0x20;
+        }
+        /// 0 (uppercase) = unsafe to copy, 1 (lowercase) = safe to copy.
+        bool is_safe_to_copy()const noexcept{
+            return this->name()[3]&0x20;
+        }
 };
 
-enum class PNGColorType{
-    GREYSCALE=0,
-    RGB=2,
-    PALETTE=3,
-    /// greyscale + alpha
-    GREYSCALEALPHA=4,
-    RGBA=6,
+class ColorType{
+    private:
+        enum class PNGColorType:uint8_t{
+            GREYSCALE=0,
+            RGB=2,
+            PALETTE=3,
+            /// greyscale + alpha
+            GREYSCALEALPHA=4,
+            RGBA=6,
+
+            UNDEFINED=255,
+        };
+
+    public:
+        using V=PNGColorType;
+    private:
+        V v=V::UNDEFINED;
+    public:
+        V raw()const noexcept{
+            return this->v;
+        }
+
+    public:
+        ColorType():v(V::UNDEFINED){}
+        ColorType(uint8_t raw):v(V(raw)){}
+        ColorType(const V& v):v(v){}
+        ColorType& operator=(const V& v){
+            this->v=v;
+            return *this;
+        }
+        std::string name(){
+            switch(this->raw()){
+                case V::GREYSCALE: 
+                    return "GREYSCALE";
+                case V::RGB: 
+                    return "RGB";
+                case V::PALETTE: 
+                    return "PALETTE";
+                case V::GREYSCALEALPHA: 
+                    return "GREYSCALEALPHA";
+                case V::RGBA: 
+                    return "RGBA";
+                default: return NULL;
+            }
+        }
 };
-const char* PNGColorType_name(PNGColorType color_type){
-    switch(color_type){
-        case PNGColorType::GREYSCALE: 
-            return "GREYSCALE";
-        case PNGColorType::RGB: 
-            return "RGB";
-        case PNGColorType::PALETTE: 
-            return "PALETTE";
-        case PNGColorType::GREYSCALEALPHA: 
-            return "GREYSCALEALPHA";
-        case PNGColorType::RGBA: 
-            return "RGBA";
-        default: return NULL;
-    }
-}
+class RenderingIntent{
+    private:
+        enum class Value:uint8_t{
+            Perceptual=0,
+            RelativeColorimetric=1,
+            Saturation=2,
+            AbsoluteColorimetric=3,
+
+            UNDEFINED=255,
+        };
+
+    public:
+        using V=Value;
+    private:
+        V v;
+    public:
+        V raw()const noexcept{
+            return this->v;
+        }
+
+        RenderingIntent():v(V::UNDEFINED){}
+        RenderingIntent(uint8_t raw):v(V(raw)){}
+        RenderingIntent(const V& v):v(v){}
+        RenderingIntent& operator=(const V& v){
+            this->v=v;
+            return *this;
+        }
+        std::string name()const noexcept{
+            switch(this->raw()){
+                case V::Perceptual: 
+                    return "Perceptual";
+                case V::RelativeColorimetric: 
+                    return "RelativeColorimetric";
+                case V::Saturation: 
+                    return "Saturation";
+                case V::AbsoluteColorimetric:
+                    return "AbsoluteColorimetric";
+                default: return NULL;
+            }
+        }
+};
 /// specified in IHDR
 enum PNGCompressionMethod{
     /// zlib/deflate format
@@ -77,7 +194,7 @@ struct [[gnu::packed]] IHDR{
     uint32_t width;
     uint32_t height;
     uint8_t bit_depth;
-    PNGColorType color_type;
+    ColorType color_type;
     uint8_t compression_method;
     uint8_t filter_method;
     uint8_t interlace_method;
@@ -642,10 +759,10 @@ ImageParseResult Image_read_png(
         if(bytes_in_chunk>MAX_CHUNK_SIZE)
             bail(IMAGE_PARSE_RESULT_PNG_CHUNK_SIZE_EXCEEDED,"png chunk too big. standard only allows up to 2^31 bytes\n");
 
-        uint32_t chunk_type=parser.get_mem<uint32_t>();
+        ChunkType chunk_type=parser.get_mem<uint32_t>();
 
-        switch(chunk_type){
-            case CHUNK_TYPE_IHDR:
+        switch(chunk_type.raw()){
+            case ChunkType::V::IHDR:
                 {
                     parser.ihdr_data=parser.get_mem<struct IHDR,false>();
                     parser.ihdr_data.width=bitUtil::byteswap(parser.ihdr_data.width,4);
@@ -655,8 +772,8 @@ ImageParseResult Image_read_png(
                     image_data->width=parser.ihdr_data.width;
                     image_data->interleaved=true;
 
-                    switch(parser.ihdr_data.color_type){
-                        case PNGColorType::RGBA:
+                    switch(parser.ihdr_data.color_type.raw()){
+                        case ColorType::V::RGBA:
                             switch(parser.ihdr_data.bit_depth){
                                 case 8:
                                     image_data->pixel_format=PixelFormat::Ru8Gu8Bu8Au8;
@@ -665,7 +782,7 @@ ImageParseResult Image_read_png(
                                     bail(FATAL_UNEXPECTED_ERROR,"TODO unknown bit depth %d",parser.ihdr_data.bit_depth);
                             }
                             break;
-                        case PNGColorType::RGB:
+                        case ColorType::V::RGB:
                             switch(parser.ihdr_data.bit_depth){
                                 case 8:
                                     image_data->pixel_format=PixelFormat::Ru8Gu8Bu8;
@@ -674,16 +791,16 @@ ImageParseResult Image_read_png(
                                     bail(FATAL_UNEXPECTED_ERROR,"TODO unknown bit depth %d",parser.ihdr_data.bit_depth);
                             }
                             break;
-                        case PNGColorType::GREYSCALE:
-                        case PNGColorType::GREYSCALEALPHA:
-                        case PNGColorType::PALETTE:
-                            bail(FATAL_UNEXPECTED_ERROR,"TODO pixel format %s",PNGColorType_name(parser.ihdr_data.color_type));
+                        case ColorType::V::GREYSCALE:
+                        case ColorType::V::GREYSCALEALPHA:
+                        case ColorType::V::PALETTE:
+                            bail(FATAL_UNEXPECTED_ERROR,"TODO pixel format %s",parser.ihdr_data.color_type.name().c_str());
                         default:
                             bail(FATAL_UNEXPECTED_ERROR,"unknown pixel format");
                     }
                 }
                 break;
-            case CHUNK_TYPE_IDAT:
+            case ChunkType::V::IDAT:
                 data_buffer.resize(data_buffer.size()+bytes_in_chunk);
 
                 std::copy(
@@ -694,15 +811,101 @@ ImageParseResult Image_read_png(
                 data_size+=bytes_in_chunk;
 
                 break;
-            case CHUNK_TYPE_IEND:
+            case ChunkType::V::iTXt:
+                {
+                    std::string text;
+                    text.resize(bytes_in_chunk);
+
+                    std::copy(
+                        parser.data_ptr(),
+                        parser.data_ptr()+bytes_in_chunk,
+                        text.data()
+                    );
+
+                    for(std::size_t i=0;i<bytes_in_chunk;i++){
+                        if(text[i]=='\0')
+                            text[i]=' ';
+                    }
+
+                    println("iTXt chunk: %s",text.c_str());
+                }
+
+                break;
+            case ChunkType::V::tEXt:
+                {
+                    std::string text;
+                    text.resize(bytes_in_chunk);
+
+                    std::copy(
+                        parser.data_ptr(),
+                        parser.data_ptr()+bytes_in_chunk,
+                        text.data()
+                    );
+
+                    for(std::size_t i=0;i<bytes_in_chunk;i++){
+                        if(text[i]=='\0')
+                            text[i]=' ';
+                    }
+
+                    println("iTXt chunk: %s",text.c_str());
+                }
+
+                break;
+            case ChunkType::V::sRGB:
+                {
+                    const auto rendering_intent=RenderingIntent(parser.get_mem<uint8_t,false>());
+                    println("sRGB rendering intent: %s",rendering_intent.name().c_str());
+                }
+
+                break;
+            case ChunkType::V::gAMA:
+                {
+                    const float gamma_value=(float)bitUtil::byteswap(parser.get_mem<uint32_t,false>(),4);
+                    println("gamma is 1/%.1f",100000/gamma_value);
+                    /*
+                    from the spec:
+
+                    The gAMA chunk specifies the relationship between the image samples and the desired display output intensity as a power function:
+                        sample = light_out ^ gamma
+                    Here sample and light_out are normalized to the range 0.0 (minimum intensity) to 1.0 (maximum intensity). Therefore:
+                        sample = integer_sample / (2^bitdepth - 1)
+                    */
+                }
+                break;
+            case ChunkType::V::cHRM:
+                {
+                    const auto White_Point_x=bitUtil::byteswap(parser.get_mem<uint32_t>(),4);
+                    const auto White_Point_y=bitUtil::byteswap(parser.get_mem<uint32_t>(),4);
+                    const auto Red_x=bitUtil::byteswap(parser.get_mem<uint32_t>(),4);
+                    const auto Red_y=bitUtil::byteswap(parser.get_mem<uint32_t>(),4);
+                    const auto Green_x=bitUtil::byteswap(parser.get_mem<uint32_t>(),4);
+                    const auto Green_y=bitUtil::byteswap(parser.get_mem<uint32_t>(),4);
+                    const auto Blue_x=bitUtil::byteswap(parser.get_mem<uint32_t>(),4);
+                    const auto Blue_y=bitUtil::byteswap(parser.get_mem<uint32_t>(),4);
+
+                    println("White Point: (%d,%d)",White_Point_x,White_Point_y);
+                    println("Red: (%d,%d)",Red_x,Red_y);
+                    println("Green: (%d,%d)",Green_x,Green_y);
+                    println("Blue: (%d,%d)",Blue_x,Blue_y);
+
+                    bytes_in_chunk-=32;
+                }
+                break;
+            case ChunkType::V::IEND:
                 parsing_done=true;
                 break;
             default:
                 {
-                    std::array<uint8_t,5> chunk_name{};
-                    memcpy(chunk_name.data(),&chunk_type,4);
-                    bool chunk_type_significant=chunk_name[0]&0x80;
-                    printf("unknown chunk type %s (%ssignificant)\n",chunk_name.data(),chunk_type_significant?"":"not ");
+                    ChunkType chunk=chunk_type;
+                    if(chunk.is_private())
+                        break;
+
+                    println(
+                        "unknown chunk type %s (%ssignificant, %sprivate)",
+                        chunk.name().c_str(),
+                        chunk.is_ancillary()?"not ":"",
+                        chunk.is_private()?"":"not "
+                    );
                 }
         }
         parser.current_file_content_index+=bytes_in_chunk;
@@ -736,7 +939,7 @@ ImageParseResult Image_read_png(
             parser.bpp=3;
             break;
         default:
-            bail(FATAL_UNEXPECTED_ERROR,"TODO pixel format %s",PNGColorType_name(parser.ihdr_data.color_type));
+            bail(FATAL_UNEXPECTED_ERROR,"TODO pixel format %s",parser.ihdr_data.color_type.name().c_str());
     }
 
     const uint32_t scanline_width=1+parser.ihdr_data.width*parser.bpp;

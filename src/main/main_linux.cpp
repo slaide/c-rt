@@ -89,7 +89,7 @@ VkSurfaceKHR Application::create_window_vk_surface(PlatformWindow* platform_wind
         .window=platform_window->window
     };
     VkSurfaceKHR surface;
-    VkResult res=vkCreateXcbSurfaceKHR(this->instance, &surface_create_info, this->vk_allocator, &surface);
+    VkResult res=vkCreateXcbSurfaceKHR(this->core->instance, &surface_create_info, this->core->vk_allocator, &surface);
     if(res!=VK_SUCCESS)
         bail(VULKAN_CREATE_XCB_SURFACE_FAILURE,"failed to create xcb surface\n");
 

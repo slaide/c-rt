@@ -193,12 +193,58 @@ VertexData mesh[4]={
     }
 };
 
-struct Texture{
-    VkImage image;
-    VkDeviceMemory image_memory;
-    VkImageView image_view;
-    VkDescriptorSet descriptor_set;
+class Texture{
+    public:
+        VkCore core;
+        VkImage image=VK_NULL_HANDLE;
+        VkDeviceMemory image_memory=VK_NULL_HANDLE;
+        VkImageView image_view=VK_NULL_HANDLE;
+        VkDescriptorSet descriptor_set=VK_NULL_HANDLE;
+
+        bool is_valid()const noexcept{
+            return this->image!=VK_NULL_HANDLE;
+        }
+        void invalidate()noexcept{
+            this->image=VK_NULL_HANDLE;
+        }
+
+        Texture(VkCore core):core(core){}
+
+        // do not allow copying
+        Texture(const Texture&)=delete;
+        Texture& operator=(const Texture&)=delete;
+
+        // allow moving
+        Texture(Texture&& other)noexcept{
+            this->core=std::move(other.core);
+            this->image=std::move(other.image);
+            this->image_memory=std::move(other.image_memory);
+            this->image_view=std::move(other.image_view);
+            this->descriptor_set=std::move(other.descriptor_set);
+        }
+        Texture& operator=(Texture&& other)noexcept{
+            if(this != &other){
+                this->core=std::move(other.core);
+                this->image=std::move(other.image);
+                this->image_memory=std::move(other.image_memory);
+                this->image_view=std::move(other.image_view);
+                this->descriptor_set=std::move(other.descriptor_set);
+            }
+
+            other.invalidate();
+
+            return *this;
+        }
+
+        ~Texture(){
+            if(this->is_valid()){
+                vkDestroyImageView(this->core->device,this->image_view,this->core->vk_allocator);
+                vkDestroyImage(this->core->device,this->image,this->core->vk_allocator);
+                vkFreeMemory(this->core->device,this->image_memory,this->core->vk_allocator);
+            }
+        }
 };
+
 /**
  * @brief create texture fit for supplied image data (does not upload data to gpu!)
  * 
@@ -208,7 +254,7 @@ struct Texture{
  */
 [[gnu::nonnull(2)]]
 Texture* Application::create_texture(ImageData* image_data){
-    Texture* texture=new Texture();
+    Texture* texture=new Texture(this->core);
 
     auto image_format=image_data->vk_img_format();
 
@@ -233,16 +279,16 @@ Texture* Application::create_texture(ImageData* image_data){
         .pQueueFamilyIndices=NULL,
         .initialLayout=VK_IMAGE_LAYOUT_UNDEFINED
     };
-    VkResult res=vkCreateImage(this->device,&image_create_info,this->vk_allocator,&texture->image);
+    VkResult res=vkCreateImage(this->core->device,&image_create_info,this->core->vk_allocator,&texture->image);
     if(res!=VK_SUCCESS)
         bail(VULKAN_CREATE_IMAGE_FAILURE,"failed to create image\n");
 
     VkMemoryRequirements image_memory_requirements;
-    vkGetImageMemoryRequirements(this->device, texture->image, &image_memory_requirements);
+    vkGetImageMemoryRequirements(this->core->device, texture->image, &image_memory_requirements);
 
     uint32_t image_memory_type_index=UINT32_MAX;
     VkPhysicalDeviceMemoryProperties physical_device_memory_properties;
-    vkGetPhysicalDeviceMemoryProperties(this->physical_device,&physical_device_memory_properties);
+    vkGetPhysicalDeviceMemoryProperties(this->core->physical_device,&physical_device_memory_properties);
     for(uint32_t i=0;i<physical_device_memory_properties.memoryTypeCount;i++){
         if(image_memory_requirements.memoryTypeBits&(1<<i)){
             image_memory_type_index=i;
@@ -256,11 +302,11 @@ Texture* Application::create_texture(ImageData* image_data){
         .allocationSize=image_memory_requirements.size,
         .memoryTypeIndex=image_memory_type_index
     };
-    res=vkAllocateMemory(this->device, &image_memory_allocate_info, this->vk_allocator, &texture->image_memory);
+    res=vkAllocateMemory(this->core->device, &image_memory_allocate_info, this->core->vk_allocator, &texture->image_memory);
     if(res!=VK_SUCCESS)
         bail(VULKAN_ALLOCATE_MEMORY_FAILURE,"failed to allocate image memory\n");
 
-    res=vkBindImageMemory(this->device, texture->image, texture->image_memory, 0);
+    res=vkBindImageMemory(this->core->device, texture->image, texture->image_memory, 0);
     if(res!=VK_SUCCESS)
         bail(VULKAN_BIND_IMAGE_MEMORY_FAILURE,"failed to bind image memory\n");
 
@@ -286,7 +332,7 @@ Texture* Application::create_texture(ImageData* image_data){
         },
         .subresourceRange=image_subresource_range
     };
-    res=vkCreateImageView(this->device,&image_view_create_info,this->vk_allocator,&texture->image_view);
+    res=vkCreateImageView(this->core->device,&image_view_create_info,this->core->vk_allocator,&texture->image_view);
     if(res!=VK_SUCCESS)
         bail(VULKAN_CREATE_IMAGE_VIEW_FAILURE,"failed to create image view\n");
 
@@ -297,7 +343,7 @@ Texture* Application::create_texture(ImageData* image_data){
         .descriptorSetCount=1,
         .pSetLayouts=&this->shader->set_layout
     };
-    res=vkAllocateDescriptorSets(this->device, &descriptor_set_allocate_info, &texture->descriptor_set);
+    res=vkAllocateDescriptorSets(this->core->device, &descriptor_set_allocate_info, &texture->descriptor_set);
     if(res!=VK_SUCCESS)
         bail(VULKAN_ALLOCATE_DESCRIPTOR_SETS_FAILURE,"failed to allocate descriptor sets\n");
 
@@ -318,7 +364,7 @@ Texture* Application::create_texture(ImageData* image_data){
         .pBufferInfo=NULL,
         .pTexelBufferView=NULL
     };
-    vkUpdateDescriptorSets(this->device, 1, &write_descriptor_set, 0, NULL);
+    vkUpdateDescriptorSets(this->core->device, 1, &write_descriptor_set, 0, NULL);
 
     return texture;
 }
@@ -360,7 +406,7 @@ void Application::upload_texture(
     }
 
     VkPhysicalDeviceProperties physical_device_properties;
-    vkGetPhysicalDeviceProperties(this->physical_device,&physical_device_properties);
+    vkGetPhysicalDeviceProperties(this->core->physical_device,&physical_device_properties);
 
     VkDeviceSize image_memory_size_raw=image_data->height*image_data->width*4;
     VkDeviceSize image_memory_size=ROUND_UP(image_memory_size_raw, physical_device_properties.limits.nonCoherentAtomSize);
@@ -369,7 +415,7 @@ void Application::upload_texture(
 
     void* staging_buffer_cpu_memory;
     VkResult res=vkMapMemory(
-        this->device, 
+        this->core->device, 
         this->staging_buffer_memory, 
         image_offset_into_staging_buffer, 
         image_memory_size, 0, &staging_buffer_cpu_memory
@@ -390,11 +436,11 @@ void Application::upload_texture(
         .offset=image_offset_into_staging_buffer,
         .size=VK_WHOLE_SIZE
     };
-    res=vkFlushMappedMemoryRanges(this->device, 1, &flush_memory_range);
+    res=vkFlushMappedMemoryRanges(this->core->device, 1, &flush_memory_range);
     if (res!=VK_SUCCESS)
         bail(VULKAN_FLUSH_MAPPED_MEMORY_RANGES_FAILURE,"failed to flush mapped memory ranges\n");
 
-    vkUnmapMemory(this->device, this->staging_buffer_memory);
+    vkUnmapMemory(this->core->device, this->staging_buffer_memory);
 
     VkBufferImageCopy buffer_image_copy={
         .bufferOffset=image_offset_into_staging_buffer,
@@ -442,9 +488,9 @@ void Application::upload_texture(
     }
 }
 void Application::destroy_texture(Texture* texture){
-    vkDestroyImageView(this->device,texture->image_view,this->vk_allocator);
+    /*vkDestroyImageView(this->device,texture->image_view,this->vk_allocator);
     vkDestroyImage(this->device,texture->image,this->vk_allocator);
-    vkFreeMemory(this->device,texture->image_memory,this->vk_allocator);
+    vkFreeMemory(this->device,texture->image_memory,this->vk_allocator);*/
 
     delete texture;
 }
@@ -478,7 +524,7 @@ VkShaderModule Application::create_shader_module(
     };
 
     VkShaderModule shader;
-    vkCreateShaderModule(this->device, &shader_module_create_info, this->vk_allocator, &shader);
+    vkCreateShaderModule(this->core->device, &shader_module_create_info, this->core->vk_allocator, &shader);
 
     delete[] shader_code;
 
@@ -490,7 +536,7 @@ Shader* Application::create_shader(
 ){
     Shader* shader=new Shader();
 
-    shader->app=this;
+    shader->core=this->core;
 
     shader->fragment_shader=Application::create_shader_module("fragshader.spv");
     shader->vertex_shader=Application::create_shader_module("vertshader.spv");
@@ -519,7 +565,7 @@ Shader* Application::create_shader(
             .bindingCount=2,
             .pBindings=set_layout_bindings
         };
-        VkResult res=vkCreateDescriptorSetLayout(this->device, &descriptor_set_layout, this->vk_allocator, &shader->set_layout);
+        VkResult res=vkCreateDescriptorSetLayout(this->core->device, &descriptor_set_layout, this->core->vk_allocator, &shader->set_layout);
         if(res!=VK_SUCCESS)
             bail(VULKAN_CREATE_DESCRIPTOR_SET_LAYOUT_FAILURE,"failed to create descriptor set layout\n");
     }
@@ -542,7 +588,7 @@ Shader* Application::create_shader(
         .poolSizeCount=2,
         .pPoolSizes=pool_sizes
     };
-    VkResult res=vkCreateDescriptorPool(this->device, &descriptor_pool_create_info, this->vk_allocator, &shader->descriptor_pool);
+    VkResult res=vkCreateDescriptorPool(this->core->device, &descriptor_pool_create_info, this->core->vk_allocator, &shader->descriptor_pool);
     if(res!=VK_SUCCESS)
         bail(VULKAN_CREATE_DESCRIPTOR_POOL_FAILURE,"failed to create descriptor pool\n");
 
@@ -566,7 +612,7 @@ Shader* Application::create_shader(
         .borderColor=VK_BORDER_COLOR_INT_OPAQUE_BLACK,
         .unnormalizedCoordinates=VK_FALSE
     };
-    res=vkCreateSampler(this->device, &sampler_create_info, this->vk_allocator, &shader->image_sampler);
+    res=vkCreateSampler(this->core->device, &sampler_create_info, this->core->vk_allocator, &shader->image_sampler);
     if(res!=VK_SUCCESS)
         bail(FATAL_UNEXPECTED_ERROR,"failed to create sampler\n");
 
@@ -579,7 +625,7 @@ Shader* Application::create_shader(
         .pushConstantRangeCount=0,
         .pPushConstantRanges=NULL
     };
-    vkCreatePipelineLayout(this->device, &pipeline_layout_create_info, this->vk_allocator, &shader->pipeline_layout);
+    vkCreatePipelineLayout(this->core->device, &pipeline_layout_create_info, this->core->vk_allocator, &shader->pipeline_layout);
 
     VkVertexInputBindingDescription vertex_input_binding_descriptions[1]={{
         .binding=0,
@@ -725,19 +771,19 @@ Shader* Application::create_shader(
         .basePipelineHandle=NULL,
         .basePipelineIndex=-1
     };
-    vkCreateGraphicsPipelines(this->device, VK_NULL_HANDLE, 1, &graphics_pipeline_create_info, this->vk_allocator, &shader->pipeline);
+    vkCreateGraphicsPipelines(this->core->device, VK_NULL_HANDLE, 1, &graphics_pipeline_create_info, this->core->vk_allocator, &shader->pipeline);
 
     return shader;
 }
 void Application::destroy_shader(Shader* const shader){
-    vkDestroyDescriptorPool(shader->app->device, shader->descriptor_pool, shader->app->vk_allocator);
-    vkDestroyDescriptorSetLayout(shader->app->device, shader->set_layout, shader->app->vk_allocator);
+    vkDestroyDescriptorPool(shader->core->device, shader->descriptor_pool, shader->core->vk_allocator);
+    vkDestroyDescriptorSetLayout(shader->core->device, shader->set_layout, shader->core->vk_allocator);
 
-    vkDestroyPipeline(shader->app->device,shader->pipeline,shader->app->vk_allocator);
-    vkDestroyPipelineLayout(shader->app->device, shader->pipeline_layout, shader->app->vk_allocator);
+    vkDestroyPipeline(shader->core->device,shader->pipeline,shader->core->vk_allocator);
+    vkDestroyPipelineLayout(shader->core->device, shader->pipeline_layout, shader->core->vk_allocator);
 
-    vkDestroyShaderModule(shader->app->device,shader->fragment_shader,shader->app->vk_allocator);
-    vkDestroyShaderModule(shader->app->device,shader->vertex_shader,shader->app->vk_allocator);
+    vkDestroyShaderModule(shader->core->device,shader->fragment_shader,shader->core->vk_allocator);
+    vkDestroyShaderModule(shader->core->device,shader->vertex_shader,shader->core->vk_allocator);
 
     delete shader;
 }
@@ -753,21 +799,21 @@ VkSwapchainCreateInfoKHR Application::create_swapchain(){
     VkResult res;
 
     uint32_t num_surface_formats;
-    vkGetPhysicalDeviceSurfaceFormatsKHR(this->physical_device, this->window_surface, &num_surface_formats, NULL);
+    vkGetPhysicalDeviceSurfaceFormatsKHR(this->core->physical_device, this->window_surface, &num_surface_formats, NULL);
     std::vector<VkSurfaceFormatKHR> surface_formats(num_surface_formats);
-    vkGetPhysicalDeviceSurfaceFormatsKHR(this->physical_device, this->window_surface, &num_surface_formats, surface_formats.data());
+    vkGetPhysicalDeviceSurfaceFormatsKHR(this->core->physical_device, this->window_surface, &num_surface_formats, surface_formats.data());
     this->swapchain_format=surface_formats[0];
     // get surface present mode
 
     VkSurfaceCapabilitiesKHR surface_capabilities;
-    res=vkGetPhysicalDeviceSurfaceCapabilitiesKHR(this->physical_device,this->window_surface,&surface_capabilities);
+    res=vkGetPhysicalDeviceSurfaceCapabilitiesKHR(this->core->physical_device,this->window_surface,&surface_capabilities);
     if(res!=VK_SUCCESS)
         bail(VULKAN_GET_PHYSICAL_DEVICE_SURFACE_CAPABILITIES_KHR_FAILURE,"vkGetPhysicalDeviceSurfaceCapabilitiesKHR failed with %d\n",res);
 
     uint32_t num_present_modes;
-    vkGetPhysicalDeviceSurfacePresentModesKHR(this->physical_device, this->window_surface, &num_present_modes, NULL);
+    vkGetPhysicalDeviceSurfacePresentModesKHR(this->core->physical_device, this->window_surface, &num_present_modes, NULL);
     std::vector<VkPresentModeKHR> present_modes(num_present_modes);
-    vkGetPhysicalDeviceSurfacePresentModesKHR(this->physical_device, this->window_surface, &num_present_modes, present_modes.data());
+    vkGetPhysicalDeviceSurfacePresentModesKHR(this->core->physical_device, this->window_surface, &num_present_modes, present_modes.data());
     VkPresentModeKHR swapchain_present_mode=present_modes[0];
 
     uint32_t swapchain_image_count=1;
@@ -796,29 +842,29 @@ VkSwapchainCreateInfoKHR Application::create_swapchain(){
         .clipped=VK_TRUE,
         .oldSwapchain=old_swapchain
     };
-    vkCreateSwapchainKHR(this->device, &swapchain_create_info, this->vk_allocator, &this->swapchain);
+    vkCreateSwapchainKHR(this->core->device, &swapchain_create_info, this->core->vk_allocator, &this->swapchain);
     if(old_swapchain!=VK_NULL_HANDLE){
-        vkDestroySwapchainKHR(this->device, old_swapchain, this->vk_allocator);
+        vkDestroySwapchainKHR(this->core->device, old_swapchain, this->core->vk_allocator);
     }
 
     if (this->swapchain_images!=NULL) {
         delete[] this->swapchain_images;
     }
 
-    vkGetSwapchainImagesKHR(this->device, this->swapchain, &this->num_swapchain_images, NULL);
+    vkGetSwapchainImagesKHR(this->core->device, this->swapchain, &this->num_swapchain_images, NULL);
     this->swapchain_images=new VkImage[this->num_swapchain_images];
-    vkGetSwapchainImagesKHR(this->device, this->swapchain, &this->num_swapchain_images, this->swapchain_images);
+    vkGetSwapchainImagesKHR(this->core->device, this->swapchain, &this->num_swapchain_images, this->swapchain_images);
 
     if(this->render_pass!=VK_NULL_HANDLE){
         if (this->swapchain_framebuffers!=NULL) {
             for(uint32_t i=0;i<this->num_swapchain_images;i++){
-                vkDestroyFramebuffer(this->device, this->swapchain_framebuffers[i], this->vk_allocator);
+                vkDestroyFramebuffer(this->core->device, this->swapchain_framebuffers[i], this->core->vk_allocator);
             }
             delete[] this->swapchain_framebuffers;
         }
         if (this->swapchain_image_views!=NULL) {
             for(uint32_t i=0;i<this->num_swapchain_images;i++){
-                vkDestroyImageView(this->device, this->swapchain_image_views[i], this->vk_allocator);
+                vkDestroyImageView(this->core->device, this->swapchain_image_views[i], this->core->vk_allocator);
             }
             delete[] this->swapchain_image_views;
         }
@@ -860,12 +906,12 @@ VkSwapchainCreateInfoKHR Application::create_swapchain(){
         };
         for(uint32_t i=0;i<this->num_swapchain_images;i++){
             image_view_create_info.image=this->swapchain_images[i];
-            res=vkCreateImageView(this->device, &image_view_create_info, this->vk_allocator, &this->swapchain_image_views[i]);
+            res=vkCreateImageView(this->core->device, &image_view_create_info, this->core->vk_allocator, &this->swapchain_image_views[i]);
             if(res!=VK_SUCCESS)
                 bail(1,"failed to create image view for swapchain image %d\n",i);
 
             framebuffer_create_info.pAttachments=&this->swapchain_image_views[i];
-            res=vkCreateFramebuffer(this->device,&framebuffer_create_info,this->vk_allocator,&this->swapchain_framebuffers[i]);
+            res=vkCreateFramebuffer(this->core->device,&framebuffer_create_info,this->core->vk_allocator,&this->swapchain_framebuffers[i]);
             if(res!=VK_SUCCESS)
                 bail(1,"failed to create framebuffer for swapchain image %d\n",i);
         }
@@ -877,7 +923,7 @@ VkSwapchainCreateInfoKHR Application::create_swapchain(){
 /// create a new app
 ///
 /// this struct owns all memory, unless indicated otherwise
-Application::Application(PlatformHandle* platform):platform_handle(platform){
+Application::Application(PlatformHandle* platform):core(std::make_shared<_VkCore>()),platform_handle(platform){
     {
         uint32_t num_instance_extensions;
         vkEnumerateInstanceExtensionProperties(NULL, &num_instance_extensions, NULL);
@@ -937,7 +983,7 @@ Application::Application(PlatformHandle* platform):platform_handle(platform){
         .enabledExtensionCount=instance_extensions.size(),
         .ppEnabledExtensionNames=instance_extensions.data()
     };
-    VkResult res=vkCreateInstance(&instance_create_info,this->vk_allocator,&this->instance);
+    VkResult res=vkCreateInstance(&instance_create_info,this->core->vk_allocator,&this->core->instance);
     if(res!=VK_SUCCESS)
         bail(VULKAN_CREATE_INSTANCE_FAILURE,"failed to create vulkan instance because %s\n",vkRes2str(res));
 
@@ -946,9 +992,9 @@ Application::Application(PlatformHandle* platform):platform_handle(platform){
     this->window_surface=this->create_window_vk_surface(this->platform_window);
 
     uint32_t num_physical_devices;
-    vkEnumeratePhysicalDevices(this->instance, &num_physical_devices, NULL);
+    vkEnumeratePhysicalDevices(this->core->instance, &num_physical_devices, NULL);
     std::vector<VkPhysicalDevice> physical_devices(num_physical_devices);
-    vkEnumeratePhysicalDevices(this->instance, &num_physical_devices, physical_devices.data());
+    vkEnumeratePhysicalDevices(this->core->instance, &num_physical_devices, physical_devices.data());
 
     // look for fit physical device, and required queue families
     uint32_t graphics_queue_family_index=UINT32_MAX;
@@ -994,19 +1040,19 @@ Application::Application(PlatformHandle* platform):platform_handle(platform){
             continue;
         }
 
-        this->physical_device=physical_device;
+        this->core->physical_device=physical_device;
     }
 
     {
         uint32_t num_device_extensions;
-        vkEnumerateDeviceExtensionProperties(this->physical_device, NULL, &num_device_extensions,NULL);
+        vkEnumerateDeviceExtensionProperties(this->core->physical_device, NULL, &num_device_extensions,NULL);
         std::vector<VkExtensionProperties> device_extensions(num_device_extensions);
-        vkEnumerateDeviceExtensionProperties(this->physical_device, NULL, &num_device_extensions,device_extensions.data());
+        vkEnumerateDeviceExtensionProperties(this->core->physical_device, NULL, &num_device_extensions,device_extensions.data());
 
         uint32_t num_device_layers;
-        vkEnumerateDeviceLayerProperties(this->physical_device, &num_device_layers, NULL);
+        vkEnumerateDeviceLayerProperties(this->core->physical_device, &num_device_layers, NULL);
         std::vector<VkLayerProperties> device_layers(num_device_layers);
-        vkEnumerateDeviceLayerProperties(this->physical_device, &num_device_layers, device_layers.data());
+        vkEnumerateDeviceLayerProperties(this->core->physical_device, &num_device_layers, device_layers.data());
 
         for(uint32_t i=0;i<num_device_extensions;i++){
             //printf("device extension: %s\n",device_extensions[i].extensionName);
@@ -1077,14 +1123,14 @@ Application::Application(PlatformHandle* platform):platform_handle(platform){
         .ppEnabledExtensionNames=device_extensions.data(),
         .pEnabledFeatures=&device_features
     };
-    res=vkCreateDevice(this->physical_device,&device_create_info,this->vk_allocator,&this->device);
+    res=vkCreateDevice(this->core->physical_device,&device_create_info,this->core->vk_allocator,&this->core->device);
     if(res!=VK_SUCCESS){
         exit(VULKAN_CREATE_DEVICE_FAILURE);
     }
 
     // if these are the same queue family, they will just point to the same queue, which is fine
-    vkGetDeviceQueue(this->device, graphics_queue_family_index, 0, &this->graphics_queue);
-    vkGetDeviceQueue(this->device, present_queue_family_index, 0, &this->present_queue);
+    vkGetDeviceQueue(this->core->device, graphics_queue_family_index, 0, &this->graphics_queue);
+    vkGetDeviceQueue(this->core->device, present_queue_family_index, 0, &this->present_queue);
 
     VkSwapchainCreateInfoKHR swapchain_create_info=this->create_swapchain();
 
@@ -1155,7 +1201,7 @@ Application::Application(PlatformHandle* platform):platform_handle(platform){
         .dependencyCount=render_subpass_dependencies.size(),
         .pDependencies=render_subpass_dependencies.data()
     };
-    res=vkCreateRenderPass(this->device,&render_pass_create_info,this->vk_allocator,&this->render_pass);
+    res=vkCreateRenderPass(this->core->device,&render_pass_create_info,this->core->vk_allocator,&this->render_pass);
     if(res!=VK_SUCCESS)
         bail(VULKAN_CREATE_RENDER_PASS_FAILURE,"failed to create renderpass\n");
 
@@ -1177,16 +1223,16 @@ Application::Application(PlatformHandle* platform):platform_handle(platform){
         .queueFamilyIndexCount=0,
         .pQueueFamilyIndices=NULL
     };
-    res=vkCreateBuffer(this->device, &staging_buffer_create_info, this->vk_allocator, &this->staging_buffer);
+    res=vkCreateBuffer(this->core->device, &staging_buffer_create_info, this->core->vk_allocator, &this->staging_buffer);
     if(res!=VK_SUCCESS)
         bail(FATAL_UNEXPECTED_ERROR,"failed to create staging buffer\n");
 
     VkMemoryRequirements staging_buffer_memory_requirements;
-    vkGetBufferMemoryRequirements(this->device, this->staging_buffer, &staging_buffer_memory_requirements);
+    vkGetBufferMemoryRequirements(this->core->device, this->staging_buffer, &staging_buffer_memory_requirements);
 
     uint32_t staging_buffer_memory_type_index=UINT32_MAX;
     VkPhysicalDeviceMemoryProperties physical_device_memory_properties;
-    vkGetPhysicalDeviceMemoryProperties(this->physical_device,&physical_device_memory_properties);
+    vkGetPhysicalDeviceMemoryProperties(this->core->physical_device,&physical_device_memory_properties);
 
     for(uint32_t i=0;i<physical_device_memory_properties.memoryTypeCount;i++){
         if((1<<i)&staging_buffer_memory_requirements.memoryTypeBits){
@@ -1200,11 +1246,11 @@ Application::Application(PlatformHandle* platform):platform_handle(platform){
         .allocationSize=staging_buffer_memory_requirements.size,
         .memoryTypeIndex=staging_buffer_memory_type_index
     };
-    res=vkAllocateMemory(this->device, &staging_buffer_memory_allocate_info, this->vk_allocator, &this->staging_buffer_memory);
+    res=vkAllocateMemory(this->core->device, &staging_buffer_memory_allocate_info, this->core->vk_allocator, &this->staging_buffer_memory);
     if(res!=VK_SUCCESS)
         bail(VULKAN_ALLOCATE_MEMORY_FAILURE,"failed to allocate staging buffer memory\n");
 
-    res=vkBindBufferMemory(this->device, this->staging_buffer, this->staging_buffer_memory, 0);
+    res=vkBindBufferMemory(this->core->device, this->staging_buffer, this->staging_buffer_memory, 0);
     if(res!=VK_SUCCESS)
         bail(VULKAN_BIND_BUFFER_MEMORY_FAILURE,"failed to bind staging buffer memory\n");
 }
@@ -1215,31 +1261,31 @@ Application::Application(PlatformHandle* platform):platform_handle(platform){
  * @param app 
  */
 void Application::destroy(){
-    if(this->instance!=VK_NULL_HANDLE){
-        if(this->device!=VK_NULL_HANDLE){
-            vkDeviceWaitIdle(this->device);
+    if(this->core->instance!=VK_NULL_HANDLE){
+        if(this->core->device!=VK_NULL_HANDLE){
+            vkDeviceWaitIdle(this->core->device);
 
             this->destroy_shader(this->shader);
 
             for(uint32_t i=0;i<this->num_swapchain_images;i++){
-                vkDestroyFramebuffer(this->device,this->swapchain_framebuffers[i],this->vk_allocator);
-                vkDestroyImageView(this->device,this->swapchain_image_views[i],this->vk_allocator);
+                vkDestroyFramebuffer(this->core->device,this->swapchain_framebuffers[i],this->core->vk_allocator);
+                vkDestroyImageView(this->core->device,this->swapchain_image_views[i],this->core->vk_allocator);
             }
 
-            vkDestroyRenderPass(this->device,this->render_pass,this->vk_allocator);
+            vkDestroyRenderPass(this->core->device,this->render_pass,this->core->vk_allocator);
             
-            vkDestroySwapchainKHR(this->device, this->swapchain, this->vk_allocator);
+            vkDestroySwapchainKHR(this->core->device, this->swapchain, this->core->vk_allocator);
 
-            vkDestroyDevice(this->device,this->vk_allocator);
+            vkDestroyDevice(this->core->device,this->core->vk_allocator);
 
             delete[] this->swapchain_images;
             delete[] this->swapchain_image_views;
             delete[] this->swapchain_framebuffers;
         }
 
-        vkDestroySurfaceKHR(this->instance, this->window_surface, this->vk_allocator);
+        vkDestroySurfaceKHR(this->core->instance, this->window_surface, this->core->vk_allocator);
 
-        vkDestroyInstance(this->instance,this->vk_allocator);
+        vkDestroyInstance(this->core->instance,this->core->vk_allocator);
     }
 
     this->destroy_window(this->platform_window);
@@ -1342,12 +1388,12 @@ void Application::run(){
         .flags=0
     };
     VkSemaphore image_available_semaphore;
-    res=vkCreateSemaphore(this->device,&semaphore_create_info,this->vk_allocator,&image_available_semaphore);
+    res=this->core->create_semaphore(&semaphore_create_info,&image_available_semaphore);
     if(res!=VK_SUCCESS)
         bail(VULKAN_CREATE_SEMAPHORE_FAILURE,"failed to create semaphore");
         
     VkSemaphore rendering_finished_semaphore;
-    res=vkCreateSemaphore(this->device,&semaphore_create_info,this->vk_allocator,&rendering_finished_semaphore);
+    res=this->core->create_semaphore(&semaphore_create_info,&rendering_finished_semaphore);
     if(res!=VK_SUCCESS)
         bail(VULKAN_CREATE_SEMAPHORE_FAILURE,"failed to create semaphore");
 
@@ -1358,7 +1404,7 @@ void Application::run(){
         .queueFamilyIndex=this->graphics_queue_family_index
     };
     VkCommandPool command_pool;
-    res=vkCreateCommandPool(this->device, &command_pool_create_info, this->vk_allocator, &command_pool);
+    res=vkCreateCommandPool(this->core->device, &command_pool_create_info, this->core->vk_allocator, &command_pool);
     if(res!=VK_SUCCESS)
         bail(VULKAN_CREATE_COMMAND_POOL_FAILURE,"failed to create command pool");
 
@@ -1370,7 +1416,7 @@ void Application::run(){
         .commandBufferCount=1
     };
     VkCommandBuffer* command_buffers=new VkCommandBuffer[command_buffer_allocate_info.commandBufferCount];
-    res=vkAllocateCommandBuffers(this->device, &command_buffer_allocate_info, command_buffers);
+    res=vkAllocateCommandBuffers(this->core->device, &command_buffer_allocate_info, command_buffers);
     if(res!=VK_SUCCESS)
         bail(VULKAN_ALLOCATE_COMMAND_BUFFERS_FAILURE,"failed to allocate command buffers");
 
@@ -1493,7 +1539,7 @@ void Application::run(){
             .pBufferInfo=write_descriptor_set_buffers,
             .pTexelBufferView=NULL
         };
-        vkUpdateDescriptorSets(this->device, 1, &write_descriptor_set, 0, NULL);
+        vkUpdateDescriptorSets(this->core->device, 1, &write_descriptor_set, 0, NULL);
     }
     int32_t left_button_down_x=0;
     int32_t left_button_down_y=0;
@@ -1609,7 +1655,7 @@ void Application::run(){
         }
 
         uint32_t next_swapchain_image_index;
-        res=vkAcquireNextImageKHR(this->device, this->swapchain, UINT64_MAX, image_available_semaphore, VK_NULL_HANDLE, &next_swapchain_image_index);
+        res=vkAcquireNextImageKHR(this->core->device, this->swapchain, UINT64_MAX, image_available_semaphore, VK_NULL_HANDLE, &next_swapchain_image_index);
         switch(res){
             case VK_SUCCESS:
             case VK_SUBOPTIMAL_KHR:
@@ -1793,7 +1839,7 @@ void Application::run(){
                 bail(VULKAN_ACQUIRE_NEXT_IMAGE_KHR_FAILURE,"failed to present swapchain image because %s\n",vkRes2str(res));
         }
 
-        vkDeviceWaitIdle(this->device);
+        vkDeviceWaitIdle(this->core->device);
 
         struct timespec current_frame_time;
         clock_gettime(CLOCK_MONOTONIC, &current_frame_time);
@@ -1812,22 +1858,22 @@ void Application::run(){
     }
 
     for(uint32_t i=0;i<num_images;i++){
-        vkDestroyBuffer(this->device,image_view_data_refs[i].buffer,this->vk_allocator);
-        vkFreeMemory(this->device,image_view_data_refs[i].memory,this->vk_allocator);
+        vkDestroyBuffer(this->core->device,image_view_data_refs[i].buffer,this->core->vk_allocator);
+        vkFreeMemory(this->core->device,image_view_data_refs[i].memory,this->core->vk_allocator);
 
         this->destroy_texture(image_textures[i]);
     }
 
     this->destroy_mesh(quadmesh);
 
-    vkDestroyBuffer(this->device, this->staging_buffer, this->vk_allocator);
-    vkFreeMemory(this->device, this->staging_buffer_memory, this->vk_allocator);
-    vkDestroySampler(this->device, this->shader->image_sampler, this->vk_allocator);
+    vkDestroyBuffer(this->core->device, this->staging_buffer, this->core->vk_allocator);
+    vkFreeMemory(this->core->device, this->staging_buffer_memory, this->core->vk_allocator);
+    vkDestroySampler(this->core->device, this->shader->image_sampler, this->core->vk_allocator);
 
-    vkDestroySemaphore(this->device,image_available_semaphore,this->vk_allocator);
-    vkDestroySemaphore(this->device,rendering_finished_semaphore,this->vk_allocator);
-    vkFreeCommandBuffers(this->device, command_pool, command_buffer_allocate_info.commandBufferCount, command_buffers);
-    vkDestroyCommandPool(this->device,command_pool,this->vk_allocator);
+    vkDestroySemaphore(this->core->device,image_available_semaphore,this->core->vk_allocator);
+    vkDestroySemaphore(this->core->device,rendering_finished_semaphore,this->core->vk_allocator);
+    vkFreeCommandBuffers(this->core->device, command_pool, command_buffer_allocate_info.commandBufferCount, command_buffers);
+    vkDestroyCommandPool(this->core->device,command_pool,this->core->vk_allocator);
 
     delete[] command_buffers;
 }
