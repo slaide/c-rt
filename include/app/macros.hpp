@@ -6,7 +6,7 @@
 #define discard (void)
 
 #define fprintln(stream,...) { \
-    fprintf(stream,"%s : %d | ",__FILE__,__LINE__); \
+    fprintf(stream,"%s:%d | ",__FILE__,__LINE__); \
     fprintf(stream,__VA_ARGS__); \
     fprintf(stream,"\n"); \
 }
