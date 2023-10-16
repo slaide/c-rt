@@ -37,11 +37,37 @@ void ImageData::initEmpty(ImageData* const image_data){
 void ImageData::destroy(ImageData* const image_data){
     delete[] image_data->data;
 }
-VkFormat ImageData::vk_img_format()const noexcept{
-    switch(pixel_format){
-        case PIXEL_FORMAT_Ru8Gu8Bu8Au8: return VK_FORMAT_R8G8B8A8_SRGB;
-        default: return VK_FORMAT_UNDEFINED;
+VkFormat ImageData::vk_img_format()const{
+    switch(this->pixel_format){
+        case PixelFormat::Ru8Gu8Bu8Au8:
+            return VK_FORMAT_R8G8B8A8_SRGB;
+        case PixelFormat::Ru8Gu8Bu8:
+            return VK_FORMAT_R8G8B8_SRGB;
+        default:
+            throw VK_FORMAT_UNDEFINED;
     }
+}
+//PIXEL_FORMAT_Ru8Gu8Bu8Au8
+void ImageData::convert(PixelFormat target_pixel_format){
+    if(this->pixel_format==target_pixel_format)
+        return;
+
+    uint8_t* new_data=new uint8_t[this->height*this->width*4];
+
+    for(uint32_t i=0;i<this->height*this->width;i++){
+        uint8_t* old_pixel=&this->data[i*3];
+        uint8_t* new_pixel=&new_data[i*4];
+
+        new_pixel[0]=old_pixel[0];
+        new_pixel[1]=old_pixel[1];
+        new_pixel[2]=old_pixel[2];
+        new_pixel[3]=255;
+    }
+
+    this->pixel_format=target_pixel_format;
+
+    delete[] this->data;
+    this->data=std::move(new_data);
 }
 
 /**
@@ -1463,6 +1489,9 @@ void Application::run(){
             }
             println("parsed %s in %.3fms",file_path.data(),(current_time()-start_time)*1e3);
         }
+
+        // ensure compatible pixel format
+        image_data->convert(PixelFormat::Ru8Gu8Bu8Au8);
 
         image_textures[image_index]=this->create_texture(image_data);
 

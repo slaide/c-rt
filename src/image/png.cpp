@@ -36,21 +36,26 @@ enum ChunkType{
     //other common chunk types: sRGB, iCCP, cHRM, gAMA, iTXt, tEXt, zTXt, bKGD, pHYs, sBIT, hIST, tIME
 };
 
-enum PNGColorType{
-    PNG_COLOR_TYPE_GREYSCALE=0,
-    PNG_COLOR_TYPE_RGB=2,
-    PNG_COLOR_TYPE_PALETTE=3,
+enum class PNGColorType{
+    GREYSCALE=0,
+    RGB=2,
+    PALETTE=3,
     /// greyscale + alpha
-    PNG_COLOR_TYPE_GREYSCALEALPHA=4,
-    PNG_COLOR_TYPE_RGBA=6,
+    GREYSCALEALPHA=4,
+    RGBA=6,
 };
-const char* PNGColorType_name(uint8_t color_type){
+const char* PNGColorType_name(PNGColorType color_type){
     switch(color_type){
-        case PNG_COLOR_TYPE_GREYSCALE: return "GREYSCALE";
-        case PNG_COLOR_TYPE_RGB: return "RGB";
-        case PNG_COLOR_TYPE_PALETTE: return "PALETTE";
-        case PNG_COLOR_TYPE_GREYSCALEALPHA: return "GREYSCALEALPHA";
-        case PNG_COLOR_TYPE_RGBA: return "RGBA";
+        case PNGColorType::GREYSCALE: 
+            return "GREYSCALE";
+        case PNGColorType::RGB: 
+            return "RGB";
+        case PNGColorType::PALETTE: 
+            return "PALETTE";
+        case PNGColorType::GREYSCALEALPHA: 
+            return "GREYSCALEALPHA";
+        case PNGColorType::RGBA: 
+            return "RGBA";
         default: return NULL;
     }
 }
@@ -72,7 +77,7 @@ struct [[gnu::packed]] IHDR{
     uint32_t width;
     uint32_t height;
     uint8_t bit_depth;
-    uint8_t color_type;
+    PNGColorType color_type;
     uint8_t compression_method;
     uint8_t filter_method;
     uint8_t interlace_method;
@@ -656,20 +661,28 @@ ImageParseResult Image_read_png(
                     image_data->width=parser.ihdr_data.width;
                     image_data->interleaved=true;
 
-                    switch(PNGColorType(parser.ihdr_data.color_type)){
-                        case PNG_COLOR_TYPE_RGBA:
+                    switch(parser.ihdr_data.color_type){
+                        case PNGColorType::RGBA:
                             switch(parser.ihdr_data.bit_depth){
                                 case 8:
-                                    image_data->pixel_format=PIXEL_FORMAT_Ru8Gu8Bu8Au8;
+                                    image_data->pixel_format=PixelFormat::Ru8Gu8Bu8Au8;
                                     break;
                                 default:
                                     bail(FATAL_UNEXPECTED_ERROR,"TODO unknown bit depth %d",parser.ihdr_data.bit_depth);
                             }
                             break;
-                        case PNG_COLOR_TYPE_RGB:
-                        case PNG_COLOR_TYPE_GREYSCALE:
-                        case PNG_COLOR_TYPE_GREYSCALEALPHA:
-                        case PNG_COLOR_TYPE_PALETTE:
+                        case PNGColorType::RGB:
+                            switch(parser.ihdr_data.bit_depth){
+                                case 8:
+                                    image_data->pixel_format=PixelFormat::Ru8Gu8Bu8;
+                                    break;
+                                default:
+                                    bail(FATAL_UNEXPECTED_ERROR,"TODO unknown bit depth %d",parser.ihdr_data.bit_depth);
+                            }
+                            break;
+                        case PNGColorType::GREYSCALE:
+                        case PNGColorType::GREYSCALEALPHA:
+                        case PNGColorType::PALETTE:
                             bail(FATAL_UNEXPECTED_ERROR,"TODO pixel format %s",PNGColorType_name(parser.ihdr_data.color_type));
                         default:
                             bail(FATAL_UNEXPECTED_ERROR,"unknown pixel format");
@@ -721,14 +734,23 @@ ImageParseResult Image_read_png(
 
     println("done with DEFLATE after %.3fms",(current_time()-start_time)*1000);
 
-    const uint32_t bytes_per_pixel=4;
-    const uint32_t scanline_width=1+parser.ihdr_data.width*bytes_per_pixel;
+    switch(image_data->pixel_format){
+        case PixelFormat::Ru8Gu8Bu8Au8:
+            parser.bpp=4;
+            break;
+        case PixelFormat::Ru8Gu8Bu8:
+            parser.bpp=3;
+            break;
+        default:
+            bail(FATAL_UNEXPECTED_ERROR,"TODO pixel format %s",PNGColorType_name(parser.ihdr_data.color_type));
+    }
+
+    const uint32_t scanline_width=1+parser.ihdr_data.width*parser.bpp;
     const uint32_t num_scanlines=parser.ihdr_data.height;
 
-    uint8_t* const defiltered_output_buffer=new uint8_t[parser.ihdr_data.height*parser.ihdr_data.width*bytes_per_pixel];
+    uint8_t* const defiltered_output_buffer=new uint8_t[parser.ihdr_data.height*parser.ihdr_data.width*parser.bpp];
 
     parser.scanline_width=scanline_width;
-    parser.bpp=bytes_per_pixel;
     parser.defiltered_output_buffer=defiltered_output_buffer;
     parser.output_buffer=output_buffer;
 
@@ -737,7 +759,7 @@ ImageParseResult Image_read_png(
 
     for(uint32_t scanline_index : std::views::iota(0u,num_scanlines)){
         parser.in_line =&output_buffer[scanline_index*scanline_width];
-        parser.out_line=&defiltered_output_buffer[scanline_index*parser.ihdr_data.width*bytes_per_pixel];
+        parser.out_line=&defiltered_output_buffer[scanline_index*parser.ihdr_data.width*parser.bpp];
 
         parser.process_scanline();
 

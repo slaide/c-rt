@@ -12,9 +12,11 @@
 
 #include <vulkan/vulkan.h>
 
-typedef enum PixelFormat{
-    PIXEL_FORMAT_Ru8Gu8Bu8Au8
-}PixelFormat;
+enum class PixelFormat{
+    Ru8Gu8Bu8Au8,
+    Ru8Gu8Bu8,
+};
+
 struct ImageFileMetadata{
     std::string file_comment;
 };
@@ -36,7 +38,9 @@ class ImageData{
         static void initEmpty(ImageData* const image_data);
         static void destroy(ImageData* const image_data);
 
-        VkFormat vk_img_format()const noexcept;
+        VkFormat vk_img_format()const;
+
+        void convert(PixelFormat target_pixel_format);
 };
 
 typedef enum ImageParseResult{

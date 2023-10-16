@@ -1555,7 +1555,7 @@ ImageParseResult Image_read_jpeg(
     // and convert ycbcr to rgb
 
     image_data->interleaved=true;
-    image_data->pixel_format=PIXEL_FORMAT_Ru8Gu8Bu8Au8;
+    image_data->pixel_format=PixelFormat::Ru8Gu8Bu8Au8;
 
     parser.convert_colorspace();
 
