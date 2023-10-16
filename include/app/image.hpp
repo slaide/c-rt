@@ -76,7 +76,7 @@ class FileParser{
         ImageData::initEmpty(this->image_data);
 
         discard fseek(file,0,SEEK_END);
-        const long ftell_res=ftell(file);
+        const auto ftell_res=ftell(file);
         if(ftell_res<0){
             fprintf(stderr,"could not get file size\n");
             throw IMAGE_PARSE_RESULT_FILESIZE_UNKNOWN;

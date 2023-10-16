@@ -184,10 +184,8 @@ class ZLIBDecoder{
 
             /// combined cm+cinfo flag across 2 bytes is used to verify data integrity
             const uint64_t cmf_flag=bitUtil::byteswap((uint32_t)stream->get_bits(16),2);
-            if(cmf_flag%31!=0){
-                fprintf(stderr,"png cmf integrity check failed: cmf is %" PRIu64 "\n",cmf_flag);
-                exit(FATAL_UNEXPECTED_ERROR);
-            }
+            if(cmf_flag%31!=0)
+                bail(FATAL_UNEXPECTED_ERROR,"png cmf integrity check failed: cmf is %" PRIu64 "\n",cmf_flag);
 
             /// compression method flag
             const uint64_t cm_flag=stream->get_bits_advance(4);
@@ -198,10 +196,8 @@ class ZLIBDecoder{
             const uint64_t cinfo_flag=stream->get_bits_advance(4);
 
             const uint32_t window_size=1<<(cinfo_flag+8);
-            if(window_size>PNG_BITSTREAM_COMPRESSION_MAX_WINDOW_SIZE){
-                fprintf(stderr,"invalid png bitstream compression window size %d\n",window_size);
-                exit(FATAL_UNEXPECTED_ERROR);
-            }
+            if(window_size>PNG_BITSTREAM_COMPRESSION_MAX_WINDOW_SIZE)
+                bail(FATAL_UNEXPECTED_ERROR,"invalid png bitstream compression window size %d\n",window_size);
 
             /// is set so that the cmf integrity check above can succeed
             const uint64_t fcheck_flag=stream->get_bits_advance(5);
@@ -643,10 +639,8 @@ ImageParseResult Image_read_png(
     while(parser.current_file_content_index<parser.file_size && !parsing_done){
         uint32_t bytes_in_chunk=bitUtil::byteswap(parser.get_mem<uint32_t>(),4);
 
-        if(bytes_in_chunk>MAX_CHUNK_SIZE){
-            fprintf(stderr,"png chunk too big. standard only allows up to 2^31 bytes\n");
-            return IMAGE_PARSE_RESULT_PNG_CHUNK_SIZE_EXCEEDED;
-        }
+        if(bytes_in_chunk>MAX_CHUNK_SIZE)
+            bail(IMAGE_PARSE_RESULT_PNG_CHUNK_SIZE_EXCEEDED,"png chunk too big. standard only allows up to 2^31 bytes\n");
 
         uint32_t chunk_type=parser.get_mem<uint32_t>();
 

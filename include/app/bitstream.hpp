@@ -65,10 +65,8 @@ class BitStream{
     inline void advance(
         const uint8_t n_bits
     )noexcept{
-        if (n_bits>this->buffer_bits_filled) {
-            fprintf(stderr, "bitstream advance by %d bits invalid with %" PRIu64 " current buffer length\n",n_bits,this->buffer_bits_filled);
-            exit(-50);
-        }
+        if (n_bits>this->buffer_bits_filled)
+            bail(-50, "bitstream advance by %d bits invalid with %" PRIu64 " current buffer length\n",n_bits,this->buffer_bits_filled);
 
         this->advance_unsafe(n_bits);
     }

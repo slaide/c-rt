@@ -18,10 +18,8 @@
 double current_time(){
     struct timespec current_time;
     int time_get_result=clock_gettime(CLOCK_MONOTONIC, &current_time);
-    if (time_get_result != 0) {
-        fprintf(stderr, "failed to get start time because %d\n",time_get_result);
-        exit(-66);
-    }
+    if (time_get_result != 0)
+        bail(-66, "failed to get start time because %d\n",time_get_result);
 
     double ret=(double)current_time.tv_sec;
     ret+=((double)current_time.tv_nsec)/(double)(MAX_NSEC+1);
@@ -236,10 +234,8 @@ Texture* Application::create_texture(ImageData* image_data){
         .initialLayout=VK_IMAGE_LAYOUT_UNDEFINED
     };
     VkResult res=vkCreateImage(this->device,&image_create_info,this->vk_allocator,&texture->image);
-    if(res!=VK_SUCCESS){
-        fprintf(stderr,"failed to create image\n");
-        exit(VULKAN_CREATE_IMAGE_FAILURE);
-    }
+    if(res!=VK_SUCCESS)
+        bail(VULKAN_CREATE_IMAGE_FAILURE,"failed to create image\n");
 
     VkMemoryRequirements image_memory_requirements;
     vkGetImageMemoryRequirements(this->device, texture->image, &image_memory_requirements);
@@ -261,15 +257,12 @@ Texture* Application::create_texture(ImageData* image_data){
         .memoryTypeIndex=image_memory_type_index
     };
     res=vkAllocateMemory(this->device, &image_memory_allocate_info, this->vk_allocator, &texture->image_memory);
-    if(res!=VK_SUCCESS){
-        fprintf(stderr,"failed to allocate image memory\n");
-        exit(VULKAN_ALLOCATE_MEMORY_FAILURE);
-    }
+    if(res!=VK_SUCCESS)
+        bail(VULKAN_ALLOCATE_MEMORY_FAILURE,"failed to allocate image memory\n");
+
     res=vkBindImageMemory(this->device, texture->image, texture->image_memory, 0);
-    if(res!=VK_SUCCESS){
-        fprintf(stderr,"failed to bind image memory\n");
-        exit(VULKAN_BIND_IMAGE_MEMORY_FAILURE);
-    }
+    if(res!=VK_SUCCESS)
+        bail(VULKAN_BIND_IMAGE_MEMORY_FAILURE,"failed to bind image memory\n");
 
     VkImageSubresourceRange image_subresource_range={
         .aspectMask=VK_IMAGE_ASPECT_COLOR_BIT,
@@ -294,10 +287,8 @@ Texture* Application::create_texture(ImageData* image_data){
         .subresourceRange=image_subresource_range
     };
     res=vkCreateImageView(this->device,&image_view_create_info,this->vk_allocator,&texture->image_view);
-    if(res!=VK_SUCCESS){
-        fprintf(stderr,"failed to create image view\n");
-        exit(VULKAN_CREATE_IMAGE_VIEW_FAILURE);
-    }
+    if(res!=VK_SUCCESS)
+        bail(VULKAN_CREATE_IMAGE_VIEW_FAILURE,"failed to create image view\n");
 
     VkDescriptorSetAllocateInfo descriptor_set_allocate_info={
         .sType=VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
@@ -307,10 +298,8 @@ Texture* Application::create_texture(ImageData* image_data){
         .pSetLayouts=&this->shader->set_layout
     };
     res=vkAllocateDescriptorSets(this->device, &descriptor_set_allocate_info, &texture->descriptor_set);
-    if(res!=VK_SUCCESS){
-        fprintf(stderr,"failed to allocate descriptor sets\n");
-        exit(VULKAN_ALLOCATE_DESCRIPTOR_SETS_FAILURE);
-    }
+    if(res!=VK_SUCCESS)
+        bail(VULKAN_ALLOCATE_DESCRIPTOR_SETS_FAILURE,"failed to allocate descriptor sets\n");
 
     VkDescriptorImageInfo descriptor_image_info={
         .sampler=this->shader->image_sampler,
@@ -385,16 +374,12 @@ void Application::upload_texture(
         image_offset_into_staging_buffer, 
         image_memory_size, 0, &staging_buffer_cpu_memory
     );
-    if (res!=VK_SUCCESS) {
-        fprintf(stderr,"failed to map memory\n");
-        exit(VULKAN_MAP_MEMORY_FAILURE);
-    }
+    if (res!=VK_SUCCESS)
+        bail(VULKAN_MAP_MEMORY_FAILURE,"failed to map memory\n");
     this->staging_buffer_size_occupied+=image_memory_size;
 
-    if(this->staging_buffer_size_occupied>this->staging_buffer_size){
-        fprintf(stderr,"copied more data into staging buffer than fits into it (%" PRIu64 " > %" PRIu64 ")\n",this->staging_buffer_size_occupied,this->staging_buffer_size);
-        exit(ERROR_STAGING_BUFFER_OVERFLOW);
-    }
+    if(this->staging_buffer_size_occupied>this->staging_buffer_size)
+        bail(ERROR_STAGING_BUFFER_OVERFLOW,"copied more data into staging buffer than fits into it (%" PRIu64 " > %" PRIu64 ")\n",this->staging_buffer_size_occupied,this->staging_buffer_size);
 
     memcpy(staging_buffer_cpu_memory,image_data->data,image_memory_size_raw);
 
@@ -406,10 +391,8 @@ void Application::upload_texture(
         .size=VK_WHOLE_SIZE
     };
     res=vkFlushMappedMemoryRanges(this->device, 1, &flush_memory_range);
-    if (res!=VK_SUCCESS) {
-        fprintf(stderr,"failed to flush mapped memory ranges\n");
-        exit(VULKAN_FLUSH_MAPPED_MEMORY_RANGES_FAILURE);
-    }
+    if (res!=VK_SUCCESS)
+        bail(VULKAN_FLUSH_MAPPED_MEMORY_RANGES_FAILURE,"failed to flush mapped memory ranges\n");
 
     vkUnmapMemory(this->device, this->staging_buffer_memory);
 
@@ -470,17 +453,14 @@ VkShaderModule Application::create_shader_module(
     const char* const shader_file_path
 ){
     FILE* shader_file=fopen(shader_file_path,"rb");
-    if(shader_file==NULL){
-        fprintf(stderr,"failed to open shader file %s\n",shader_file_path);
-        exit(VULKAN_SHADER_FILE_NOT_FOUND);
-    }
+    if(shader_file==NULL)
+        bail(VULKAN_SHADER_FILE_NOT_FOUND,"failed to open shader file %s\n",shader_file_path);
 
     discard fseek(shader_file,0,SEEK_END);
     int64_t shader_size_res=ftell(shader_file);
-    if(shader_size_res<0){
-        fprintf(stderr,"could not get shader file size.\n");
-        exit(FATAL_UNEXPECTED_ERROR);
-    }
+    if(shader_size_res<0)
+        bail(FATAL_UNEXPECTED_ERROR,"could not get shader file size.\n");
+
     uint64_t shader_size=static_cast<uint64_t>(shader_size_res);
     rewind(shader_file);
 
@@ -540,10 +520,8 @@ Shader* Application::create_shader(
             .pBindings=set_layout_bindings
         };
         VkResult res=vkCreateDescriptorSetLayout(this->device, &descriptor_set_layout, this->vk_allocator, &shader->set_layout);
-        if(res!=VK_SUCCESS){
-            fprintf(stderr,"failed to create descriptor set layout\n");
-            exit(VULKAN_CREATE_DESCRIPTOR_SET_LAYOUT_FAILURE);
-        }
+        if(res!=VK_SUCCESS)
+            bail(VULKAN_CREATE_DESCRIPTOR_SET_LAYOUT_FAILURE,"failed to create descriptor set layout\n");
     }
 
     VkDescriptorPoolSize pool_sizes[2]={
@@ -565,10 +543,8 @@ Shader* Application::create_shader(
         .pPoolSizes=pool_sizes
     };
     VkResult res=vkCreateDescriptorPool(this->device, &descriptor_pool_create_info, this->vk_allocator, &shader->descriptor_pool);
-    if(res!=VK_SUCCESS){
-        fprintf(stderr,"failed to create descriptor pool\n");
-        exit(VULKAN_CREATE_DESCRIPTOR_POOL_FAILURE);
-    }
+    if(res!=VK_SUCCESS)
+        bail(VULKAN_CREATE_DESCRIPTOR_POOL_FAILURE,"failed to create descriptor pool\n");
 
     VkSamplerCreateInfo sampler_create_info={
         .sType=VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
@@ -591,10 +567,8 @@ Shader* Application::create_shader(
         .unnormalizedCoordinates=VK_FALSE
     };
     res=vkCreateSampler(this->device, &sampler_create_info, this->vk_allocator, &shader->image_sampler);
-    if(res!=VK_SUCCESS){
-        fprintf(stderr,"failed to create sampler\n");
-        exit(FATAL_UNEXPECTED_ERROR);
-    }
+    if(res!=VK_SUCCESS)
+        bail(FATAL_UNEXPECTED_ERROR,"failed to create sampler\n");
 
     VkPipelineLayoutCreateInfo pipeline_layout_create_info={
         .sType=VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
@@ -787,10 +761,8 @@ VkSwapchainCreateInfoKHR Application::create_swapchain(){
 
     VkSurfaceCapabilitiesKHR surface_capabilities;
     res=vkGetPhysicalDeviceSurfaceCapabilitiesKHR(this->physical_device,this->window_surface,&surface_capabilities);
-    if(res!=VK_SUCCESS){
-        fprintf(stderr,"vkGetPhysicalDeviceSurfaceCapabilitiesKHR failed with %d\n",res);
-        exit(VULKAN_GET_PHYSICAL_DEVICE_SURFACE_CAPABILITIES_KHR_FAILURE);
-    }
+    if(res!=VK_SUCCESS)
+        bail(VULKAN_GET_PHYSICAL_DEVICE_SURFACE_CAPABILITIES_KHR_FAILURE,"vkGetPhysicalDeviceSurfaceCapabilitiesKHR failed with %d\n",res);
 
     uint32_t num_present_modes;
     vkGetPhysicalDeviceSurfacePresentModesKHR(this->physical_device, this->window_surface, &num_present_modes, NULL);
@@ -889,15 +861,13 @@ VkSwapchainCreateInfoKHR Application::create_swapchain(){
         for(uint32_t i=0;i<this->num_swapchain_images;i++){
             image_view_create_info.image=this->swapchain_images[i];
             res=vkCreateImageView(this->device, &image_view_create_info, this->vk_allocator, &this->swapchain_image_views[i]);
-            if(res!=VK_SUCCESS){
-                fprintf(stderr,"failed to create image view for swapchain image %d\n",i);
-            }
+            if(res!=VK_SUCCESS)
+                bail(1,"failed to create image view for swapchain image %d\n",i);
 
             framebuffer_create_info.pAttachments=&this->swapchain_image_views[i];
             res=vkCreateFramebuffer(this->device,&framebuffer_create_info,this->vk_allocator,&this->swapchain_framebuffers[i]);
-            if(res!=VK_SUCCESS){
-                fprintf(stderr,"failed to create framebuffer for swapchain image %d\n",i);
-            }
+            if(res!=VK_SUCCESS)
+                bail(1,"failed to create framebuffer for swapchain image %d\n",i);
         }
     }
 
@@ -1186,10 +1156,8 @@ Application::Application(PlatformHandle* platform):platform_handle(platform){
         .pDependencies=render_subpass_dependencies.data()
     };
     res=vkCreateRenderPass(this->device,&render_pass_create_info,this->vk_allocator,&this->render_pass);
-    if(res!=VK_SUCCESS){
-        fprintf(stderr,"failed to create renderpass\n");
-        exit(VULKAN_CREATE_RENDER_PASS_FAILURE);
-    }
+    if(res!=VK_SUCCESS)
+        bail(VULKAN_CREATE_RENDER_PASS_FAILURE,"failed to create renderpass\n");
 
     this->create_swapchain();
 
@@ -1210,10 +1178,8 @@ Application::Application(PlatformHandle* platform):platform_handle(platform){
         .pQueueFamilyIndices=NULL
     };
     res=vkCreateBuffer(this->device, &staging_buffer_create_info, this->vk_allocator, &this->staging_buffer);
-    if(res!=VK_SUCCESS){
-        fprintf(stderr,"failed to create staging buffer\n");
-        exit(FATAL_UNEXPECTED_ERROR);
-    }
+    if(res!=VK_SUCCESS)
+        bail(FATAL_UNEXPECTED_ERROR,"failed to create staging buffer\n");
 
     VkMemoryRequirements staging_buffer_memory_requirements;
     vkGetBufferMemoryRequirements(this->device, this->staging_buffer, &staging_buffer_memory_requirements);
@@ -1235,16 +1201,12 @@ Application::Application(PlatformHandle* platform):platform_handle(platform){
         .memoryTypeIndex=staging_buffer_memory_type_index
     };
     res=vkAllocateMemory(this->device, &staging_buffer_memory_allocate_info, this->vk_allocator, &this->staging_buffer_memory);
-    if(res!=VK_SUCCESS){
-        fprintf(stderr,"failed to allocate staging buffer memory\n");
-        exit(VULKAN_ALLOCATE_MEMORY_FAILURE);
-    }
+    if(res!=VK_SUCCESS)
+        bail(VULKAN_ALLOCATE_MEMORY_FAILURE,"failed to allocate staging buffer memory\n");
 
     res=vkBindBufferMemory(this->device, this->staging_buffer, this->staging_buffer_memory, 0);
-    if(res!=VK_SUCCESS){
-        fprintf(stderr,"failed to bind staging buffer memory\n");
-        exit(VULKAN_BIND_BUFFER_MEMORY_FAILURE);
-    }
+    if(res!=VK_SUCCESS)
+        bail(VULKAN_BIND_BUFFER_MEMORY_FAILURE,"failed to bind staging buffer memory\n");
 }
 
 /**
@@ -1359,10 +1321,9 @@ void Application::run(){
         }
         static const uint64_t PATH_BUF_SIZE=1023;
         if(loc_len<=PATH_BUF_SIZE){
-            if(loc_len>=PATH_BUF_SIZE){
-                fprintf(stderr,"path too long\n");
-                exit(FATAL_UNEXPECTED_ERROR);
-            }
+            if(loc_len>=PATH_BUF_SIZE)
+                bail(FATAL_UNEXPECTED_ERROR,"path too long\n");
+
             std::array<char, PATH_BUF_SIZE + 1> path_buf{};
             std::fill(path_buf.begin(), path_buf.end(), '\0');
             memcpy(path_buf.data(),this->cli_args[0],slash_loc);
@@ -1439,10 +1400,8 @@ void Application::run(){
 
     static const int MAX_NUM_SWAPCHAIN_IMAGES=32;
 
-    if (num_images>MAX_NUM_SWAPCHAIN_IMAGES) {
-        fprintf(stderr,"too many images in swapchain\n");
-        exit(FATAL_UNEXPECTED_ERROR);
-    }
+    if (num_images>MAX_NUM_SWAPCHAIN_IMAGES)
+        bail(FATAL_UNEXPECTED_ERROR,"too many images in swapchain\n");
 
     ImageData image_data_jpeg[MAX_NUM_SWAPCHAIN_IMAGES];
     Texture* image_textures[MAX_NUM_SWAPCHAIN_IMAGES];
@@ -1657,8 +1616,7 @@ void Application::run(){
                 break;
 
             default:
-                fprintf(stderr,"failed to acquire next swapchain image because %s\n",vkRes2str(res));
-                exit(VULKAN_ACQUIRE_NEXT_IMAGE_KHR_FAILURE);
+                bail(VULKAN_ACQUIRE_NEXT_IMAGE_KHR_FAILURE,"failed to acquire next swapchain image because %s\n",vkRes2str(res));
         }
 
         VkCommandBufferBeginInfo command_buffer_begin_info={
@@ -1793,10 +1751,8 @@ void Application::run(){
         }
 
         res=vkEndCommandBuffer(command_buffer);
-        if(res!=VK_SUCCESS){
-            fprintf(stderr,"failed to end command buffer\n");
-            exit(VULKAN_END_COMMAND_BUFFER_FAILURE);
-        }
+        if(res!=VK_SUCCESS)
+            bail(VULKAN_END_COMMAND_BUFFER_FAILURE,"failed to end command buffer\n");
 
         VkPipelineStageFlags queue_submit_wait_dst_stages[1]={VK_PIPELINE_STAGE_TRANSFER_BIT};
         VkSubmitInfo queue_submit_infos[1]={{
@@ -1811,10 +1767,8 @@ void Application::run(){
             .pSignalSemaphores=&rendering_finished_semaphore
         }};
         res=vkQueueSubmit(this->present_queue,1,queue_submit_infos,VK_NULL_HANDLE);
-        if(res!=VK_SUCCESS){
-            fprintf(stderr,"failed to submit swapchain presentation image\n");
-            exit(VULKAN_QUEUE_SUBMIT_FAILURE);
-        }
+        if(res!=VK_SUCCESS)
+            bail(VULKAN_QUEUE_SUBMIT_FAILURE,"failed to submit swapchain presentation image\n");
 
         VkSemaphore present_wait_semaphores[1]={rendering_finished_semaphore};
         VkSwapchainKHR present_swapchains[1]={this->swapchain};
@@ -1836,8 +1790,7 @@ void Application::run(){
                 break;
 
             default:
-                fprintf(stderr,"failed to present swapchain image because %s\n",vkRes2str(res));
-                exit(VULKAN_ACQUIRE_NEXT_IMAGE_KHR_FAILURE);
+                bail(VULKAN_ACQUIRE_NEXT_IMAGE_KHR_FAILURE,"failed to present swapchain image because %s\n",vkRes2str(res));
         }
 
         vkDeviceWaitIdle(this->device);

@@ -48,10 +48,9 @@ xcb_atom_t Platform_xcb_intern_atom(PlatformHandle* platform,const char* atom_na
     xcb_generic_error_t* error;
     xcb_intern_atom_reply_t* atom_reply=xcb_intern_atom_reply(platform->connection, atom_cookie, &error);
     xcb_atom_t atom=atom_reply->atom;
-    if(error){
-        fprintf(stderr,"got some error\n");
-        exit(XCB_INTERN_ATOM_FAILURE);
-    }
+    if(error)
+        bail(XCB_INTERN_ATOM_FAILURE,"got some error\n");
+
     free(atom_reply);
     return atom;
 }
@@ -68,10 +67,8 @@ void Application::set_window_title(PlatformWindow* window, const char* title){
         8, (uint32_t)strlen(title), title
     );
     xcb_generic_error_t* change_property_error=xcb_request_check(this->platform_handle->connection, change_property_cookie);
-    if(change_property_error!=NULL){
-        fprintf(stderr,"failed to set property because %s\n",xcb_event_get_error_label(change_property_error->error_code));
-        exit(XCB_CHANGE_PROPERTY_FAILURE);
-    }
+    if(change_property_error!=NULL)
+        bail(XCB_CHANGE_PROPERTY_FAILURE,"failed to set property because %s\n",xcb_event_get_error_label(change_property_error->error_code));
     change_property_cookie=xcb_change_property_checked(this->platform_handle->connection, 
         XCB_PROP_MODE_REPLACE, 
         window->window, 
@@ -80,10 +77,8 @@ void Application::set_window_title(PlatformWindow* window, const char* title){
         8, (uint32_t)strlen(title), title
     );
     change_property_error=xcb_request_check(this->platform_handle->connection, change_property_cookie);
-    if(change_property_error!=NULL){
-        fprintf(stderr,"failed to set property because %s\n",xcb_event_get_error_label(change_property_error->error_code));
-        exit(XCB_CHANGE_PROPERTY_FAILURE);
-    }
+    if(change_property_error!=NULL)
+        bail(XCB_CHANGE_PROPERTY_FAILURE,"failed to set property because %s\n",xcb_event_get_error_label(change_property_error->error_code));
 }
 VkSurfaceKHR Application::create_window_vk_surface(PlatformWindow* platform_window){
     VkXcbSurfaceCreateInfoKHR surface_create_info={
@@ -95,10 +90,8 @@ VkSurfaceKHR Application::create_window_vk_surface(PlatformWindow* platform_wind
     };
     VkSurfaceKHR surface;
     VkResult res=vkCreateXcbSurfaceKHR(this->instance, &surface_create_info, this->vk_allocator, &surface);
-    if(res!=VK_SUCCESS){
-        fprintf(stderr,"failed to create xcb surface\n");
-        exit(VULKAN_CREATE_XCB_SURFACE_FAILURE);
-    }
+    if(res!=VK_SUCCESS)
+        bail(VULKAN_CREATE_XCB_SURFACE_FAILURE,"failed to create xcb surface\n");
 
     return surface;
 }
@@ -283,10 +276,8 @@ PlatformHandle* Platform_new(){
 
     platform->connection=xcb_connect(NULL,NULL);
     int xcb_connection_error_state=xcb_connection_has_error(platform->connection);
-    if(xcb_connection_error_state!=0){
-        fprintf(stderr,"xcb connection error state %d\n",xcb_connection_error_state);
-        exit(XCB_CONNECT_FAILURE);
-    }
+    if(xcb_connection_error_state!=0)
+        bail(XCB_CONNECT_FAILURE,"xcb connection error state %d\n",xcb_connection_error_state);
 
     return platform;
 }
@@ -334,10 +325,8 @@ PlatformWindow* Application::create_window(
         value_list
     );
     xcb_generic_error_t* window_create_error=xcb_request_check(this->platform_handle->connection, window_create_reply);
-    if(window_create_error!=NULL && window_create_error->error_code!=0){
-        fprintf(stderr,"failed to create window %d\n",window_create_error->error_code);
-        exit(XCB_WINDOW_CREATE_FAILURE);
-    }
+    if(window_create_error!=NULL && window_create_error->error_code!=0)
+        bail(XCB_WINDOW_CREATE_FAILURE,"failed to create window %d\n",window_create_error->error_code);
 
     xcb_flush(this->platform_handle->connection);
 
@@ -346,16 +335,12 @@ PlatformWindow* Application::create_window(
 
     xcb_void_cookie_t change_property_cookie=xcb_change_property_checked(this->platform_handle->connection, XCB_PROP_MODE_REPLACE, window->window, wm_protocols_atom, XCB_ATOM_ATOM, 32, 1, &window->delete_window_atom);
     xcb_generic_error_t* change_property_error=xcb_request_check(this->platform_handle->connection, change_property_cookie);
-    if(change_property_error!=NULL){
-        fprintf(stderr,"failed to set property because %s\n",xcb_event_get_error_label(change_property_error->error_code));
-        exit(XCB_CHANGE_PROPERTY_FAILURE);
-    }
+    if(change_property_error!=NULL)
+        bail(XCB_CHANGE_PROPERTY_FAILURE,"failed to set property because %s\n",xcb_event_get_error_label(change_property_error->error_code));
 
     int xcb_connection_error_state=xcb_connection_has_error(this->platform_handle->connection);
-    if(xcb_connection_error_state!=0){
-        fprintf(stderr,"xcb connection error state %d\n",xcb_connection_error_state);
-        exit(XCB_CONNECT_FAILURE);
-    }
+    if(xcb_connection_error_state!=0)
+        bail(XCB_CONNECT_FAILURE,"xcb connection error state %d\n",xcb_connection_error_state);
 
     xcb_map_window(this->platform_handle->connection,window->window);
 

@@ -4,10 +4,8 @@
 #include <time.h>
 
 int main(int argc, char** argv) {
-	if (argc != 2) {
-		fprintf(stderr, "Usage: %s <input.jpg>\n", argv[0]);
-		return 1;
-	}
+	if (argc != 2)
+		bail(1, "Usage: %s <input.jpg>\n", argv[0]);
 
 	const char* input_file = argv[1];
 
@@ -16,10 +14,8 @@ int main(int argc, char** argv) {
 	for(int i=0;i<num_repeats;i++){
 		// Open the input JPEG file
 		FILE* infile = fopen(input_file, "rb");
-		if (!infile) {
-			fprintf(stderr, "Error opening input file: %s\n", input_file);
-			return 1;
-		}
+		if (!infile)
+			bail(1, "Error opening input file: %s\n", input_file);
 
 		// Initialize libjpeg-turbo decompression object
 		struct jpeg_decompress_struct cinfo;

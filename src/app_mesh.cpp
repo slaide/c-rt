@@ -22,10 +22,8 @@ Mesh* Application::upload_mesh(
         .pQueueFamilyIndices=NULL
     };
     VkResult res=vkCreateBuffer(this->device, &buffer_create_info, this->vk_allocator, &mesh->buffer);
-    if(res!=VK_SUCCESS){
-        fprintf(stderr,"failed to create buffer\n");
-        exit(VULKAN_CREATE_BUFFER_FAILURE);
-    }
+    if(res!=VK_SUCCESS)
+        bail(VULKAN_CREATE_BUFFER_FAILURE,"failed to create buffer\n");
 
     VkMemoryRequirements buffer_memory_requirements;
     vkGetBufferMemoryRequirements(this->device, mesh->buffer, &buffer_memory_requirements);
@@ -52,16 +50,12 @@ Mesh* Application::upload_mesh(
         .memoryTypeIndex=memory_type_index
     };
     res=vkAllocateMemory(this->device, &memory_allocate_info, this->vk_allocator, &mesh->buffer_memory);
-    if(res!=VK_SUCCESS){
-        fprintf(stderr,"failed to allocate memory\n");
-        exit(VULKAN_ALLOCATE_MEMORY_FAILURE);
-    }
+    if(res!=VK_SUCCESS)
+        bail(VULKAN_ALLOCATE_MEMORY_FAILURE,"failed to allocate memory\n");
 
     res=vkBindBufferMemory(this->device, mesh->buffer, mesh->buffer_memory, 0);
-    if(res!=VK_SUCCESS){
-        fprintf(stderr,"failed to bind buffer memory\n");
-        exit(VULKAN_BIND_BUFFER_MEMORY_FAILURE);
-    }
+    if(res!=VK_SUCCESS)
+        bail(VULKAN_BIND_BUFFER_MEMORY_FAILURE,"failed to bind buffer memory\n");
 
     // map device memory
     VertexData* mapped_gpu_memory;
@@ -121,10 +115,8 @@ void Application::upload_data(
             this->vk_allocator, 
             buffer
         );
-        if(res!=VK_SUCCESS){
-            fprintf(stderr,"failed to create buffer\n");
-            exit(VULKAN_CREATE_BUFFER_FAILURE);
-        }
+        if(res!=VK_SUCCESS)
+            bail(VULKAN_CREATE_BUFFER_FAILURE,"failed to create buffer\n");
     }
 
     if(memory_initially_null){
@@ -153,18 +145,14 @@ void Application::upload_data(
             .memoryTypeIndex=memory_type_index
         };
         VkResult res=vkAllocateMemory(this->device, &memory_allocate_info, this->vk_allocator, buffer_memory);
-        if(res!=VK_SUCCESS){
-            fprintf(stderr,"failed to allocate memory\n");
-            exit(VULKAN_ALLOCATE_MEMORY_FAILURE);
-        }
+        if(res!=VK_SUCCESS)
+            bail(VULKAN_ALLOCATE_MEMORY_FAILURE,"failed to allocate memory\n");
     }
 
     if (buffer_initially_null || memory_initially_null) {
         VkResult res=vkBindBufferMemory(this->device, *buffer, *buffer_memory, 0);
-        if(res!=VK_SUCCESS){
-            fprintf(stderr,"failed to bind buffer memory\n");
-            exit(VULKAN_BIND_BUFFER_MEMORY_FAILURE);
-        }
+        if(res!=VK_SUCCESS)
+            bail(VULKAN_BIND_BUFFER_MEMORY_FAILURE,"failed to bind buffer memory\n");
     }
 
     // map device memory

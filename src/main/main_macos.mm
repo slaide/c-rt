@@ -255,10 +255,8 @@ VkSurfaceKHR App_create_window_vk_surface(Application* app,PlatformWindow* platf
     };
     VkSurfaceKHR surface;
     VkResult res=vkCreateMetalSurfaceEXT(app->instance, &surface_create_info, app->vk_allocator, &surface);
-    if(res!=VK_SUCCESS){
-        fprintf(stderr,"failed to create metal surface\n");
-        exit(VULKAN_CREATE_XCB_SURFACE_FAILURE);
-    }
+    if(res!=VK_SUCCESS)
+        bail(VULKAN_CREATE_XCB_SURFACE_FAILURE,"failed to create metal surface\n");
 
     return surface;
 }
