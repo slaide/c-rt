@@ -3,8 +3,6 @@
 #include <cstdlib>
 #include <cstring>
 #include <string>
-#include <cmath>
-#include <thread>
 #include <vector>
 #include <ranges>
 #include <numeric>
@@ -346,7 +344,7 @@ class ZLIBDecoder{
                         {
                             bail(FATAL_UNEXPECTED_ERROR,"TODO : uncompressed deflate block");
                             
-                            printf("using no compression %" PRIu64 "\n",stream->buffer_bits_filled);
+                            printf("using no compression %zu\n",stream->buffer_bits_filled);
 
                             const uint8_t bits_to_next_byte_boundary=stream->buffer_bits_filled%8;
                             keep_parsing=false;
@@ -413,11 +411,11 @@ class ZLIBDecoder{
                         {
                             const std::size_t num_literal_codes=257+stream->get_bits_advance(5);
                             if(num_literal_codes>286)
-                                bail(FATAL_UNEXPECTED_ERROR,"too many huffman codes (literals) %" PRIu64 "\n",num_literal_codes);
+                                bail(FATAL_UNEXPECTED_ERROR,"too many huffman codes (literals) %zu\n",num_literal_codes);
 
                             const std::size_t num_distance_codes=1+stream->get_bits_advance(5);
                             if(num_distance_codes>30)
-                                bail(FATAL_UNEXPECTED_ERROR,"too many huffman codes (distance) %" PRIu64 "\n",num_distance_codes);
+                                bail(FATAL_UNEXPECTED_ERROR,"too many huffman codes (distance) %zu\n",num_distance_codes);
 
                             // the number of elements in this table can be 4-19. the code length codes not present in the table are specified to not occur (i.e. zero bits)
                             const auto num_huffman_codes=4+stream->get_bits_advance<std::size_t>(4);

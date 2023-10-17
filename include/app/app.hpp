@@ -1,18 +1,11 @@
 #pragma once
 
 #include <cstdint>
-#include <cstdio>
-#include <cstring>
-#include <cstdlib>
-#include <ctime>
-#include <csignal>
 #include <memory>
 
 #include <vulkan/vulkan.h>
 
-#include "app/error.hpp"
 #include "app/image.hpp"
-#include "app/macros.hpp"
 
 typedef void*(*pthread_callback)(void*);
 

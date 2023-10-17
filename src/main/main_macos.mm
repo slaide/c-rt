@@ -147,9 +147,9 @@ CVReturn display_link_callback(
     discard flagsOut;
 
     Application* app=(Application*)displayLinkContext;
-    App_run(app);
+    app->run();
 
-    App_destroy(app);
+    app->destroy();
     
     CVDisplayLinkStop(displayLink);
 
@@ -222,8 +222,7 @@ CVReturn display_link_callback(
 
 @end
 
-PlatformWindow* App_create_window(
-    Application* app,
+PlatformWindow* Application::create_window(
     uint16_t width,
     uint16_t height
 ){
@@ -242,11 +241,11 @@ PlatformWindow* App_create_window(
     // from docs: Moves the window to the front of the screen list, within its level, and makes it the key window; that is, it shows the window.
     [window->window makeKeyAndOrderFront:nil];
 
-    window->window.delegate=app->platform_handle->app;
+    window->window.delegate=this->platform_handle->app;
 
     return window;
 }
-VkSurfaceKHR App_create_window_vk_surface(Application* app,PlatformWindow* platform_window){
+VkSurfaceKHR Application::create_window_vk_surface(PlatformWindow* platform_window){
     VkMetalSurfaceCreateInfoEXT surface_create_info={
         .sType=VK_STRUCTURE_TYPE_METAL_SURFACE_CREATE_INFO_EXT,
         .pNext=NULL,
@@ -254,21 +253,20 @@ VkSurfaceKHR App_create_window_vk_surface(Application* app,PlatformWindow* platf
         .pLayer=(CAMetalLayer*)platform_window->window.contentView.layer
     };
     VkSurfaceKHR surface;
-    VkResult res=vkCreateMetalSurfaceEXT(app->instance, &surface_create_info, app->vk_allocator, &surface);
-    if(res!=VK_SUCCESS)
-        bail(VULKAN_CREATE_XCB_SURFACE_FAILURE,"failed to create metal surface\n");
+    VkResult res=vkCreateMetalSurfaceEXT(this->core->instance, &surface_create_info, this->core->vk_allocator, &surface);
+    if(res!=VK_SUCCESS){
+        fprintf(stderr,"failed to create metal surface\n");
+        exit(VULKAN_CREATE_XCB_SURFACE_FAILURE);
+    }
 
     return surface;
 }
-void App_destroy_window(Application* app, PlatformWindow* window){
-    discard app;
+void Application::destroy_window(PlatformWindow* window){
     [window->window.contentView release];
     [window->window release];
     delete window;
 }
-void App_set_window_title(Application* app, PlatformWindow* window, const char* title){
-    discard app;
-
+void Application::set_window_title(PlatformWindow* window, const char* title){
     // window interaction needs to happen on main thread
     dispatch_async(dispatch_get_main_queue(), ^{
         [window->window setTitle:[NSString stringWithUTF8String:title]];
@@ -317,10 +315,10 @@ InputKeyCode NSKeyCode_to_InputKeyCode(unsigned short nskeycode){
     }
 }
 
-int App_get_input_event(Application *app, InputEvent *event){
-    if (app->platform_window->window.eventList.count>0) {
-        NSEvent* ns_event=[app->platform_window->window.eventList firstObject];
-        [app->platform_window->window.eventList removeObjectAtIndex:0];
+int Application::get_input_event(InputEvent *event){
+    if (this->platform_window->window.eventList.count>0) {
+        NSEvent* ns_event=[this->platform_window->window.eventList firstObject];
+        [this->platform_window->window.eventList removeObjectAtIndex:0];
 
         switch (ns_event.type) {
             case NSEventTypeLeftMouseDown:
@@ -379,9 +377,9 @@ int App_get_input_event(Application *app, InputEvent *event){
 
         return INPUT_EVENT_PRESENT;
     }
-    if (app->platform_handle->app.eventList.count>0) {
-        id nextEvent=[app->platform_handle->app.eventList firstObject];
-        [app->platform_handle->app.eventList removeObjectAtIndex:0];
+    if (this->platform_handle->app.eventList.count>0) {
+        id nextEvent=[this->platform_handle->app.eventList firstObject];
+        [this->platform_handle->app.eventList removeObjectAtIndex:0];
 
         if ([nextEvent isKindOfClass:[WindowResizeEvent class]]) {
             event->generic.input_event_type=INPUT_EVENT_TYPE_WINDOW_RESIZED;
@@ -390,11 +388,11 @@ int App_get_input_event(Application *app, InputEvent *event){
             event->windowresized.new_height=resize_event.new_height;
             event->windowresized.new_width=resize_event.new_width;
 
-            event->windowresized.old_width=app->platform_window->window_width;
-            event->windowresized.old_height=app->platform_window->window_height;
+            event->windowresized.old_width=this->platform_window->window_width;
+            event->windowresized.old_height=this->platform_window->window_height;
 
-            app->platform_window->window_width=resize_event.new_width;
-            app->platform_window->window_height=resize_event.new_height;
+            this->platform_window->window_width=resize_event.new_width;
+            this->platform_window->window_height=resize_event.new_height;
 
             [nextEvent release];
         }else if ([nextEvent isKindOfClass:[WindowCloseEvent class]]) {

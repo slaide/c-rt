@@ -12,7 +12,6 @@
 #include <unistd.h>
 #include <array>
 #include <vector>
-#include <ranges>
 #include <string>
 
 double current_time(){
@@ -803,7 +802,13 @@ VkSwapchainCreateInfoKHR Application::create_swapchain(){
     std::vector<VkSurfaceFormatKHR> surface_formats(num_surface_formats);
     vkGetPhysicalDeviceSurfaceFormatsKHR(this->core->physical_device, this->window_surface, &num_surface_formats, surface_formats.data());
     this->swapchain_format=surface_formats[0];
-    // get surface present mode
+
+    for(auto format:surface_formats){
+        if(format.format==VK_FORMAT_B8G8R8A8_SRGB && format.colorSpace==VK_COLOR_SPACE_SRGB_NONLINEAR_KHR){
+            this->swapchain_format=format;
+            break;
+        }
+    }
 
     VkSurfaceCapabilitiesKHR surface_capabilities;
     res=vkGetPhysicalDeviceSurfaceCapabilitiesKHR(this->core->physical_device,this->window_surface,&surface_capabilities);

@@ -35,7 +35,7 @@ class BitStream{
     * @param data 
     * @param direction
     */
-    static void BitStream_new(BitStream* stream,void* const data,const uint64_t data_size)noexcept;
+    static void BitStream_new(BitStream* stream,void* const data,const std::size_t data_size)noexcept;
 
     /**
     * @brief advance stream
