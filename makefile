@@ -141,7 +141,7 @@ LINK_FLAGS += -framework Appkit -framework Metal -framework MetalKit -framework 
 
 # default MoltenVK installation path
 CINCLUDE += -I/opt/vulkansdk/macOS/include
-LINK_FLAGS += -L/opt/vulkansdk/macOS/lib
+LINK_FLAGS += -L/opt/vulkansdk/macOS/lib -Wl,-rpath,/opt/vulkansdk/macOS/lib
 
 # default homebrew paths
 CINCLUDE += -I/opt/homebrew/include
