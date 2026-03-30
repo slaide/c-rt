@@ -40,6 +40,7 @@ Mesh* App_upload_mesh(
         if(
             (1<<i)&buffer_memory_requirements.memoryTypeBits
             && memory_properties.memoryTypes[i].propertyFlags&VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
+            && !(memory_properties.memoryTypes[i].propertyFlags&VK_MEMORY_PROPERTY_DEVICE_COHERENT_BIT_AMD)
         ){
             memory_type_index=i;
             break;
@@ -76,7 +77,7 @@ Mesh* App_upload_mesh(
         .pNext=NULL,
         .memory=mesh->buffer_memory,
         .offset=0,
-        .size=buffer_memory_requirements.size
+        .size=VK_WHOLE_SIZE
     };
     vkFlushMappedMemoryRanges(app->device, 1, &mapped_memory_range);
     vkUnmapMemory(app->device, mesh->buffer_memory);
@@ -143,6 +144,7 @@ void App_upload_data(
             if(
                 (1<<i)&buffer_memory_requirements.memoryTypeBits
                 && memory_properties.memoryTypes[i].propertyFlags&VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
+                && !(memory_properties.memoryTypes[i].propertyFlags&VK_MEMORY_PROPERTY_DEVICE_COHERENT_BIT_AMD)
             ){
                 memory_type_index=i;
                 break;
@@ -173,7 +175,7 @@ void App_upload_data(
 
     // map device memory
     VertexData* mapped_gpu_memory;
-    vkMapMemory(app->device, *buffer_memory, 0, memory_size, 0, (void**)&mapped_gpu_memory);
+    vkMapMemory(app->device, *buffer_memory, 0, VK_WHOLE_SIZE, 0, (void**)&mapped_gpu_memory);
     // copy data
     memcpy(mapped_gpu_memory, data, data_size_bytes);
     // flush memory to gpu
@@ -182,7 +184,7 @@ void App_upload_data(
         .pNext=NULL,
         .memory=*buffer_memory,
         .offset=0,
-        .size=memory_size
+        .size=VK_WHOLE_SIZE
     };
     vkFlushMappedMemoryRanges(app->device, 1, &mapped_memory_range);
     vkUnmapMemory(app->device, *buffer_memory);

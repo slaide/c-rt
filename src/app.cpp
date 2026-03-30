@@ -218,7 +218,10 @@ Texture* App_create_texture(Application* app, ImageData* image_data){
     VkPhysicalDeviceMemoryProperties physical_device_memory_properties;
     vkGetPhysicalDeviceMemoryProperties(app->physical_device,&physical_device_memory_properties);
     for(uint32_t i=0;i<physical_device_memory_properties.memoryTypeCount;i++){
-        if(image_memory_requirements.memoryTypeBits&(1<<i)){
+        if(
+            image_memory_requirements.memoryTypeBits&(1<<i)
+            && !(physical_device_memory_properties.memoryTypes[i].propertyFlags&VK_MEMORY_PROPERTY_DEVICE_COHERENT_BIT_AMD)
+        ){
             image_memory_type_index=i;
         }
     }
@@ -1235,7 +1238,10 @@ Application* App_new(PlatformHandle* platform){
     vkGetPhysicalDeviceMemoryProperties(app->physical_device,&physical_device_memory_properties);
 
     for(uint32_t i=0;i<physical_device_memory_properties.memoryTypeCount;i++){
-        if((1<<i)&staging_buffer_memory_requirements.memoryTypeBits){
+        if(
+            (1<<i)&staging_buffer_memory_requirements.memoryTypeBits
+            && !(physical_device_memory_properties.memoryTypes[i].propertyFlags&VK_MEMORY_PROPERTY_DEVICE_COHERENT_BIT_AMD)
+        ){
             staging_buffer_memory_type_index=i;
         }
     }

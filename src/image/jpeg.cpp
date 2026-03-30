@@ -1046,6 +1046,9 @@ class JpegParser: public FileParser{
 
         const uint8_t num_scan_components=this->get_mem<uint8_t>();
 
+        if (num_scan_components>3)
+            bail(-47,"invalid number of scan components: %d\n",num_scan_components);
+
         const bool is_interleaved=num_scan_components != 1;
 
         uint8_t scan_component_id[3];
